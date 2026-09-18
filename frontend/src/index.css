@@ -1,0 +1,36 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-cream text-gray-800 antialiased;
+  font-family: "Inter", "PingFang SC", "Microsoft YaHei", sans-serif;
+}
+
+.card {
+  @apply bg-white rounded-2xl shadow-sm border border-orange-100/60 p-5;
+}
+
+.btn-primary {
+  @apply inline-flex items-center justify-center rounded-xl bg-brand-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-brand-600 disabled:opacity-50;
+}
+
+.btn-secondary {
+  @apply inline-flex items-center justify-center rounded-xl border border-brand-200 bg-white px-4 py-2 text-sm font-medium text-brand-600 transition hover:bg-brand-50;
+}
+
+.input {
+  @apply w-full rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm outline-none transition focus:border-brand-400 focus:ring-2 focus:ring-brand-100;
+}
+
+.label {
+  @apply mb-1 block text-sm font-medium text-gray-600;
+}
+
+.tag {
+  @apply inline-flex items-center rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-medium text-brand-600;
+}
+
+.nav-bottom {
+  @apply fixed bottom-0 left-0 right-0 z-40 border-t border-gray-100 bg-white/95 backdrop-blur lg:hidden;
+}
