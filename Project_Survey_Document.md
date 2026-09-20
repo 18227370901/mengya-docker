@@ -1222,3 +1222,33 @@ MODE 环境变量已设置 → 直接使用（校验取值）
     - 独立 SSL 证书：证书存储于 `/opt/service/nginx/ssl/mengya_docker.crt` 与 `mengya_docker.key`。
     - 端口隔离：Docker 版前端映射宿主机端口调整为 **5174**（避开传统版 5173），内部通信保持网络隔离。
     - SNI 域名分流：默认域名匹配为 `mengya-docker.local`，与传统版共同监听宿主机 443 端口，通过 TLS SNI 实现单 IP 单端口多站点无冲突共存。
+
+### 12.21 运行参数命令行自定义、Compose 规范升级与配置自愈保障 (REQ-21)
+- **需求背景与痛点**：
+  - 用户反馈 Docker 容器启动时存在两处阻塞性或警示性问题：
+    1. `WARN[0000] /opt/service/mengya-docker/docker-compose.yml: the attribute 'version' is obsolete, it will be ignored, please remove it to avoid potential confusion`。
+    2. `env file /opt/service/mengya-docker/.env not found: stat /opt/service/mengya-docker/.env: no such file or directory`，当宿主机环境克隆后未及时生成 `.env` 时，docker compose 直接失败退出。
+  - 用户同时要求改造 `run.sh` 运维脚本，使其支持通过命令行传参自定义外部访问端口、管理员账号、管理员密码、昵称及域名等变量，并支持持久化，无需手动频繁编辑 `.env` 文件。
+- **架构升级与实施明细**：
+  - **1. Docker Compose v2 规范对齐与告警消除**：
+    - 彻底移除 `docker-compose.yml` 顶层的 `version: "3.9"` 声明。现代 Compose Specification 规范不再依赖顶层 version 属性，消除控制台冗余告警。
+    - 在 `backend` 与 `worker` 服务的 `env_file` 配置中采用现代结构化声明：
+      ```yaml
+      env_file:
+        - path: .env
+          required: false
+      ```
+      将 `.env` 声明为非阻塞式可选文件（`required: false`），即使环境缺少 `.env`，容器也能依赖编排内置默认值正常拉起。
+  - **2. 脚本前置自动环境自愈机制**：
+    - 在 `run.sh` 入口处增加自动探测逻辑：若当前工作目录下不存在 `.env` 配置文件，且存在 `.env.example` 模版，则自动执行 `cp .env.example .env` 完成初次配置初始化并输出友好提示；若两者皆无则安全创建空文件，杜绝后续指令因缺少配置文件而报错。
+  - **3. 全功能命令行运行时参数解析与持久化 (`update_env_var`)**：
+    - `run.sh` 引入标准循环参数解析（`while [ $# -gt 0 ]`）与 `case` 分发机制，全面支持以下运行时参数选项：
+      - `-p, --port <PORT>`：自定义宿主机暴露端口（默认 5174，通过更新 `FRONTEND_PORT` 避免端口冲突）。
+      - `-u, --admin <USER>`：自定义超级管理员账号/手机号（同时更新 `ADMIN_USERNAME` 与 `ADMIN_PHONE`）。
+      - `-P, --password <PASS>`：自定义超级管理员密码（更新 `ADMIN_PASSWORD`）。
+      - `-n, --nickname <NAME>`：自定义管理员前台展示称谓（更新 `ADMIN_NICKNAME`）。
+      - `-d, --domain <DOMAIN>`：自定义反向代理匹配的 SNI 域名（更新 `SERVER_NAME`）。
+    - 编写 `update_env_var()` 辅助工具函数：当用户在命令行传入上述参数时，脚本通过安全正则匹配即时将最新值写回持久化至 `.env` 配置文件，后续常规无参启动（如 `./run.sh start` 或服务器开机自启）直接继承使用用户定制参数。
+  - **4. 敏感数据全面脱敏与种子业务数据保障**：
+    - 移除了开发测试过程中的真实私密配置（如第三方 API Key、商业账密），全量收敛至 `.env.example` 占位符。
+    - 保留并装载 `apps/core/fixtures/initial_data.json` 中 971 条母婴核心业务数据（包含 40 周孕育周历、科学营养食谱、胎教童话故事、儿科百科问答等），并在首次容器拉起时通过 Django 内置流水线全自动导入，实现真正的纯净安全与开箱即用。

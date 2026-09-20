@@ -1,4 +1,3 @@
-version: "3.9"
 
 # ============================================================
 # 萌芽（mengya）平台 Docker Compose 编排
@@ -59,7 +58,8 @@ services:
       dockerfile: Dockerfile
     container_name: mengya_backend
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       DATABASE_URL: postgresql://mengya:mengya123@db:5432/mengya
       REDIS_URL: redis://redis:6379/0
@@ -91,7 +91,8 @@ services:
       dockerfile: Dockerfile
     container_name: mengya_worker
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       DATABASE_URL: postgresql://mengya:mengya123@db:5432/mengya
       REDIS_URL: redis://redis:6379/0

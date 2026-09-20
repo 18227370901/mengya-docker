@@ -60,37 +60,56 @@
 
 ## 三、现代化解耦运维与管理脚本 (`./run.sh`)
 
-`run.sh` 脚本全面遵循**单一职责与正交解耦原则**，移除了冗余函数，启动不再捆绑自动 build 或证书生成，并在启停入口增加了全自动垃圾与缓存清理：
+`run.sh` 脚本全面遵循**单一职责与正交解耦原则**，移除了冗余函数，启动不再捆绑自动 build 或证书生成，并在启停入口增加了全自动垃圾与缓存清理，同时支持**全量命令行参数自定义**（自动双向持久化至 `.env`）：
 
 ```bash
 # 1. 启动 Docker 容器服务（启动前自动执行 cleanup_cache 清理 .git 垃圾与 Python 缓存，纯粹执行 up -d）
 ./run.sh start
 
-# 2. 查看各容器运行状态与健康指标
+# 2. 命令行直传参数自定义启动（自动同步更新至 .env）
+./run.sh start -p 8080                         # 自定义宿主机前端映射端口为 8080
+./run.sh start -p 5200 -u superadmin -P Pass123 # 自定义端口与超级管理员账密启动
+./run.sh restart -p 5300                       # 重启容器并变更为 5300 端口
+
+# 3. 查看各容器运行状态与健康指标
 ./run.sh status
 
-# 3. 查看实时容器运行日志（支持指定服务）
+# 4. 查看实时容器运行日志（支持指定服务）
 ./run.sh logs
 ./run.sh logs backend
 
-# 4. 平滑重启容器服务（重启前自动清理垃圾与缓存）
+# 5. 平滑重启容器服务（重启前自动清理垃圾与缓存）
 ./run.sh restart
 
-# 5. 安全停止服务并释放容器网络资源
+# 6. 安全停止服务并释放容器网络资源
 ./run.sh stop
 
-# 6. 手动重新构建容器镜像（仅在修改 Dockerfile 或依赖时显式调用）
+# 7. 手动重新构建容器镜像（仅在修改 Dockerfile 或依赖时显式调用）
 ./run.sh build
 
-# 7. 向宿主机 /opt/service/nginx/conf.d 写入独立 SSL 反代配置（与传统版零冲突）
+# 8. 向宿主机 /opt/service/nginx/conf.d 写入独立 SSL 反代配置（与传统版零冲突）
 ./run.sh add_nginx
+./run.sh add_nginx -d mengya.myhost.com        # 自定义 SNI 域名反代配置
 
-# 8. 在 backend 容器中执行任意命令
+# 9. 在 backend 容器中执行任意命令
 ./run.sh exec python manage.py showmigrations
 
-# 9. 查看帮助信息
+# 10. 查看完整帮助信息与选项
 ./run.sh help
 ```
+
+### 常用命令行自定义参数选项
+| 选项 | 长参数 | 默认值 | 作用说明 |
+|---|---|---|---|
+| `-p` | `--port` | `5174` | 自定义前端映射至宿主机的访问端口（自动持久化写入 `.env` 的 `FRONTEND_PORT`） |
+| `-u` | `--admin` | `admin` | 自定义超级管理员账号/手机号（自动持久化写入 `.env` 的 `ADMIN_USERNAME` 与 `ADMIN_PHONE`） |
+| `-P` | `--password` | `admin123` | 自定义超级管理员登录密码（自动持久化写入 `.env` 的 `ADMIN_PASSWORD`） |
+| `-n` | `--nickname` | `管理员` | 自定义超级管理员前台展示称谓（自动持久化写入 `.env` 的 `ADMIN_NICKNAME`） |
+| `-d` | `--domain` | `mengya-docker.local` | 自定义 Nginx 反代 SNI 域名（自动持久化写入 `.env` 的 `SERVER_NAME`） |
+
+### 容器编排规范与环境自愈加固
+- **Compose Spec 现代标准**：完全移除 `docker-compose.yml` 中过时的 `version: "3.9"` 声明，符合 Compose Specification 最新标准，杜绝 `the attribute 'version' is obsolete` 弃用告警。
+- **环境配置自动愈合**：`run.sh` 启动前检测若无 `.env` 文件，自动从 `.env.example` 模版克隆初始化；`docker-compose.yml` 中声明 `path: .env, required: false`，彻底根除 `env file .env not found` 导致的容器启动失败异常。
 
 服务启动完成后，访问地址：
 - **宿主机直连访问**：[http://localhost:5174/](http://localhost:5174/)（已避开传统版 5173）

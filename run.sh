@@ -26,6 +26,16 @@ export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}" 2>/dev/null || echo ".")" && pwd)"
 cd "$SCRIPT_DIR"
 
+# 1. 自动环境自愈检查：若 .env 不存在，优先从 .env.example 复制初始化
+if [ ! -f ".env" ]; then
+    if [ -f ".env.example" ]; then
+        echo -e "\033[1;33m[提示] 未找到 .env 配置文件，自动从 .env.example 复制初始化...\033[0m"
+        cp ".env.example" ".env"
+    else
+        touch ".env"
+    fi
+fi
+
 if [ -f ".env" ]; then
     set -a
     # shellcheck disable=SC1091
@@ -33,11 +43,29 @@ if [ -f ".env" ]; then
     set +a
 fi
 
+# 更新/持久化变量到 .env 文件的辅助函数
+update_env_var() {
+    local key="$1"
+    local val="$2"
+    if [ -f ".env" ]; then
+        if grep -q "^${key}=" ".env" 2>/dev/null; then
+            sed -i.bak "s|^${key}=.*|${key}=${val}|" ".env" 2>/dev/null && rm -f ".env.bak"
+        else
+            echo "${key}=${val}" >> ".env"
+        fi
+    fi
+}
+
 # 外部访问端口与域名设置（与传统版完全隔离）
 PORT="${PORT:-${EXTERNAL_PORT:-443}}"
 EXTERNAL_PORT="$PORT"
 FRONTEND_PORT="${FRONTEND_PORT:-5174}"
 SERVER_NAME="${SERVER_NAME:-${DOMAIN:-mengya-docker.local}}"
+
+ADMIN_USERNAME="${ADMIN_USERNAME:-${ADMIN_PHONE:-admin}}"
+ADMIN_PHONE="${ADMIN_PHONE:-$ADMIN_USERNAME}"
+ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin123}"
+ADMIN_NICKNAME="${ADMIN_NICKNAME:-管理员}"
 
 NGINX_CONF_DIR="${NGINX_CONF_DIR:-/opt/service/nginx/conf.d}"
 NGINX_CERT_DIR="${NGINX_CERT_DIR:-/opt/service/nginx/ssl}"
@@ -143,7 +171,9 @@ start_docker() {
     echo ""
     echo "============================================"
     echo "  萌芽（mengya-docker）容器服务启动完成！"
-    echo "  直连访问地址: http://localhost:$FRONTEND_PORT/ (已避开传统版 5173 端口)"
+    echo "  统一访问地址: http://localhost:$FRONTEND_PORT/ (已映射宿主机端口)"
+    echo "  管理员账号:   $ADMIN_USERNAME"
+    echo "  管理员密码:   $ADMIN_PASSWORD (容器启动自动 ensure_admin 同步)"
     local PRIMARY_DOMAIN
     PRIMARY_DOMAIN=$(echo "$SERVER_NAME" | awk '{print $1}')
     [ -z "$PRIMARY_DOMAIN" ] && PRIMARY_DOMAIN="mengya-docker.local"
@@ -340,8 +370,108 @@ exec_docker() {
     $compose exec backend "$@"
 }
 
-CMD="${1:-}"
-shift || true
+# 解析命令行参数与自定义变量
+CMD=""
+CUSTOM_PORT=""
+CUSTOM_ADMIN_USER=""
+CUSTOM_ADMIN_PASS=""
+CUSTOM_ADMIN_NICK=""
+CUSTOM_DOMAIN=""
+EXTRA_ARGS=()
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        start|stop|restart|status|logs|build|add_nginx|exec|help)
+            if [ -z "$CMD" ]; then
+                CMD="$1"
+            else
+                EXTRA_ARGS+=("$1")
+            fi
+            shift
+            ;;
+        -p|--port)
+            CUSTOM_PORT="$2"
+            shift 2
+            ;;
+        -u|--admin|--user|--username)
+            CUSTOM_ADMIN_USER="$2"
+            shift 2
+            ;;
+        -P|--password|--pass)
+            CUSTOM_ADMIN_PASS="$2"
+            shift 2
+            ;;
+        -n|--nickname)
+            CUSTOM_ADMIN_NICK="$2"
+            shift 2
+            ;;
+        -d|--domain|--server-name)
+            CUSTOM_DOMAIN="$2"
+            shift 2
+            ;;
+        -h|--help)
+            CMD="help"
+            shift
+            ;;
+        --)
+            shift
+            EXTRA_ARGS+=("$@")
+            break
+            ;;
+        *)
+            if [ "$CMD" = "exec" ] || [ "$CMD" = "logs" ]; then
+                EXTRA_ARGS+=("$1")
+            else
+                echo -e "\033[1;33m[警告] 未知选项: $1\033[0m"
+            fi
+            shift
+            ;;
+    esac
+done
+
+[ -z "$CMD" ] && CMD="help"
+
+# 应用自定义参数并持久化至 .env
+if [ -n "$CUSTOM_PORT" ]; then
+    FRONTEND_PORT="$CUSTOM_PORT"
+    update_env_var "FRONTEND_PORT" "$CUSTOM_PORT"
+    echo -e "\033[0;32m[配置] 前端访问端口已设置为: $CUSTOM_PORT (已同步至 .env)\033[0m"
+fi
+
+if [ -n "$CUSTOM_ADMIN_USER" ]; then
+    ADMIN_USERNAME="$CUSTOM_ADMIN_USER"
+    ADMIN_PHONE="$CUSTOM_ADMIN_USER"
+    update_env_var "ADMIN_USERNAME" "$CUSTOM_ADMIN_USER"
+    update_env_var "ADMIN_PHONE" "$CUSTOM_ADMIN_USER"
+    echo -e "\033[0;32m[配置] 管理员账号已设置为: $CUSTOM_ADMIN_USER (已同步至 .env)\033[0m"
+fi
+
+if [ -n "$CUSTOM_ADMIN_PASS" ]; then
+    ADMIN_PASSWORD="$CUSTOM_ADMIN_PASS"
+    update_env_var "ADMIN_PASSWORD" "$CUSTOM_ADMIN_PASS"
+    echo -e "\033[0;32m[配置] 管理员密码已更新 (已同步至 .env)\033[0m"
+fi
+
+if [ -n "$CUSTOM_ADMIN_NICK" ]; then
+    ADMIN_NICKNAME="$CUSTOM_ADMIN_NICK"
+    update_env_var "ADMIN_NICKNAME" "$CUSTOM_ADMIN_NICK"
+fi
+
+if [ -n "$CUSTOM_DOMAIN" ]; then
+    SERVER_NAME="$CUSTOM_DOMAIN"
+    update_env_var "SERVER_NAME" "$CUSTOM_DOMAIN"
+    echo -e "\033[0;32m[配置] SNI 匹配域名已设置为: $CUSTOM_DOMAIN (已同步至 .env)\033[0m"
+fi
+
+# 导出供 docker compose 插值
+export FRONTEND_PORT
+export ADMIN_USERNAME
+export ADMIN_PHONE
+export ADMIN_PASSWORD
+export ADMIN_NICKNAME
+export SERVER_NAME
+export EXTERNAL_PORT
+
 case "$CMD" in
     start)
         start_docker
@@ -356,7 +486,7 @@ case "$CMD" in
         status_docker
         ;;
     logs)
-        logs_docker "$@"
+        logs_docker "${EXTRA_ARGS[@]}"
         ;;
     build)
         build_docker
@@ -365,25 +495,34 @@ case "$CMD" in
         gen_nginx_config
         ;;
     exec)
-        exec_docker "$@"
+        exec_docker "${EXTRA_ARGS[@]}"
         ;;
-    help|--help|-h|"")
+    help)
         echo ""
         echo "萌芽（mengya-docker）容器模式管理命令："
-        echo "  ./run.sh start        启动 Docker 容器服务（启动前自动清理垃圾缓存）"
-        echo "  ./run.sh stop         停止 Docker 容器服务并释放网络"
-        echo "  ./run.sh restart      重启 Docker 容器服务（重启前自动清理垃圾缓存）"
-        echo "  ./run.sh status       查看各容器运行状态与健康指标"
-        echo "  ./run.sh logs [svc]   查看容器实时运行日志（如 ./run.sh logs backend）"
-        echo "  ./run.sh build        手动重新构建容器镜像"
-        echo "  ./run.sh add_nginx    生成宿主机 /opt/service/nginx/conf.d 独立反代配置（与传统版零冲突）"
-        echo "  ./run.sh exec <cmd>   在 backend 容器中执行任意命令"
-        echo "  ./run.sh help         查看帮助信息"
+        echo "  ./run.sh start [选项]        启动 Docker 容器服务（启动前自动清理垃圾与缓存）"
+        echo "  ./run.sh stop                停止 Docker 容器服务并释放网络"
+        echo "  ./run.sh restart [选项]      重启 Docker 容器服务（重启前自动清理垃圾与缓存）"
+        echo "  ./run.sh status              查看各容器运行状态与健康指标"
+        echo "  ./run.sh logs [svc]          查看容器实时运行日志（如 ./run.sh logs backend）"
+        echo "  ./run.sh build               手动重新构建容器镜像"
+        echo "  ./run.sh add_nginx [选项]    生成宿主机 /opt/service/nginx/conf.d 独立反代配置（与传统版零冲突）"
+        echo "  ./run.sh exec <cmd>          在 backend 容器中执行任意命令"
+        echo "  ./run.sh help                查看帮助信息"
         echo ""
-        echo "常用环境变量配置项（可在 .env 中定义或命令行前缀）："
-        echo "  FRONTEND_PORT=5174    前端映射端口（默认 5174，避开传统版 5173）"
-        echo "  SERVER_NAME=...       SNI 匹配域名（默认 mengya-docker.local）"
-        echo "  PORT / EXTERNAL_PORT  外部 HTTPS 访问端口（默认 443）"
+        echo "常用自定义选项（支持在 start / restart / add_nginx 时追加，自动持久化至 .env）："
+        echo "  -p, --port <PORT>            自定义前端访问端口（默认 5174）"
+        echo "  -u, --admin <USER>           自定义超级管理员账号/手机号（默认 admin / 13800000000）"
+        echo "  -P, --password <PASS>        自定义超级管理员登录密码（默认 admin123）"
+        echo "  -n, --nickname <NAME>        自定义管理员昵称（默认 管理员）"
+        echo "  -d, --domain <DOMAIN>        自定义绑定的 SNI 域名（默认 mengya-docker.local）"
+        echo ""
+        echo "实用启动示例："
+        echo "  ./run.sh start                                 # 默认启动（端口 5174，管理员 admin / admin123）"
+        echo "  ./run.sh start -p 8080                         # 自定义以 8080 端口启动"
+        echo "  ./run.sh start -p 5200 -u superadmin -P Pass123 # 自定义端口与管理员账密启动"
+        echo "  ./run.sh restart -p 5300                       # 重启并变更为 5300 端口"
+        echo "  ./run.sh add_nginx -d mengya.myhost.com        # 为指定域名生成独立反代配置"
         echo ""
         ;;
     *)
