@@ -1270,3 +1270,41 @@ MODE 环境变量已设置 → 直接使用（校验取值）
     - 编写 `resolve_abs_path()` 工具函数：检测到输入路径为相对路径时（如 `./nginx/ssl` 或 `nginx/ssl`），自动基于项目根目录 `$SCRIPT_DIR` 转换为系统的物理绝对路径并确保目录存在；若已是绝对路径则安全保留。
     - 在生成 Nginx 配置时，写入的证书路径一律为规范绝对路径（如 `/opt/service/mengya-docker/nginx/ssl/mengya_docker.crt`）。
     - 无论用户配置绝对路径还是相对路径，Nginx 服务无论何时从何工作目录下重载均能稳定读取证书。
+
+### 12.23 全模块样例数据自愈入库与重启会话强制下线安全机制重构 (REQ-23)
+- **需求背景与痛点**：
+  - 用户在部署并运行 Docker 版本镜像时，反馈发现两项关键问题：
+    1. **页面样例数据大面积缺失**：前台访问「孕期周历」、「睡前胎教故事」、「孕期营养食谱」、「幼儿百科」等功能页面时，发现数据均为空白，未呈现应有的完整业务样例。
+    2. **服务重启后在线用户未被强制下线**：执行 `./run.sh restart` 重启 Docker 容器服务后，先前已登录的前台客户端刷新或点击页面后依然保持登录状态，未能触发会话注销与强制下线重登。
+- **深度排查与根因定位**：
+  - **1. 样例数据入库被截断阻断与静默回滚根因**：
+    - `apps/core/fixtures/initial_data.json` 内置了 971 条全量脱敏基础数据。其中 41 个品牌档案（`BrandProfile.logo`）及 60 个优选商品（`Product.image_url`）采用内嵌 Base64 SVG 矢量图格式，字符串长度达到 358 ~ 666 字符。
+    - 在数据模型定义中，`BrandProfile.logo` 与 `Product.image_url` 均使用未显式指定长度的 `models.URLField`，在底层 PostgreSQL 数据库中创建为 `varchar(200)` 列。
+    - 容器拉起执行 `python manage.py loaddata` 时，PostgreSQL 抛出 `psycopg2.errors.StringDataRightTruncation: value too long for type character varying(200)` 异常。由于 Django `loaddata` 运行在原子事务中，导致全量 971 条数据全部事务回滚。
+    - 启动编排命令中使用了 `|| python manage.py init_data --skip-if-exists` 错误抑制与降级，降级执行的旧 `init_data.py` 仅硬编码写入了品牌与商品（未含图片），且其内部完全没有编写食谱、胎教故事、幼儿百科、待产清单等数据写入逻辑，周历也仅有 5 条简单样本；更严重的是，旧脚本检查到 `Product.objects.exists()` 存在后在后续重启均跳过初始化，造成其余业务模块永久空置。
+  - **2. 重启未能强制下线根因**：
+    - 平台采用 `djangorestframework-simplejwt` 进行身份认证，并在 `User` 模型中包含 `active_token_jti` 字段，配合 `SingleSessionJWTAuthentication` 进行单终端在线校验。
+    - 当宿主机执行 `./run.sh restart` 重启容器时，PostgreSQL 依赖数据卷 `pgdata` 正常保持数据持久化，用户的 `active_token_jti` 以及 `.env` 中的 `JWT_SECRET_KEY` 均未发生变化。
+    - 浏览器客户端发起的 API 请求仍然携带原 Token，由于签名与 JTI 依然完全一致，且在有效生命周期内，因此认证通过，用户未感知下线。
+- **架构升级与实施明细**：
+  - **1. 数据库模型字段升级与迁移 (0023)**：
+    - 将 `BrandProfile.logo` 及 `Product.image_url` 升级为 `models.TextField`，消除 URL 长度限制与 Base64 截断风险。
+    - 新增迁移文件 `apps/core/migrations/0023_alter_brandprofile_logo_alter_product_image_url.py`，启动时全自动对 PostgreSQL 进行列类型转换。
+  - **2. 全模块细粒度自愈与幂等初始化引擎 (`init_data.py`)**：
+    - 全面重构 `apps/core/management/commands/init_data.py`：直接解析读取 `initial_data.json` 种子包，彻底废弃旧版“只要存在商品就全局跳过”的缺陷；
+    - 建立逐模块独立幂等检测自愈机制：
+      - **品牌档案**：41 条（BrandProfile），涵盖国内外主流知名母婴品牌档案、定位与历年排名；
+      - **推荐商品**：63 条（Product），涵盖童车、座椅、奶瓶、纸尿裤、辅食等严选参数；
+      - **40周孕育周历**：204 条（TimelineEvent），若现有记录数小于 40（如旧版残存样本），自动重构并补齐全量 40 周每日要点、产检节点与发育特征；
+      - **睡前胎教故事**：245 条（FetalStory），涵盖孕 17-40 周中英双语伴读故事、温馨提示与分类播报；
+      - **孕期营养食谱**：288 条（Recipe），涵盖早/中/晚孕期营养食谱、食材清单、烹饪步骤与营养贴士；
+      - **幼儿百科问答**：57 条（KidsEncyclopedia），涵盖来源、身体、成长、奥秘四大篇章权威问答与趣味漫画；
+      - **待产母婴清单**：69 条（BabyShoppingItem），涵盖入院待产妈妈篇与宝宝篇分类清单；
+      - **系统设置与演示账户**：保障基础安全设置与 `demo_user` / `小萌芽` 宝宝档案；
+    - 引入 `connection.ops.sequence_reset_sql`，入库后自动重置 PostgreSQL 主键自增序列，保障后续业务创建自增 ID 不发生碰撞；
+    - 在 `docker-compose.yml` 启动流水线与 `run.sh` 中开放 `./run.sh init_data [--force]`，提供手动检查与一键全量重建能力。
+  - **3. 服务重启全量会话注销与强制下线机制**：
+    - 新增管理命令 `apps/core/management/commands/invalidate_tokens.py`：生成全局随机标识并全量更新所有用户的 `active_token_jti`（`User.objects.all().update(active_token_jti=revoked_marker)`）。
+    - 升级 `SingleSessionJWTAuthentication`：当用户的 `active_token_jti` 为空或与当前 Token JTI 不匹配时，强制触发 `ForceLogoutError`（HTTP 401，业务错误码 1003）。
+    - 同步修复 `apps/core/views.py` 中的用户注册 `register` 逻辑，在注册颁发 Token 时同步存入 `active_token_jti`。
+    - 将 `python manage.py invalidate_tokens` 纳入 `docker-compose.yml` 容器启动命令与 `run.sh restart` 流程中。服务一旦重启，现有登录会话全部失效，客户端下次请求即刻被踢出并跳转至登录页（附带 `kicked=1` 友好提示“您的账号已在其他设备登录或服务已重启，请重新登录”）。

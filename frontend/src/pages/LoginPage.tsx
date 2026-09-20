@@ -415,7 +415,7 @@ export default function LoginPage() {
 
         {kicked && (
           <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
-            <p className="text-sm text-amber-600">您的账号已在其他设备登录，请重新登录</p>
+            <p className="text-sm text-amber-600">您的账号已在其他设备登录或服务已重启，请重新登录</p>
           </div>
         )}
 

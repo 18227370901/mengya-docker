@@ -254,6 +254,10 @@ def register(request):
             invite.save(update_fields=["is_active"])
 
     refresh = RefreshToken.for_user(user)
+    access_token = refresh.access_token
+    user.active_token_jti = str(access_token["jti"])
+    user.save(update_fields=["active_token_jti"])
+
     audit(request, "register", "注册账号", "user", user.id, user.username or user.phone,
           f"注册新账号 {user.username}", user=user)
     return Response(
@@ -262,7 +266,7 @@ def register(request):
             "message": "注册成功",
             "data": {
                 "user": UserSerializer(user).data,
-                "access": str(refresh.access_token),
+                "access": str(access_token),
                 "refresh": str(refresh),
             },
         }

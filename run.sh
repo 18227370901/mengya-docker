@@ -225,6 +225,13 @@ restart_docker() {
     stop_docker
     sleep 1
     start_docker
+    echo "  [会话安全] 正在执行会话强制注销，所有在线用户下线重新登录..."
+    local compose
+    compose=$(compose_cmd)
+    if [ -n "$compose" ]; then
+        $compose exec -T backend python manage.py invalidate_tokens 2>/dev/null || true
+    fi
+    echo "  ✅ 服务重启完成，所有历史登录会话已成功强制失效！"
 }
 
 status_docker() {
@@ -402,6 +409,14 @@ exec_docker() {
     $compose exec backend "$@"
 }
 
+init_data_docker() {
+    check_docker_env
+    local compose
+    compose=$(compose_cmd)
+    echo "==> 正在执行全量样例数据检查与补充初始化..."
+    $compose exec -T backend python manage.py init_data "$@"
+}
+
 # 解析命令行参数与自定义变量
 CMD=""
 CUSTOM_PORT=""
@@ -529,6 +544,9 @@ case "$CMD" in
     exec)
         exec_docker "${EXTRA_ARGS[@]}"
         ;;
+    init_data|seed)
+        init_data_docker "${EXTRA_ARGS[@]}"
+        ;;
     help)
         echo ""
         echo "萌芽（mengya-docker）容器模式管理命令："
@@ -540,6 +558,7 @@ case "$CMD" in
         echo "  ./run.sh build               手动重新构建容器镜像"
         echo "  ./run.sh add_nginx [选项]    生成宿主机 /opt/service/nginx/conf.d 独立反代配置（与传统版零冲突）"
         echo "  ./run.sh exec <cmd>          在 backend 容器中执行任意命令"
+        echo "  ./run.sh init_data [选项]    检查并补齐全量样例数据（食谱/胎教/百科/周历/清单/商品/品牌）"
         echo "  ./run.sh help                查看帮助信息"
         echo ""
         echo "常用自定义选项（支持在 start / restart / add_nginx 时追加，自动持久化至 .env）："

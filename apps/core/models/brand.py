@@ -14,7 +14,7 @@ class BrandProfile(models.Model):
 
     name = models.CharField(max_length=100, unique=True, verbose_name="品牌名")
     name_en = models.CharField(max_length=100, blank=True, verbose_name="品牌英文名")
-    logo = models.URLField(blank=True, null=True, verbose_name="品牌Logo")
+    logo = models.TextField(blank=True, null=True, verbose_name="品牌Logo")
     country_of_origin = models.CharField(max_length=50, blank=True, verbose_name="原产国")
     positioning = models.CharField(max_length=20, choices=POSITIONING_CHOICES, default="mid", verbose_name="定位")
     positioning_desc = models.CharField(max_length=200, blank=True, verbose_name="定位描述")

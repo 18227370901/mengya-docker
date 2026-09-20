@@ -39,7 +39,7 @@ class Product(models.Model):
         verbose_name="品牌档案",
     )
     model = models.CharField(max_length=100, blank=True, verbose_name="型号")
-    image_url = models.URLField(verbose_name="样例图")
+    image_url = models.TextField(verbose_name="主图")
     gallery_images = models.JSONField(default=list, blank=True, verbose_name="多图展示")
 
     # 分类层级

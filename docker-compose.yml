@@ -80,8 +80,9 @@ services:
         condition: service_healthy
     command: >
       sh -c "python manage.py migrate &&
-             (python manage.py loaddata apps/core/fixtures/initial_data.json 2>/dev/null || python manage.py init_data --skip-if-exists) &&
+             python manage.py init_data --skip-if-exists &&
              python manage.py ensure_admin &&
+             python manage.py invalidate_tokens &&
              python manage.py runserver 0.0.0.0:8000"
 
   worker:
