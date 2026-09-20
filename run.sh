@@ -174,6 +174,10 @@ compose_extra_args() {
 start_docker() {
     cleanup_cache
     check_docker_env
+
+    # 补全主流程中缺失的 SSL 证书与 Nginx 配置创建函数调用
+    gen_ssl_cert
+    gen_nginx_config
     local compose
     compose=$(compose_cmd)
 
@@ -280,6 +284,73 @@ build_docker() {
     $compose $extra_args build
 }
 
+# ===== SSL 证书创建函数（带交互式防误覆盖确认） =====
+gen_ssl_cert() {
+    echo "==> 检查/配置 SSL 证书 (Docker版)"
+
+    NGINX_CERT_DIR=$(resolve_abs_path "$NGINX_CERT_DIR")
+    mkdir -p "$NGINX_CERT_DIR"
+
+    local MAIN_DOMAIN
+    MAIN_DOMAIN=$(echo "$SERVER_NAME" | awk '{print $1}')
+    [ -z "$MAIN_DOMAIN" ] && MAIN_DOMAIN="mengya-docker.local"
+
+    local SAN_LIST="DNS:localhost,IP:127.0.0.1"
+    for d in $SERVER_NAME; do
+        SAN_LIST="$SAN_LIST,DNS:$d"
+    done
+
+    local CERT_FILE="$NGINX_CERT_DIR/mengya_docker.crt"
+    local KEY_FILE="$NGINX_CERT_DIR/mengya_docker.key"
+
+    echo "  操作证书对象: $CERT_FILE"
+    echo "  操作私钥对象: $KEY_FILE"
+
+    local do_update="n"
+    if [ -f "$CERT_FILE" ] || [ -f "$KEY_FILE" ]; then
+        echo -e "\033[1;33m[提示] 检测到已存在 SSL 证书或私钥文件。\033[0m"
+        echo -e "\033[1;31m[注意] 若选择更新，将重新生成自签名证书并覆盖现有文件内容（已有正式证书将被替换）！\033[0m"
+        read -p "是否需要更新 SSL 证书文件内容？(y/N): " choice
+    else
+        echo -e "\033[1;33m[提示] 检测到目标 SSL 证书文件尚不存在。\033[0m"
+        echo "  - 选择更新(y): 将调用 OpenSSL 自动生成适用于域名 [$MAIN_DOMAIN] 的自签名证书并写入；"
+        echo "  - 选择否(n): 仅保证文件存在（创建空占位文件，避免 Nginx 启动报错），不写入自签名内容。"
+        read -p "是否需要生成并写入 SSL 证书内容？(y/N): " choice
+    fi
+
+    case "$choice" in
+        [yY]|[yY][eE][sS])
+            do_update="y"
+            ;;
+        *)
+            do_update="n"
+            ;;
+    esac
+
+    if [ "$do_update" = "y" ]; then
+        echo "  正在生成并更新自签名 SSL 证书（主域名: $MAIN_DOMAIN，SAN: $SAN_LIST）..."
+        if command -v openssl >/dev/null 2>&1; then
+            openssl req -x509 -newkey rsa:2048 -keyout "$KEY_FILE" \
+                -out "$CERT_FILE" -days 365 -nodes \
+                -subj "/C=CN/O=mengya-docker/CN=$MAIN_DOMAIN" \
+                -addext "subjectAltName=$SAN_LIST" 2>/dev/null || \
+            openssl req -x509 -newkey rsa:2048 -keyout "$KEY_FILE" \
+                -out "$CERT_FILE" -days 365 -nodes \
+                -subj "/C=CN/O=mengya-docker/CN=$MAIN_DOMAIN" 2>/dev/null || true
+            echo "  ✅ SSL 证书与私钥已更新成功: $CERT_FILE"
+        else
+            echo "  [警告] 未找到 openssl 命令，无法生成证书内容，将仅保证文件存在。"
+            [ ! -f "$CERT_FILE" ] && touch "$CERT_FILE" 2>/dev/null || true
+            [ ! -f "$KEY_FILE" ] && touch "$KEY_FILE" 2>/dev/null || true
+        fi
+    else
+        echo "  保持现有证书内容不变，跳过证书更新。"
+        [ ! -f "$CERT_FILE" ] && touch "$CERT_FILE" 2>/dev/null || true
+        [ ! -f "$KEY_FILE" ] && touch "$KEY_FILE" 2>/dev/null || true
+        echo "  ✅ 证书文件状态确认: 保留已有内容（或已保证空占位文件存在）"
+    fi
+}
+
 gen_nginx_config() {
     echo "==> 生成针对宿主机 Nginx 的独立 SSL 反向代理配置 (Docker版)"
 
@@ -295,32 +366,8 @@ gen_nginx_config() {
     MAIN_DOMAIN=$(echo "$SERVER_NAME" | awk '{print $1}')
     [ -z "$MAIN_DOMAIN" ] && MAIN_DOMAIN="mengya-docker.local"
 
-    # 动态构建 OpenSSL SAN 扩展列表（遍历覆盖 SERVER_NAME 中声明的所有域名）
-    local SAN_LIST="DNS:localhost,IP:127.0.0.1"
-    for d in $SERVER_NAME; do
-        SAN_LIST="$SAN_LIST,DNS:$d"
-    done
-
     local CERT_FILE="$NGINX_CERT_DIR/mengya_docker.crt"
     local KEY_FILE="$NGINX_CERT_DIR/mengya_docker.key"
-
-    if [ ! -f "$CERT_FILE" ]; then
-        echo "  生成独立自签名 SSL 证书（主域名: $MAIN_DOMAIN，SAN: $SAN_LIST）..."
-        if command -v openssl >/dev/null 2>&1; then
-            openssl req -x509 -newkey rsa:2048 -keyout "$KEY_FILE" \
-                -out "$CERT_FILE" -days 365 -nodes \
-                -subj "/C=CN/O=mengya-docker/CN=$MAIN_DOMAIN" \
-                -addext "subjectAltName=$SAN_LIST" 2>/dev/null || \
-            openssl req -x509 -newkey rsa:2048 -keyout "$KEY_FILE" \
-                -out "$CERT_FILE" -days 365 -nodes \
-                -subj "/C=CN/O=mengya-docker/CN=$MAIN_DOMAIN" 2>/dev/null || true
-            echo "  独立证书已生成: $CERT_FILE"
-        else
-            echo "  [警告] 未找到 openssl，跳过证书生成，请手动放置证书至 $NGINX_CERT_DIR/"
-        fi
-    else
-        echo "  已存在独立 SSL 证书: $CERT_FILE（跳过重新生成）"
-    fi
 
     local REDIRECT_BLOCK=""
     if [ "$ENABLE_HTTP_REDIRECT" = "1" ] && [ "$EXTERNAL_PORT" = "443" ]; then
@@ -539,6 +586,7 @@ case "$CMD" in
         build_docker
         ;;
     add_nginx)
+        gen_ssl_cert
         gen_nginx_config
         ;;
     exec)

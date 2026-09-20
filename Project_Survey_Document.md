@@ -1308,3 +1308,24 @@ MODE 环境变量已设置 → 直接使用（校验取值）
     - 升级 `SingleSessionJWTAuthentication`：当用户的 `active_token_jti` 为空或与当前 Token JTI 不匹配时，强制触发 `ForceLogoutError`（HTTP 401，业务错误码 1003）。
     - 同步修复 `apps/core/views.py` 中的用户注册 `register` 逻辑，在注册颁发 Token 时同步存入 `active_token_jti`。
     - 将 `python manage.py invalidate_tokens` 纳入 `docker-compose.yml` 容器启动命令与 `run.sh restart` 流程中。服务一旦重启，现有登录会话全部失效，客户端下次请求即刻被踢出并跳转至登录页（附带 `kicked=1` 友好提示“您的账号已在其他设备登录或服务已重启，请重新登录”）。
+
+### 12.24 主流程 Nginx 反代配置与 SSL 证书自动集成及交互式防误覆盖改造 (REQ-24)
+- **用户诉求与需求背景**：
+  1. **主流程调用缺失**：此前 `run.sh` 中已定义 Nginx 配置文件生成函数与 SSL 证书生成逻辑，但仅在独立子命令 `add_nginx` 中调用，日常主启动流程 `start_docker`（传统版为 `start` / `restart`）未进行自动调用，导致容器启动后外部 HTTPS 443 反代配置与证书并未同步就绪，仍需手动执行 `add_nginx`。
+  2. **证书误覆盖风险**：原有 SSL 证书生成逻辑与 Nginx 配置生成耦合，且在无任何提示的情况下直接调用 OpenSSL 覆盖写入。若宿主机环境已经部署了有效的第三方商业证书或已有证书，存在被强行冲掉覆盖的隐患。
+- **排查与重构设计**：
+  1. **函数职责清晰解耦**：
+     - 将 SSL 证书生命周期管理抽取为独立的 `gen_ssl_cert()` 函数，专职负责证书目录准备、绝对路径规范化、多域名 SAN 扩展列表解析及证书/私钥文件安全校验；
+     - `gen_nginx_config()` 专职负责渲染宿主机 Nginx 反向代理配置（Docker 版写入 `/opt/service/nginx/conf.d/mengya_docker_ssl.conf`，传统版写入 `mengya_ssl.conf`），两函数职责单一独立。
+  2. **交互式防误覆盖安全机制**：
+     - 在写入/更新证书内容之前，输出当前目标证书（`$CERT_FILE`）与私钥（`$KEY_FILE`）的物理绝对路径，清晰说明当前操作对象与覆盖后果；
+     - 通过 `read -p` 询问用户：
+       - 若用户输入 `y`/`Y`/`yes`：执行原有 OpenSSL 自签名证书生成逻辑（覆盖写入证书与私钥）；
+       - 若用户输入 `n` 或直接回车（默认安全策略）：绝不改动已有文件内容；若文件物理上尚不存在，则仅执行 `touch` 生成空占位文件，保证文件物理存在以防 Nginx 配置校验或启动缺失报错。
+  3. **主流程按序补全调用**：
+     - 在 Docker 版 `start_docker()` 中，在 `cleanup_cache` 与 `check_docker_env` 之后、在容器正式启动 `$compose up -d` 之前，依次调用 `gen_ssl_cert` 与 `gen_nginx_config`；
+     - 在传统版 `run.sh` 的 `start` 与 `restart` 启动主流程中，同样在启动前后端服务前依次调用 `gen_ssl_cert` 与 `gen_nginx_config`；
+     - 子命令 `add_nginx` 同步调整为顺序调用 `gen_ssl_cert` 与 `gen_nginx_config`。
+- **验证与效果**：
+  - 两套代码的 `run.sh` 脚本均通过 `bash -n` 静态语法校验。
+  - 用户启动时自动打通 Nginx 443 SNI 反代闭环，同时具备可靠的证书防覆盖安全保护。
