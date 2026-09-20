@@ -23,7 +23,15 @@
 set -e
 
 export PATH="/usr/local/bin:/usr/bin:/bin:$PATH"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}" 2>/dev/null || echo ".")" && pwd)"
+# 若当前通过 sh / dash 启动，且系统存在 bash，自动无缝重入为 bash
+if [ -z "$BASH_VERSION" ]; then
+    if command -v bash >/dev/null 2>&1; then
+        exec bash "$0" "$@"
+    fi
+fi
+
+SCRIPT_SOURCE="${BASH_SOURCE:-$0}"
+SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_SOURCE" 2>/dev/null || echo ".")" && pwd)"
 cd "$SCRIPT_DIR"
 
 # 1. 自动环境自愈检查：若 .env 不存在，优先从 .env.example 复制初始化
@@ -62,14 +70,17 @@ resolve_abs_path() {
         echo ""
         return
     fi
-    if [[ "$target" == /* ]] || [[ "$target" =~ ^[A-Za-z]: ]]; then
-        echo "$target"
-    else
-        mkdir -p "$SCRIPT_DIR/$target" 2>/dev/null || true
-        local abs_dir
-        abs_dir="$(cd "$SCRIPT_DIR/$target" 2>/dev/null && pwd)"
-        echo "${abs_dir:-$SCRIPT_DIR/$target}"
-    fi
+    case "$target" in
+        /*|[A-Za-z]:*)
+            echo "$target"
+            ;;
+        *)
+            mkdir -p "$SCRIPT_DIR/$target" 2>/dev/null || true
+            local abs_dir
+            abs_dir="$(cd "$SCRIPT_DIR/$target" 2>/dev/null && pwd)"
+            echo "${abs_dir:-$SCRIPT_DIR/$target}"
+            ;;
+    esac
 }
 
 
@@ -310,12 +321,14 @@ gen_ssl_cert() {
     if [ -f "$CERT_FILE" ] || [ -f "$KEY_FILE" ]; then
         echo -e "\033[1;33m[提示] 检测到已存在 SSL 证书或私钥文件。\033[0m"
         echo -e "\033[1;31m[注意] 若选择更新，将重新生成自签名证书并覆盖现有文件内容（已有正式证书将被替换）！\033[0m"
-        read -p "是否需要更新 SSL 证书文件内容？(y/N): " choice
+        printf "是否需要更新 SSL 证书文件内容？(y/N): "
+        read choice
     else
         echo -e "\033[1;33m[提示] 检测到目标 SSL 证书文件尚不存在。\033[0m"
         echo "  - 选择更新(y): 将调用 OpenSSL 自动生成适用于域名 [$MAIN_DOMAIN] 的自签名证书并写入；"
         echo "  - 选择否(n): 仅保证文件存在（创建空占位文件，避免 Nginx 启动报错），不写入自签名内容。"
-        read -p "是否需要生成并写入 SSL 证书内容？(y/N): " choice
+        printf "是否需要生成并写入 SSL 证书内容？(y/N): "
+        read choice
     fi
 
     case "$choice" in
@@ -471,7 +484,7 @@ CUSTOM_ADMIN_USER=""
 CUSTOM_ADMIN_PASS=""
 CUSTOM_ADMIN_NICK=""
 CUSTOM_DOMAIN=""
-EXTRA_ARGS=()
+EXTRA_ARGS=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -479,7 +492,7 @@ while [ $# -gt 0 ]; do
             if [ -z "$CMD" ]; then
                 CMD="$1"
             else
-                EXTRA_ARGS+=("$1")
+                EXTRA_ARGS="${EXTRA_ARGS:+$EXTRA_ARGS }$1"
             fi
             shift
             ;;
@@ -509,12 +522,12 @@ while [ $# -gt 0 ]; do
             ;;
         --)
             shift
-            EXTRA_ARGS+=("$@")
+            while [ $# -gt 0 ]; do EXTRA_ARGS="${EXTRA_ARGS:+$EXTRA_ARGS }$1"; shift; done
             break
             ;;
         *)
             if [ "$CMD" = "exec" ] || [ "$CMD" = "logs" ]; then
-                EXTRA_ARGS+=("$1")
+                EXTRA_ARGS="${EXTRA_ARGS:+$EXTRA_ARGS }$1"
             else
                 echo -e "\033[1;33m[警告] 未知选项: $1\033[0m"
             fi
@@ -580,7 +593,7 @@ case "$CMD" in
         status_docker
         ;;
     logs)
-        logs_docker "${EXTRA_ARGS[@]}"
+        logs_docker $EXTRA_ARGS
         ;;
     build)
         build_docker
@@ -590,10 +603,10 @@ case "$CMD" in
         gen_nginx_config
         ;;
     exec)
-        exec_docker "${EXTRA_ARGS[@]}"
+        exec_docker $EXTRA_ARGS
         ;;
     init_data|seed)
-        init_data_docker "${EXTRA_ARGS[@]}"
+        init_data_docker $EXTRA_ARGS
         ;;
     help)
         echo ""

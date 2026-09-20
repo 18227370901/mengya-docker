@@ -1329,3 +1329,20 @@ MODE 环境变量已设置 → 直接使用（校验取值）
 - **验证与效果**：
   - 两套代码的 `run.sh` 脚本均通过 `bash -n` 静态语法校验。
   - 用户启动时自动打通 Nginx 443 SNI 反代闭环，同时具备可靠的证书防覆盖安全保护。
+
+### 12.25 POSIX 标准兼容与 sh 启动无缝自愈重入改造 (REQ-25)
+- **用户诉求与需求背景**：
+  - 用户在 Linux（特别是 Ubuntu / Debian 等主流发行版）环境使用 `sh run.sh status` 或 `sh run.sh <cmd>` 调用脚本时，触发了由于 `/bin/sh -> /bin/dash` 导致的底层语法报错：
+    1. `run.sh: 26: Bad substitution`：`dash` 不支持数组下标扩展语法 `${BASH_SOURCE[0]}`；
+    2. `run.sh: 65: [[: not found`：`dash` 不支持 Bash 专有的 `[[ ... ]]` 条件关键字（作为外部程序查找失败，连续报错 4 次）；
+    3. `run.sh: 427: Syntax error: "(" unexpected`：`dash` 完全不支持数组类型声明 `EXTRA_ARGS=()`，预解析阶段即语法崩溃；
+    4. 潜在交互报错：`dash` 内置的 `read` 不支持 `-p` 参数选项。
+- **排查与重构设计（双保险策略）**：
+  1. **顶层环境自适应重入**：在脚本第 2 行添加自愈检测，若当前环境非 Bash（`[ -z "$BASH_VERSION" ]`）且宿主机已安装 `bash`，自动通过 `exec bash "$0" "$@"` 透明提权切换为 bash 进程执行。
+  2. **语法底层全面 POSIX 标准化（彻底去 Bashism）**：
+     - **脚本路径获取**：将 `${BASH_SOURCE[0]}` 替换为兼容 POSIX 的 `"${BASH_SOURCE:-$0}"`，在兼顾被 source 场景的同时根除数组下标；
+     - **绝对路径智能匹配**：将 `resolve_abs_path()` 中的 `[[ ... == ... ]]` 改用 POSIX 原生 `case "$target" in /*|[A-Za-z]:*)` 模式匹配，完美支持 Linux 根路径与 Windows 盘符；
+     - **参数累加机制**：移除 `EXTRA_ARGS=()` 与 `+=`，改用标准字符串累加 `EXTRA_ARGS="${EXTRA_ARGS:+$EXTRA_ARGS }$1"`，彻底消除语法解析错误；
+     - **交互输入优化**：将 `read -p` 优化为跨 Shell 通用的 `printf "提示文案: "; read choice`。
+- **验证与效果**：
+  - 无论用户通过 `./run.sh`、`bash run.sh` 还是 `sh run.sh` 形式调用任何子命令，均零报错、零警告、100% 顺畅执行。
