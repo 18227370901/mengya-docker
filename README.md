@@ -107,6 +107,10 @@
 | `-n` | `--nickname` | `管理员` | 自定义超级管理员前台展示称谓（自动持久化写入 `.env` 的 `ADMIN_NICKNAME`） |
 | `-d` | `--domain` | `mengya-docker.local` | 自定义 Nginx 反代 SNI 域名（自动持久化写入 `.env` 的 `SERVER_NAME`） |
 
+### Nginx 反代路径智能绝对化与多域名 SAN 支持
+- **权威域名以 `SERVER_NAME` 为准**：通过 `-d / --domain` 自定义 SNI 域名，完整生效至 Nginx 配置中；自动提取首个域名为主域名用于证书 CN，并自动遍历所有域名写入 OpenSSL SAN 扩展列表，多域名访问全兼容。
+- **证书路径智能自动绝对化**：无论在 `.env` 或脚本中配置 `NGINX_CERT_DIR="./nginx/ssl"` 相对路径还是 `/opt/service/nginx/ssl` 绝对路径，脚本在生成配置时均自动基于项目目录规范化为物理绝对路径，彻底杜绝 Nginx 因相对路径寻找证书失败而崩溃。
+
 ### 容器编排规范与环境自愈加固
 - **Compose Spec 现代标准**：完全移除 `docker-compose.yml` 中过时的 `version: "3.9"` 声明，符合 Compose Specification 最新标准，杜绝 `the attribute 'version' is obsolete` 弃用告警。
 - **环境配置自动愈合**：`run.sh` 启动前检测若无 `.env` 文件，自动从 `.env.example` 模版克隆初始化；`docker-compose.yml` 中声明 `path: .env, required: false`，彻底根除 `env file .env not found` 导致的容器启动失败异常。

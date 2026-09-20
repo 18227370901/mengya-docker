@@ -55,6 +55,23 @@ update_env_var() {
         fi
     fi
 }
+# 智能规范化路径为绝对物理路径（避免相对路径导致 Nginx 基于 Prefix 错误寻址）
+resolve_abs_path() {
+    local target="$1"
+    if [ -z "$target" ]; then
+        echo ""
+        return
+    fi
+    if [[ "$target" == /* ]] || [[ "$target" =~ ^[A-Za-z]: ]]; then
+        echo "$target"
+    else
+        mkdir -p "$SCRIPT_DIR/$target" 2>/dev/null || true
+        local abs_dir
+        abs_dir="$(cd "$SCRIPT_DIR/$target" 2>/dev/null && pwd)"
+        echo "${abs_dir:-$SCRIPT_DIR/$target}"
+    fi
+}
+
 
 # 外部访问端口与域名设置（与传统版完全隔离）
 PORT="${PORT:-${EXTERNAL_PORT:-443}}"
@@ -67,8 +84,8 @@ ADMIN_PHONE="${ADMIN_PHONE:-$ADMIN_USERNAME}"
 ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin123}"
 ADMIN_NICKNAME="${ADMIN_NICKNAME:-管理员}"
 
-NGINX_CONF_DIR="${NGINX_CONF_DIR:-/opt/service/nginx/conf.d}"
-NGINX_CERT_DIR="${NGINX_CERT_DIR:-/opt/service/nginx/ssl}"
+NGINX_CONF_DIR=$(resolve_abs_path "${NGINX_CONF_DIR:-/opt/service/nginx/conf.d}")
+NGINX_CERT_DIR=$(resolve_abs_path "${NGINX_CERT_DIR:-/opt/service/nginx/ssl}")
 NGINX_CONF="$NGINX_CONF_DIR/mengya_docker_ssl.conf"
 ENABLE_HTTP_REDIRECT="${ENABLE_HTTP_REDIRECT:-1}"
 
@@ -174,13 +191,13 @@ start_docker() {
     echo "  统一访问地址: http://localhost:$FRONTEND_PORT/ (已映射宿主机端口)"
     echo "  管理员账号:   $ADMIN_USERNAME"
     echo "  管理员密码:   $ADMIN_PASSWORD (容器启动自动 ensure_admin 同步)"
-    local PRIMARY_DOMAIN
-    PRIMARY_DOMAIN=$(echo "$SERVER_NAME" | awk '{print $1}')
-    [ -z "$PRIMARY_DOMAIN" ] && PRIMARY_DOMAIN="mengya-docker.local"
-    echo "  Nginx SNI 域名: $PRIMARY_DOMAIN"
+    local MAIN_DOMAIN
+    MAIN_DOMAIN=$(echo "$SERVER_NAME" | awk '{print $1}')
+    [ -z "$MAIN_DOMAIN" ] && MAIN_DOMAIN="mengya-docker.local"
+    echo "  Nginx SNI 匹配域名: $SERVER_NAME"
     if [ -f "$NGINX_CONF" ]; then
         echo "  Nginx 反代状态: 已配置 ($NGINX_CONF -> 443 端口)"
-        echo "  统一访问入口: https://$PRIMARY_DOMAIN/ (与传统版共存，零冲突)"
+        echo "  统一访问入口: https://$MAIN_DOMAIN/ (与传统版共存，零冲突)"
     else
         echo "  Nginx 反代状态: 尚未生成，可按需执行 ./run.sh add_nginx 生成"
     fi
@@ -258,25 +275,38 @@ build_docker() {
 
 gen_nginx_config() {
     echo "==> 生成针对宿主机 Nginx 的独立 SSL 反向代理配置 (Docker版)"
+
+    # 确保证书目录与配置目录均为物理绝对路径（彻底避免相对路径导致 Nginx 寻址失败）
+    NGINX_CONF_DIR=$(resolve_abs_path "$NGINX_CONF_DIR")
+    NGINX_CERT_DIR=$(resolve_abs_path "$NGINX_CERT_DIR")
+    NGINX_CONF="$NGINX_CONF_DIR/mengya_docker_ssl.conf"
+
     mkdir -p "$NGINX_CONF_DIR" "$NGINX_CERT_DIR"
 
-    local PRIMARY_DOMAIN
-    PRIMARY_DOMAIN=$(echo "$SERVER_NAME" | awk '{print $1}')
-    [ -z "$PRIMARY_DOMAIN" ] && PRIMARY_DOMAIN="mengya-docker.local"
+    # 主域名用于 OpenSSL 证书 CN 与控制台访问链接展示（以 SERVER_NAME 配置为准）
+    local MAIN_DOMAIN
+    MAIN_DOMAIN=$(echo "$SERVER_NAME" | awk '{print $1}')
+    [ -z "$MAIN_DOMAIN" ] && MAIN_DOMAIN="mengya-docker.local"
+
+    # 动态构建 OpenSSL SAN 扩展列表（遍历覆盖 SERVER_NAME 中声明的所有域名）
+    local SAN_LIST="DNS:localhost,IP:127.0.0.1"
+    for d in $SERVER_NAME; do
+        SAN_LIST="$SAN_LIST,DNS:$d"
+    done
 
     local CERT_FILE="$NGINX_CERT_DIR/mengya_docker.crt"
     local KEY_FILE="$NGINX_CERT_DIR/mengya_docker.key"
 
     if [ ! -f "$CERT_FILE" ]; then
-        echo "  生成独立自签名 SSL 证书（SNI 域名: $PRIMARY_DOMAIN）..."
+        echo "  生成独立自签名 SSL 证书（主域名: $MAIN_DOMAIN，SAN: $SAN_LIST）..."
         if command -v openssl >/dev/null 2>&1; then
             openssl req -x509 -newkey rsa:2048 -keyout "$KEY_FILE" \
                 -out "$CERT_FILE" -days 365 -nodes \
-                -subj "/C=CN/O=mengya-docker/CN=$PRIMARY_DOMAIN" \
-                -addext "subjectAltName=DNS:$PRIMARY_DOMAIN,DNS:localhost,IP:127.0.0.1" 2>/dev/null || \
+                -subj "/C=CN/O=mengya-docker/CN=$MAIN_DOMAIN" \
+                -addext "subjectAltName=$SAN_LIST" 2>/dev/null || \
             openssl req -x509 -newkey rsa:2048 -keyout "$KEY_FILE" \
                 -out "$CERT_FILE" -days 365 -nodes \
-                -subj "/C=CN/O=mengya-docker/CN=$PRIMARY_DOMAIN" 2>/dev/null || true
+                -subj "/C=CN/O=mengya-docker/CN=$MAIN_DOMAIN" 2>/dev/null || true
             echo "  独立证书已生成: $CERT_FILE"
         else
             echo "  [警告] 未找到 openssl，跳过证书生成，请手动放置证书至 $NGINX_CERT_DIR/"
@@ -288,7 +318,7 @@ gen_nginx_config() {
     local REDIRECT_BLOCK=""
     if [ "$ENABLE_HTTP_REDIRECT" = "1" ] && [ "$EXTERNAL_PORT" = "443" ]; then
         REDIRECT_BLOCK="
-# HTTP 80 自动重定向到 HTTPS 443（仅匹配 $SERVER_NAME，不干扰其他站点）
+# HTTP 80 自动重定向到 HTTPS 443（仅匹配 SERVER_NAME: $SERVER_NAME，不干扰其他站点）
 server {
     listen 80;
     listen [::]:80;
@@ -304,7 +334,7 @@ server {
 # 萌芽平台 (Docker 版) - 宿主机 Nginx HTTPS (SNI 443) 反向代理配置
 # 配置文件: $NGINX_CONF (独立命名，绝不覆盖传统版 mengya_ssl.conf)
 # 访问端口: $EXTERNAL_PORT (HTTPS 标准端口，通过 SNI 域名识别)
-# 匹配域名: $SERVER_NAME (与传统版域名隔离)
+# 匹配域名: $SERVER_NAME (以 SERVER_NAME 配置为准，与传统版隔离)
 # 后端反代: http://127.0.0.1:$FRONTEND_PORT (Docker 映射端口)
 # 自动生成时间: $(date '+%Y-%m-%d %H:%M:%S')
 # ============================================================
@@ -314,7 +344,7 @@ server {
     listen [::]:$EXTERNAL_PORT ssl;
     server_name $SERVER_NAME;
 
-    # 独立 SSL 证书与私钥
+    # 独立 SSL 证书与私钥 (物理绝对路径，保障 Nginx 稳定加载)
     ssl_certificate     $CERT_FILE;
     ssl_certificate_key $KEY_FILE;
     ssl_protocols       TLSv1.2 TLSv1.3;
@@ -354,7 +384,9 @@ server {
 EOF
 
     echo "  配置文件已生成: $NGINX_CONF"
-    echo "  配置优势: 与传统版完全隔离，通过 SNI 域名 ($PRIMARY_DOMAIN) 共享 443 端口！"
+    echo "  SSL 证书路径:   $CERT_FILE"
+    echo "  SNI 匹配域名:   $SERVER_NAME (以 SERVER_NAME 为准，主域名: $MAIN_DOMAIN)"
+    echo "  配置优势: 与传统版完全隔离，通过 SNI 域名 ($SERVER_NAME) 共享 443 端口！"
     echo "  请执行 'nginx -t && nginx -s reload' 加载新配置。"
 }
 
