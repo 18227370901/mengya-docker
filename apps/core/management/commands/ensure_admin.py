@@ -1,4 +1,4 @@
-"""确保单一管理员账号存在 —— 启动时自动创建或更新管理员，清理历史管理员
+"""确保单一管理员账号存在 —— 启动时自动创建或更新管理员，清理历史管理员与预置占位账号，并保护所有正常注册普通用户
 
 用法：
   python manage.py ensure_admin
@@ -19,7 +19,7 @@ User = get_user_model()
 
 
 class Command(BaseCommand):
-    help = "确保单一管理员账号存在，清理历史管理员账号，并保护所有普通用户账号"
+    help = "确保单一管理员账号存在，清理历史管理员与预置占位账号，并保护所有正常注册普通用户"
 
     def handle(self, *args, **options):
         account = (os.getenv("ADMIN_USERNAME") or "admin").strip()
@@ -35,8 +35,10 @@ class Command(BaseCommand):
         if target_admin:
             # 用户已存在：确保其为管理员并更新密码与权限
             target_admin.username = account
-            # 若 phone 变更，先检查是否有其他用户占用
-            if target_admin.phone != account:
+            # 若历史遗留 phone 仍为 13800000000 且当前目标配置并非 13800000000，更新为 account
+            if target_admin.phone == "13800000000" and account != "13800000000":
+                target_admin.phone = account
+            elif target_admin.phone != account:
                 conflict = User.objects.filter(phone__iexact=account).exclude(pk=target_admin.pk).first()
                 if conflict:
                     if conflict.is_staff or conflict.is_superuser:
@@ -81,7 +83,7 @@ class Command(BaseCommand):
                 self.style.SUCCESS(f"管理员账号已创建：{account}（昵称：{nickname}）")
             )
 
-        # 2. 清理历史管理员账号（严格保留当前唯一管理员 target_admin）
+        # 2. 清理其他历史管理员账号（严格保留当前唯一管理员 target_admin）
         # 注意：普通用户（is_staff=False 且 is_superuser=False）绝不清理！
         old_admins = User.objects.filter(
             models.Q(is_staff=True) | models.Q(is_superuser=True)
@@ -103,11 +105,29 @@ class Command(BaseCommand):
                 self.style.WARNING(f"已清理历史管理员账号 {deleted_count} 个：{formatted_names}")
             )
 
-        # 3. 统计并输出普通用户保护状态
+        # 3. 清理历史遗留预置占位账号（13800000000 与 demo_user / 13800138000）
+        legacy_placeholders = User.objects.filter(
+            models.Q(username__in=["13800000000", "demo_user"]) |
+            models.Q(phone__in=["13800000000", "13800138000"])
+        ).exclude(pk=target_admin.pk)
+
+        if legacy_placeholders.exists():
+            try:
+                from apps.core.models.baby import BabyProfile
+                for p in legacy_placeholders:
+                    BabyProfile.objects.filter(user=p).delete()
+            except Exception:
+                pass
+            del_count, _ = legacy_placeholders.delete()
+            self.stdout.write(
+                self.style.WARNING(f"已清理历史预置占位账号 {del_count} 个 (13800000000 / 13800138000)")
+            )
+
+        # 4. 统计并输出普通用户保护状态
         normal_user_count = User.objects.filter(is_staff=False, is_superuser=False).count()
         self.stdout.write(
             self.style.SUCCESS(f"当前系统唯一管理员：{target_admin.username}（登录账号: {target_admin.phone}）")
         )
         self.stdout.write(
-            f"所有普通用户账号（共 {normal_user_count} 个）已完整保留，未受任何修改或影响。"
+            f"所有已正常注册的普通用户账号（共 {normal_user_count} 个）已完整保留，未受任何修改或影响。"
         )

@@ -810,7 +810,7 @@ case "$CMD" in
         echo ""
         echo "常用自定义选项（支持在 start / restart / add_nginx 时追加，自动持久化至 .env）："
         echo "  -p, --port <PORT>            自定义前端访问端口（默认 5174）"
-        echo "  -u, --admin <USER>           自定义超级管理员账号/手机号（默认 admin / 13800000000）"
+        echo "  -u, --admin <USER>           自定义超级管理员账号/手机号（默认 admin）"
         echo "  -P, --password <PASS>        自定义超级管理员登录密码（默认 admin123）"
         echo "  -n, --nickname <NAME>        自定义管理员昵称（默认 管理员）"
         echo "  -d, --domain <DOMAIN>        自定义绑定的 SNI 域名（默认 mengya-docker.local）"

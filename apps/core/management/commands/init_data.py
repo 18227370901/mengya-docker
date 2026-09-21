@@ -11,7 +11,7 @@ import os
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
-from django.db import connection, transaction
+from django.db import connection, models, transaction
 
 from apps.core.models import (
     BabyProfile,
@@ -82,8 +82,8 @@ class Command(BaseCommand):
             # 8. 系统全局设置 SystemSetting
             self._ensure_system_setting(by_model.get("core.systemsetting", []))
 
-            # 9. 演示用户与测试宝宝档案
-            self._ensure_demo_user_and_baby(by_model.get("core.user", []), by_model.get("core.babyprofile", []))
+            # 9. 物理清理历史预置演示账号与测试宝宝档案（消除默认密码安全隐患）
+            self._cleanup_legacy_demo_users()
 
         # 10. 重置 PostgreSQL 自增序列
         self._reset_db_sequences()
@@ -207,31 +207,15 @@ class Command(BaseCommand):
             SystemSetting.objects.create(registration_mode="open")
             self.stdout.write(self.style.SUCCESS("  [就绪] 系统全局默认设置创建完成"))
 
-    def _ensure_demo_user_and_baby(self, user_items, baby_items):
-        demo_user = User.objects.filter(username="demo_user").first()
-        if not demo_user:
-            demo_user = User.objects.create_user(
-                phone="13800138000",
-                username="demo_user",
-                password="user123",
-                nickname="萌芽测试家庭",
-                role="mother",
-                is_staff=False,
-                is_superuser=False,
-                is_active=True,
-            )
-            self.stdout.write(self.style.SUCCESS("  [就绪] 演示账号 demo_user 创建完成 (密码: user123)"))
-
-        if demo_user and not BabyProfile.objects.filter(user=demo_user).exists():
-            BabyProfile.objects.create(
-                user=demo_user,
-                name="小萌芽",
-                gender="unknown",
-                birthday="2026-12-31",
-                is_primary=True,
-                note="开箱演示宝宝档案",
-            )
-            self.stdout.write(self.style.SUCCESS("  [就绪] 演示家庭宝宝档案创建完成 (小萌芽)"))
+    def _cleanup_legacy_demo_users(self):
+        legacy_demos = User.objects.filter(
+            models.Q(username="demo_user") | models.Q(phone="13800138000")
+        )
+        if legacy_demos.exists():
+            for demo in legacy_demos:
+                BabyProfile.objects.filter(user=demo).delete()
+            del_count, _ = legacy_demos.delete()
+            self.stdout.write(self.style.WARNING(f"  [安全收敛] 已物理清除历史预置演示账号 {del_count} 个 (demo_user/13800138000)"))
 
     def _reset_db_sequences(self):
         try:
