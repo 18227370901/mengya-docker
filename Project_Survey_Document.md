@@ -589,11 +589,15 @@ MODE 环境变量已设置 → 直接使用（校验取值）
 - `docker-compose.yml` 中所有镜像均支持环境变量覆盖（`${VAR:-默认值}` 语法），数据库默认 `pgvector/pgvector:pg18`。
 - Docker 本身行为：**本地已有同名镜像会直接复用，不重复拉取**；`run.sh` 启动前通过 `docker image inspect` 探测并打印「已存在本地，直接复用」或「不存在，启动时拉取」。
 - 数据库镜像选择优先级（`choose_db_image()`）：
-  1. `DB_IMAGE` 环境变量强制指定
-  2. 本地已存在 `pgvector/pgvector:pg18` → 复用
-  3. 本地已存在 `postgres:15-alpine` → 复用（兼容旧数据卷）
-  4. 均不存在 → 默认 `pgvector/pgvector:pg18`（启动时拉取）
-- 注意：`pgvector/pgvector:pg18` 与 `postgres:15-alpine` **数据目录不兼容**，切换镜像后旧数据卷需重建/重新初始化。
+  1. `DB_IMAGE` 环境变量/命令行选项强制指定（存在则复用并置 pull_policy=never，不存在则启动拉取）
+  2. 本地已存在 `pgvector/pgvector:pg18` → 直接复用（设置 DB_PULL_POLICY="never"，严格禁止联网拉取）
+  3. 本地已存在 `postgres:15-alpine` → 直接复用（设置 DB_PULL_POLICY="never"，兼容旧数据卷）
+  4. 均不存在 → 默认 `pgvector/pgvector:pg18`（启动时自动拉取）
+- **数据兼容与迁移保障**：
+  - `pgvector/pgvector:pg18` 与 `postgres:15-alpine` 的磁盘存储格式不兼容；
+  - 挂载点通过 `DB_DATA_DIR` 智能动态适配（PG18 为 `/var/lib/postgresql`，PG15 兼容 `/var/lib/postgresql/data`）；
+  - 提供 `./run.sh db_backup` 与 `./run.sh db_restore` 跨版本通用数据导出导入能力；
+  - 若无需历史数据，执行 `docker compose down -v` 清空旧卷后重启，系统自动全新初始化全量样例数据。
 
 #### ② 可选服务控制（compose profiles）
 
@@ -1376,3 +1380,51 @@ MODE 环境变量已设置 → 直接使用（校验取值）
     - **内存开销骤降**：整站常驻物理内存由原先的 ~400MB-600MB+ 降至 **~120MB-150MB**，内存占用降低 75% 以上，彻底根除了 Node.js 常驻导致的内存泄露与 OOM 隐患；
     - **网络延迟降低**：前端调用后端 API（`/api/...`）无需再经过 Vite 开发服务器的 proxy 转发，直接在 Django 原生处理，接口调用性能显著提升；
     - **零功能丢失**：全量 29 个前端业务页面、971 条脱敏业务数据、自动数据迁移与超级管理员账号同步完全保留并稳定运行。
+
+
+### 12.27 修复服务器已有数据库镜像复用、跨大版本数据平滑迁移兼容与前端一体化空白页面排查修复 (REQ-27)
+- **用户诉求与问题现象**：
+  1. **已有镜像重复创建/拉取问题**：服务器上已经提前存在 `pgvector/pgvector:pg18` 镜像，但执行 `./run.sh` 脚本启动时，Docker 依然会自动联网拉取或创建新的镜像层。要求必须直接复用服务器本地已有的 PG 镜像。
+  2. **数据库切换与历史数据迁移同步问题**：用户特别提醒，在切换不同版本的数据库镜像时，必须充分考虑到原有数据的迁移与同步问题，杜绝因存储格式不兼容导致历史数据丢失或数据库服务崩溃。
+  3. **服务启动后前端页面空白且无任何接口请求**：Docker 容器拉起后，通过浏览器访问一体化端口（`http://<IP>:5174/`），页面呈现纯白屏，浏览器控制台与 Network 面板中没有任何后端 `/api` 接口请求发出。
+- **根本原因深入排查分析**：
+  1. **已有数据库镜像重复拉取根因**：
+     - 原 `run.sh` 脚本中未实现 PSD 规划的 `image_exists()` 与 `choose_db_image()` 函数，启动前未探测服务器本地 Docker 镜像仓库状态，也未向 Compose 环境导出 `DB_IMAGE` 与拉取策略；
+     - `docker-compose.yml` 中 `db` 服务的配置缺少 `pull_policy` 限制（默认行为在某些 Compose 版本或网络环境下会尝试联系 Docker Hub 校验 digest，引发超时或拉取动作）。
+  2. **数据库跨版本切换数据不兼容机理**：
+     - PostgreSQL 底层数据目录（`PG_VERSION` 及数据簇结构）具有强版本锁定特性。PG15 与 PG18 的磁盘文件格式不兼容；
+     - PostgreSQL 18 官方/pgvector 镜像要求将数据卷挂载到父目录 `/var/lib/postgresql`（若仍挂载 `/var/lib/postgresql/data` 会判定为无效挂载而拒绝启动 exited 1）；而 PG15 默认挂载于 `/var/lib/postgresql/data`；
+     - 若用户直接切换 `DB_IMAGE` 并在已有旧数据卷上启动，数据库会因数据不兼容无法启动或报错退出，从而导致依赖它的 `backend` 容器健康检查超时失败。
+  3. **前端页面白屏且无接口请求根因**：
+     - 在前序提交 `796b906` 中，前端已合并打包为静态资源并集成到 Django 中；
+     - 但 `docker-compose.yml` 中 `backend` 与 `worker` 的数据卷挂载配置中仅挂载了 `./apps`、`./config`、`./manage.py`，**漏掉了 `./templates` 与 `./static` 的宿主机挂载**；
+     - 当代码更新同步至服务器后，若服务器未显式执行 `--build` 重新构建后端镜像，Docker 将继续复用旧的后端镜像。而旧镜像内部根本不存在 `/app/templates/index.html` 和 `/app/static/assets/` 静态产物；
+     - 浏览器请求 `/` 页面时，虽然能获取到 HTML，但紧接着加载的核心 JS 脚本 `/assets/index-Csjd7_MT.js` 返回 404 错误。React 根实例因脚本加载失败而无法初始化，`<div id="root"></div>` 保持空白；由于 React 脚本从未真正运行，因此页面完全没有任何后续的后端 API 接口请求发起。
+- **系统性解决方案与落地改造**：
+  1. **数据库镜像智能复用与 pull_policy=never 强锁定**：
+     - 在 `run.sh` 中落地实现 `image_exists()` 探测机制；
+     - 实现 `choose_db_image()`：
+       - 优先检测环境变量 `DB_IMAGE`（或通过 `--db-image` 命令行参数指定），本地存在则设 `DB_PULL_POLICY="never"`，否则设 `missing`；
+       - 若未指定，优先探测本地是否存在 `pgvector/pgvector:pg18`。命中则直接锁定复用，并将 `DB_PULL_POLICY` 强制设为 `never`，彻底切断对外部 Docker Hub 的网络依赖；
+       - 其次探测本地是否存在 `postgres:15-alpine`，命中则同样复用；
+       - 均不存在时才默认 `pgvector/pgvector:pg18` 并设 `DB_PULL_POLICY="missing"`。
+     - 在 `docker-compose.yml` 的 `db` 服务中显式声明 `pull_policy: ${DB_PULL_POLICY:-missing}`，从编排底层强制杜绝重复拉取。
+  2. **数据卷挂载路径智能自适应与跨大版本数据平滑迁移同步方案**：
+     - **动态挂载目录适配**：`docker-compose.yml` 中采用 `pgdata:${DB_DATA_DIR:-/var/lib/postgresql}`。在 `run.sh` 中根据镜像版本自动判断：PG18 及以上镜像指向 `/var/lib/postgresql`，PG15 及旧版兼容 `/var/lib/postgresql/data`；
+     - **启动前数据卷版本兼容性预检**：新增 `check_db_volume_compatibility()`，若检测到宿主机已存在历史 `pgdata` 卷且正在使用 PG18 镜像，主动打印高亮数据兼容性说明与迁移指引；
+     - **启动后数据库异常退出快速探活与精准诊断**：在 `start_docker()` 中执行 `docker inspect` 快速探活 `mengya_db`。一旦发现容器因版本冲突（如 `incompatible data directory`、`pg_ctlcluster` 错误）异常退出，立即截取近 25 行日志并输出清晰的根因诊断与 A/B 解决方案，避免长时间盲目等待容器健康检查；
+     - **内置跨版本/跨引擎通用数据备份与恢复命令**：
+       - `./run.sh db_backup [文件]`：调用 Django `dumpdata` 导出业务对象为结构化 JSON 数据包（由于采用 ORM 逻辑层导出，彻底解耦了底层数据库引擎与存储大版本，可在 SQLite / PG15 / PG18 之间无损导入），同时在极端情况下自动回退使用 `pg_dump` 导出原生 SQL；
+       - `./run.sh db_restore <文件>`：智能识别 `.json`（调用 `loaddata`）与 `.sql`（调用 `psql`），一键完成数据恢复入库；
+       - **全新安装与自愈机制**：对于测试或无需保留旧数据的环境，只需执行 `docker compose down -v` 清空旧卷，`./run.sh start` 会自动全新建表并装载 971 条全模块基础样例数据与管理员账号。
+  3. **前端一体化静态资源穿透挂载与白屏问题彻底根除**：
+     - **编排卷双向穿透**：在 `docker-compose.yml` 的 `backend` 与 `worker` 服务中完整补齐挂载：
+       `- ./templates:/app/templates`
+       `- ./static:/app/static`
+       使得宿主机 Git 仓库中包含的前端静态产物（`index.html`、`assets/`、`fetal-stories/`）能够以物理卷方式直通容器内部。即使未重新构建后端镜像，容器内 Django 亦可第一时间实时感知并返回最新的前端静态文件，彻底解决 404 引发的白屏问题；
+     - **清理历史残留孤儿容器**：`run.sh start` 与 `stop` 中统一追加 `--remove-orphans`，确保旧版本遗留的独立 `mengya_frontend` 容器在服务启动时被自动优雅清理，杜绝端口冲突或旧版反向代理劫持；
+     - **多阶段构建 Dockerfile 精简**：优化 `Dockerfile`，移除重复冗余的静态资源拷贝行，确保构建镜像时产物干净规范。
+- **验证与效果评估**：
+  - 本地与服务器端调用 `./run.sh start` 时，精准检测到已存在的 `pgvector/pgvector:pg18`，终端提示 `检测到服务器本地已存在 pgvector/pgvector:pg18 镜像，直接复用本地镜像（pull_policy: never）`，零网络耗时、零重复镜像创建；
+  - 访问 `http://<IP>:5174/`，前端页面瞬间加载就绪，`index-Csjd7_MT.js` 与 `index-Bzw05dMi.css` 均返回 HTTP 200，React 成功渲染登录界面与首页，后端 API 请求（`/api/auth/registration-mode/` 等）正常触发并交互；
+  - 提供了完整的数据库数据备份（`./run.sh db_backup`）与恢复（`./run.sh db_restore`）链路，跨版本切换数据库平稳可靠。

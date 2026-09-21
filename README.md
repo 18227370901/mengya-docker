@@ -83,10 +83,23 @@
 # 6. 检查并补充初始化全量样例数据（食谱/胎教故事/周历/百科/清单/商品/品牌）
 ./run.sh init_data
 
-# 7. 安全停止服务并释放容器网络资源
+# 7. 导出数据库数据备份（跨版本/跨引擎通用结构化 JSON，支持 SQLite / PG15 / PG18 无缝流转）
+./run.sh db_backup                          # 默认生成 mengya_data_backup_YYYYMMDD_HHMMSS.json
+./run.sh db_backup my_data.json             # 自定义备份文件名
+
+# 8. 导入恢复数据库数据备份（支持 .json 结构化数据或 .sql 原生转储）
+./run.sh db_restore my_data.json
+
+# 9. 强制重新构建并启动容器（修改 Dockerfile 或前端/后端依赖时）
+./run.sh start -b                            # 或 ./run.sh start --build
+
+# 10. 指定特定数据库镜像启动（自动持久化写入 .env）
+./run.sh start --db-image pgvector/pgvector:pg18
+
+# 11. 安全停止服务并释放容器网络资源（自动清理孤儿容器）
 ./run.sh stop
 
-# 7. 手动重新构建容器镜像（仅在修改 Dockerfile 或依赖时显式调用）
+# 12. 手动重新构建容器镜像
 ./run.sh build
 
 # 8. 向宿主机 /opt/service/nginx/conf.d 写入独立 SSL 反代配置（与传统版零冲突）
@@ -108,10 +121,46 @@
 | `-P` | `--password` | `admin123` | 自定义超级管理员登录密码（自动持久化写入 `.env` 的 `ADMIN_PASSWORD`） |
 | `-n` | `--nickname` | `管理员` | 自定义超级管理员前台展示称谓（自动持久化写入 `.env` 的 `ADMIN_NICKNAME`） |
 | `-d` | `--domain` | `mengya-docker.local` | 自定义 Nginx 反代 SNI 域名（自动持久化写入 `.env` 的 `SERVER_NAME`） |
+| `-b` | `--build` | - | 启动时强制重新构建容器镜像（等价于 `docker compose up -d --build`） |
+| - | `--db-image` | `pgvector/pgvector:pg18` | 指定数据库镜像版本（自动持久化写入 `.env` 的 `DB_IMAGE`） |
 
 ### Nginx 反代路径智能绝对化与多域名 SAN 支持
 - **权威域名以 `SERVER_NAME` 为准**：通过 `-d / --domain` 自定义 SNI 域名，完整生效至 Nginx 配置中；自动提取首个域名为主域名用于证书 CN，并自动遍历所有域名写入 OpenSSL SAN 扩展列表，多域名访问全兼容。
 - **证书路径智能自动绝对化**：无论在 `.env` 或脚本中配置 `NGINX_CERT_DIR="./nginx/ssl"` 相对路径还是 `/opt/service/nginx/ssl` 绝对路径，脚本在生成配置时均自动基于项目目录规范化为物理绝对路径，彻底杜绝 Nginx 因相对路径寻找证书失败而崩溃。
+
+
+
+### 数据库镜像自动探测复用与跨版本数据平滑迁移同步
+
+**1. 镜像就地复用与拉取策略优化**：
+- **服务器已有镜像优先复用**：`run.sh` 启动前自动执行 `choose_db_image` 探测本地镜像。若服务器已存在 `pgvector/pgvector:pg18`，自动将其设置为目标镜像，并将 Compose 拉取策略锁定为 `DB_PULL_POLICY="never"`，从底层彻底杜绝 Docker 连网请求 Docker Hub 导致重复拉取或产生虚悬层。
+- **历史镜像向下兼容**：若本地仅有 `postgres:15-alpine`，系统自动优先复用并适配旧版数据卷。
+
+**2. 跨大版本（如 PG15 ↔ PG18）数据迁移与同步方案**：
+PostgreSQL 跨大版本时，磁盘底层物理文件格式互不兼容；且 PostgreSQL 18+ 镜像强制要求将数据卷挂载至父目录 `/var/lib/postgresql`（PG15 为 `/var/lib/postgresql/data`）。系统通过 `DB_DATA_DIR` 环境变量实现挂载目录自动适配。
+
+若需要在不同 PostgreSQL 大版本之间切换并**保留历史业务数据**，请遵循以下平滑迁移流程：
+```bash
+# 第一步：启动原数据库镜像（以 PG15 为例）
+DB_IMAGE=postgres:15-alpine ./run.sh start
+
+# 第二步：导出业务数据备份（基于 Django ORM 逻辑结构导出，跨大版本与跨数据库引擎完全通用）
+./run.sh db_backup migration_data.json
+
+# 第三步：停止服务并彻底释放旧版本数据卷
+docker compose down -v
+
+# 第四步：切换至新数据库镜像并启动（系统将基于新版本数据格式全新初始化）
+./run.sh start --db-image pgvector/pgvector:pg18
+
+# 第五步：将备份数据平滑恢复导入至新数据库中
+./run.sh db_restore migration_data.json
+```
+> 💡 **全新环境说明**：若是全新部署或测试环境无需保留旧数据，直接执行 `docker compose down -v` 清空旧数据卷后执行 `./run.sh start`，系统将自动完成数据迁移并初始化 971 条全量脱敏样例数据与超级管理员。
+
+**3. 前端一体化静态资源穿透与白屏防护**：
+- `docker-compose.yml` 中 `backend` 与 `worker` 服务实时挂载宿主机 `./templates:/app/templates` 与 `./static:/app/static`。
+- 保证宿主机更新的前端打包产物（`index.html`、`assets/`、`fetal-stories/`）以物理卷直通后端容器，杜绝因镜像构建缓存缺失静态文件引发的 HTTP 404 与前端空白页。
 
 ### 容器编排规范与环境自愈加固
 - **Compose Spec 现代标准**：完全移除 `docker-compose.yml` 中过时的 `version: "3.9"` 声明，符合 Compose Specification 最新标准，杜绝 `the attribute 'version' is obsolete` 弃用告警。

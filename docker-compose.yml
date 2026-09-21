@@ -18,6 +18,7 @@ services:
   db:
     # 默认使用 pgvector 镜像（支持向量检索，方便后续 AI 功能扩展）
     image: ${DB_IMAGE:-pgvector/pgvector:pg18}
+    pull_policy: ${DB_PULL_POLICY:-missing}
     container_name: mengya_db
     environment:
       POSTGRES_DB: mengya
@@ -25,7 +26,7 @@ services:
       POSTGRES_PASSWORD: mengya123
     volumes:
       # PostgreSQL 18+ 镜像要求：数据卷必须挂载到父目录 /var/lib/postgresql（而非 /var/lib/postgresql/data）
-      - pgdata:/var/lib/postgresql
+      - pgdata:${DB_DATA_DIR:-/var/lib/postgresql}
     # 仅在内部容器网络暴露端口，不对宿主机暴露 5432，保障数据库安全
     expose:
       - "5432"
@@ -68,6 +69,8 @@ services:
       - ./apps:/app/apps
       - ./config:/app/config
       - ./manage.py:/app/manage.py
+      - ./templates:/app/templates
+      - ./static:/app/static
     # 宿主机直接暴露 FRONTEND_PORT（默认 5174），直达 Django 一体化服务（同时提供 API 与前端 SPA 静态页面）
     ports:
       - "${FRONTEND_PORT:-5174}:8000"
@@ -97,6 +100,8 @@ services:
       - ./apps:/app/apps
       - ./config:/app/config
       - ./manage.py:/app/manage.py
+      - ./templates:/app/templates
+      - ./static:/app/static
     depends_on:
       - backend
     command: celery -A config worker -l info --pool=solo

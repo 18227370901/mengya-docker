@@ -28,7 +28,6 @@ COPY . .
 
 # 从前端构建阶段复制静态文件产物至后端模板与静态目录
 COPY --from=frontend-builder /build/dist/index.html /app/templates/index.html
-COPY --from=frontend-builder /build/dist/assets /app/static/assets
 COPY --from=frontend-builder /build/dist/ /app/static/
 
 EXPOSE 8000

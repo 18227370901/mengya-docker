@@ -182,9 +182,145 @@ compose_extra_args() {
     echo "$args"
 }
 
+# ===== 数据库镜像智能探测与数据兼容性管理 =====
+image_exists() {
+    local img="$1"
+    [ -z "$img" ] && return 1
+    docker image inspect "$img" >/dev/null 2>&1
+}
+
+choose_db_image() {
+    if ! docker info >/dev/null 2>&1; then
+        DB_IMAGE="${DB_IMAGE:-pgvector/pgvector:pg18}"
+        DB_PULL_POLICY="${DB_PULL_POLICY:-missing}"
+        DB_DATA_DIR="${DB_DATA_DIR:-/var/lib/postgresql}"
+        export DB_IMAGE DB_PULL_POLICY DB_DATA_DIR
+        return 0
+    fi
+
+    # 1. 优先遵循环境变量/用户显式指定的 DB_IMAGE
+    if [ -n "$DB_IMAGE" ]; then
+        if image_exists "$DB_IMAGE"; then
+            echo -e "\033[0;32m[数据库] 检测到环境变量指定镜像 $DB_IMAGE 且本地已存在，直接复用已有镜像（pull_policy: never）\033[0m"
+            DB_PULL_POLICY="never"
+        else
+            echo -e "\033[1;33m[数据库] 检测到环境变量指定镜像 $DB_IMAGE 本地不存在，启动时将自动拉取\033[0m"
+            DB_PULL_POLICY="missing"
+        fi
+    # 2. 检查本地是否已有 pgvector/pgvector:pg18 镜像（用户服务器已有镜像优先复用，杜绝重复拉取）
+    elif image_exists "pgvector/pgvector:pg18"; then
+        DB_IMAGE="pgvector/pgvector:pg18"
+        DB_PULL_POLICY="never"
+        echo -e "\033[0;32m[数据库] 检测到服务器本地已存在 pgvector/pgvector:pg18 镜像，直接复用本地镜像（pull_policy: never）\033[0m"
+    # 3. 检查本地是否已有 postgres:15-alpine 镜像（兼容历史旧版数据卷）
+    elif image_exists "postgres:15-alpine"; then
+        DB_IMAGE="postgres:15-alpine"
+        DB_PULL_POLICY="never"
+        echo -e "\033[0;32m[数据库] 检测到服务器本地已存在 postgres:15-alpine 镜像，直接复用本地镜像（pull_policy: never）\033[0m"
+    # 4. 本地均不存在，默认使用 pgvector/pgvector:pg18 并按需拉取
+    else
+        DB_IMAGE="pgvector/pgvector:pg18"
+        DB_PULL_POLICY="missing"
+        echo -e "\033[1;33m[数据库] 本地未检测到 pgvector 或 postgres 镜像，默认使用 pgvector/pgvector:pg18（首次启动将拉取）\033[0m"
+    fi
+
+    # 智能匹配数据卷挂载点：PostgreSQL 18+ 挂载父目录 /var/lib/postgresql；15 及更早版本兼容 /var/lib/postgresql/data
+    if [ -z "$DB_DATA_DIR" ]; then
+        case "$DB_IMAGE" in
+            *18*|*pg18*)
+                DB_DATA_DIR="/var/lib/postgresql"
+                ;;
+            *15*|*16*|*14*|*alpine*)
+                DB_DATA_DIR="/var/lib/postgresql/data"
+                ;;
+            *)
+                DB_DATA_DIR="/var/lib/postgresql"
+                ;;
+        esac
+    fi
+
+    export DB_IMAGE
+    export DB_PULL_POLICY
+    export DB_DATA_DIR
+}
+
+check_db_volume_compatibility() {
+    local compose
+    compose=$(compose_cmd)
+    [ -z "$compose" ] && return 0
+
+    local vol_name
+    vol_name=$(docker volume ls -q 2>/dev/null | grep -E "(^|_)pgdata$" | head -n 1 || true)
+    if [ -n "$vol_name" ]; then
+        echo -e "\033[0;36m[数据库] 检测到已存在存储卷 [$vol_name]，挂载点配置为 [$DB_DATA_DIR]\033[0m"
+        if echo "$DB_IMAGE" | grep -q "18"; then
+            echo "  [数据兼容性提示] 当前使用 PostgreSQL 18+ 镜像。若该数据卷此前曾由 PG15 创建，PostgreSQL 跨大版本无法直接加载旧数据文件。"
+            echo "  - 保留并迁移旧数据：请先切回原镜像运行并执行 ./run.sh db_backup 备份，清理数据卷后启动新版本执行 ./run.sh db_restore 导入；"
+            echo "  - 无需保留旧数据：可执行 docker compose down -v 清理旧卷后重新启动，系统将全新初始化。"
+        fi
+    fi
+}
+
+db_backup() {
+    check_docker_env
+    choose_db_image
+    local compose
+    compose=$(compose_cmd)
+    local outfile="${1:-mengya_data_backup_$(date +%Y%m%d_%H%M%S).json}"
+    echo "==> 正在导出数据库数据 (Django 结构化 JSON 格式，跨大版本与跨引擎完全通用)..."
+    if $compose exec -T backend python manage.py dumpdata --natural-foreign --natural-primary -e contenttypes -e auth.Permission --indent 2 > "$outfile" 2>/dev/null; then
+        echo -e "\033[0;32m✅ 数据库数据备份成功！保存至文件: $outfile\033[0m"
+        echo "  提示：该备份文件可在切换至任意 PostgreSQL 版本或 SQLite 时，通过 ./run.sh db_restore $outfile 平滑恢复。"
+    else
+        echo -e "\033[1;33m[提示] Django dumpdata 导出受限，尝试通过 pg_dump 导出原生 SQL 备份...\033[0m"
+        local sqlfile="${1:-mengya_pg_backup_$(date +%Y%m%d_%H%M%S).sql}"
+        if $compose exec -T db pg_dump -U mengya mengya > "$sqlfile" 2>/dev/null; then
+            echo -e "\033[0;32m✅ PostgreSQL 原生数据导出成功！保存至文件: $sqlfile\033[0m"
+        else
+            echo -e "\033[1;31m[错误] 数据库备份失败，请确保容器服务正在运行中 (./run.sh start)。\033[0m"
+            return 1
+        fi
+    fi
+}
+
+db_restore() {
+    check_docker_env
+    choose_db_image
+    local compose
+    compose=$(compose_cmd)
+    local infile="$1"
+    if [ -z "$infile" ] || [ ! -f "$infile" ]; then
+        echo -e "\033[1;31m[错误] 请提供有效的备份文件路径！示例: ./run.sh db_restore backup.json\033[0m"
+        return 1
+    fi
+    echo "==> 正在恢复数据库数据: $infile ..."
+    case "$infile" in
+        *.json)
+            echo "  检测到 JSON 数据结构文件，使用 Django loaddata 执行结构化跨版本导入..."
+            docker cp "$infile" mengya_backend:/tmp/restore.json 2>/dev/null || true
+            $compose exec -T backend python manage.py loaddata /tmp/restore.json
+            $compose exec -T backend rm -f /tmp/restore.json 2>/dev/null || true
+            echo -e "\033[0;32m✅ 数据恢复成功！\033[0m"
+            ;;
+        *.sql)
+            echo "  检测到 SQL 数据文件，使用 psql 执行原生导入..."
+            docker cp "$infile" mengya_db:/tmp/restore.sql 2>/dev/null || true
+            $compose exec -T db psql -U mengya -d mengya -f /tmp/restore.sql
+            $compose exec -T db rm -f /tmp/restore.sql 2>/dev/null || true
+            echo -e "\033[0;32m✅ 原生 SQL 数据恢复成功！\033[0m"
+            ;;
+        *)
+            echo -e "\033[1;31m[错误] 不支持的文件格式，仅支持 .json 或 .sql 文件。\033[0m"
+            return 1
+            ;;
+    esac
+}
+
 start_docker() {
     cleanup_cache
     check_docker_env
+    choose_db_image
+    check_db_volume_compatibility
 
     # 补全主流程中缺失的 SSL 证书与 Nginx 配置创建函数调用
     gen_ssl_cert
@@ -196,9 +332,35 @@ start_docker() {
     local extra_args
     extra_args=$(compose_extra_args "$compose")
 
-    echo "  正在启动容器 ($compose $extra_args up -d)..."
+    local up_flags="up -d --remove-orphans"
+    if [ "$DO_BUILD" = "1" ]; then
+        up_flags="$up_flags --build"
+    fi
+
+    echo "  正在启动容器 ($compose $extra_args $up_flags)..."
     # shellcheck disable=SC2086
-    $compose $extra_args up -d
+    $compose $extra_args $up_flags
+
+    # 探活检查数据库容器是否因版本不兼容等原因异常退出
+    sleep 2
+    local db_status
+    db_status=$(docker inspect --format='{{.State.Status}}' mengya_db 2>/dev/null || echo "")
+    if [ "$db_status" = "exited" ] || [ "$db_status" = "dead" ]; then
+        echo ""
+        echo -e "\033[1;31m============================================================\033[0m"
+        echo -e "\033[1;31m[错误] 数据库容器 mengya_db 启动后异常退出！\033[0m"
+        echo "--- 数据库最近日志 ---"
+        $compose logs --tail=25 db 2>/dev/null || true
+        echo "---------------------"
+        if $compose logs db 2>&1 | grep -qiE "incompatible|pg_ctlcluster|unused mount|PG_VERSION"; then
+            echo -e "\033[1;31m[根本原因] 检测到 PostgreSQL 数据卷版本不兼容或挂载路径冲突！\033[0m"
+            echo -e "\033[1;33m[解决方案]："
+            echo "  1. 若需保留原有数据：请指定原数据库镜像启动（如 DB_IMAGE=postgres:15-alpine ./run.sh start），执行 ./run.sh db_backup 备份数据，再切换至新镜像导入；"
+            echo "  2. 若无需保留旧数据：请执行 docker compose down -v 清空旧数据卷，然后重新执行 ./run.sh start 自动全新初始化全量数据。\033[0m"
+        fi
+        echo -e "\033[1;31m============================================================\033[0m"
+        exit 1
+    fi
 
     echo ""
     echo "============================================"
@@ -206,6 +368,7 @@ start_docker() {
     echo "  统一访问地址: http://localhost:$FRONTEND_PORT/ (已映射宿主机端口)"
     echo "  管理员账号:   $ADMIN_USERNAME"
     echo "  管理员密码:   $ADMIN_PASSWORD (容器启动自动 ensure_admin 同步)"
+    echo "  数据库镜像:   $DB_IMAGE (拉取策略: $DB_PULL_POLICY, 挂载目录: $DB_DATA_DIR)"
     local MAIN_DOMAIN
     MAIN_DOMAIN=$(echo "$SERVER_NAME" | awk '{print $1}')
     [ -z "$MAIN_DOMAIN" ] && MAIN_DOMAIN="mengya-docker.local"
@@ -225,6 +388,7 @@ start_docker() {
 
 stop_docker() {
     check_docker_env
+    choose_db_image
     local compose
     compose=$(compose_cmd)
 
@@ -251,6 +415,7 @@ restart_docker() {
 
 status_docker() {
     check_docker_env
+    choose_db_image
     local compose
     compose=$(compose_cmd)
 
@@ -263,6 +428,7 @@ status_docker() {
     $compose $extra_args ps -a
     echo "--------------------------------------------"
     echo "  服务映射端口: $FRONTEND_PORT (一体化托管前端与后端)"
+    echo "  数据库镜像:   $DB_IMAGE (拉取策略: $DB_PULL_POLICY, 挂载目录: $DB_DATA_DIR)"
     echo "  Nginx 配置文件: $([ -f "$NGINX_CONF" ] && echo "已就绪 ($NGINX_CONF)" || echo "未生成 (可执行 ./run.sh add_nginx)")"
     echo "============================================"
 }
@@ -286,6 +452,7 @@ logs_docker() {
 
 build_docker() {
     check_docker_env
+    choose_db_image
     local compose
     compose=$(compose_cmd)
     echo "==> 手动构建 Docker 容器镜像 ($compose build)..."
@@ -479,17 +646,27 @@ CUSTOM_ADMIN_USER=""
 CUSTOM_ADMIN_PASS=""
 CUSTOM_ADMIN_NICK=""
 CUSTOM_DOMAIN=""
+CUSTOM_DB_IMAGE=""
+DO_BUILD=0
 EXTRA_ARGS=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        start|stop|restart|status|logs|build|add_nginx|exec|help)
+        start|stop|restart|status|logs|build|add_nginx|exec|init_data|seed|db_backup|backup|db_restore|restore|help)
             if [ -z "$CMD" ]; then
                 CMD="$1"
             else
                 EXTRA_ARGS="${EXTRA_ARGS:+$EXTRA_ARGS }$1"
             fi
             shift
+            ;;
+        -b|--build)
+            DO_BUILD=1
+            shift
+            ;;
+        --image|--db-image)
+            CUSTOM_DB_IMAGE="$2"
+            shift 2
             ;;
         -p|--port)
             CUSTOM_PORT="$2"
@@ -565,6 +742,12 @@ if [ -n "$CUSTOM_DOMAIN" ]; then
     echo -e "\033[0;32m[配置] SNI 匹配域名已设置为: $CUSTOM_DOMAIN (已同步至 .env)\033[0m"
 fi
 
+if [ -n "$CUSTOM_DB_IMAGE" ]; then
+    DB_IMAGE="$CUSTOM_DB_IMAGE"
+    update_env_var "DB_IMAGE" "$CUSTOM_DB_IMAGE"
+    echo -e "\033[0;32m[配置] 数据库镜像已指定为: $CUSTOM_DB_IMAGE (已同步至 .env)\033[0m"
+fi
+
 # 导出供 docker compose 插值
 export FRONTEND_PORT
 export ADMIN_USERNAME
@@ -603,6 +786,12 @@ case "$CMD" in
     init_data|seed)
         init_data_docker $EXTRA_ARGS
         ;;
+    db_backup|backup)
+        db_backup $EXTRA_ARGS
+        ;;
+    db_restore|restore)
+        db_restore $EXTRA_ARGS
+        ;;
     help)
         echo ""
         echo "萌芽（mengya-docker）容器模式管理命令："
@@ -615,6 +804,8 @@ case "$CMD" in
         echo "  ./run.sh add_nginx [选项]    生成宿主机 /opt/service/nginx/conf.d 独立反代配置（与传统版零冲突）"
         echo "  ./run.sh exec <cmd>          在 backend 容器中执行任意命令"
         echo "  ./run.sh init_data [选项]    检查并补齐全量样例数据（食谱/胎教/百科/周历/清单/商品/品牌）"
+        echo "  ./run.sh db_backup [文件]    导出数据库数据备份（跨版本通用 JSON 或 SQL）"
+        echo "  ./run.sh db_restore <文件>   恢复导入数据库数据备份（支持 JSON 或 SQL）"
         echo "  ./run.sh help                查看帮助信息"
         echo ""
         echo "常用自定义选项（支持在 start / restart / add_nginx 时追加，自动持久化至 .env）："
@@ -623,6 +814,8 @@ case "$CMD" in
         echo "  -P, --password <PASS>        自定义超级管理员登录密码（默认 admin123）"
         echo "  -n, --nickname <NAME>        自定义管理员昵称（默认 管理员）"
         echo "  -d, --domain <DOMAIN>        自定义绑定的 SNI 域名（默认 mengya-docker.local）"
+        echo "  -b, --build                  启动时强制重新构建容器镜像"
+        echo "  --db-image <IMAGE>           指定数据库镜像（如 pgvector/pgvector:pg18 或 postgres:15-alpine）"
         echo ""
         echo "实用启动示例："
         echo "  ./run.sh start                                 # 默认启动（端口 5174，管理员 admin / admin123）"
