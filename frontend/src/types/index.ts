@@ -35,6 +35,9 @@ export interface BabyProfile {
   name: string;
   gender: string;
   birthday: string;
+  is_born?: boolean;
+  due_date?: string;
+  gestation_weeks?: number;
   birth_weight?: number;
   birth_height?: number;
   birth_head_circumference?: number;

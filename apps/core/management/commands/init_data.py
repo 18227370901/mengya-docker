@@ -88,7 +88,7 @@ class Command(BaseCommand):
         # 10. 重置 PostgreSQL 自增序列
         self._reset_db_sequences()
 
-        self.stdout.write(self.style.SUCCESS("✅ 全量样例数据检查与初始化全部完成！"))
+        self.stdout.write(self.style.SUCCESS("[OK] 全量样例数据检查与初始化全部完成！"))
 
     def _load_brand_profiles(self, items, force):
         count = BrandProfile.objects.count()

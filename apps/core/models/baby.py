@@ -13,7 +13,8 @@ class BabyProfile(models.Model):
     user = models.ForeignKey("User", on_delete=models.CASCADE, related_name="babies", verbose_name="用户")
     name = models.CharField(max_length=50, verbose_name="宝宝昵称")
     gender = models.CharField(max_length=10, choices=GENDER_CHOICES, default="unknown", verbose_name="性别")
-    birthday = models.DateField(verbose_name="出生日期")
+    birthday = models.DateField(verbose_name="出生日期/预产期")
+    is_born = models.BooleanField(default=True, verbose_name="是否已出生")
     birth_weight = models.FloatField(null=True, blank=True, verbose_name="出生体重(kg)")
     birth_height = models.FloatField(null=True, blank=True, verbose_name="出生身高(cm)")
     birth_head_circumference = models.FloatField(null=True, blank=True, verbose_name="出生头围(cm)")
@@ -41,6 +42,15 @@ class BabyProfile(models.Model):
         return days // 30 if days >= 0 else 0
 
     def get_age_display(self):
+        from datetime import date
+        today = date.today()
+        if not self.is_born or self.birthday > today:
+            delta = self.birthday - today
+            if delta.days >= 0:
+                weeks = 40 - (delta.days // 7)
+                weeks = max(1, min(weeks, 40))
+                return f"胎儿 (孕{weeks}周，距预产期{delta.days}天)"
+            return "即将出生"
         days = self.get_age_days()
         if days < 0:
             return "尚未出生"
@@ -51,7 +61,7 @@ class BabyProfile(models.Model):
             years = months // 12
             rem = months % 12
             return f"{years}岁{rem}个月" if rem else f"{years}岁"
-        return f"{months}个月" 
+        return f"{months}个月"
 
     def __str__(self):
         return f"{self.user.phone} - {self.name}"

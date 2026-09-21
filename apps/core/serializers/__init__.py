@@ -140,6 +140,8 @@ class BabyProfileSerializer(serializers.ModelSerializer):
     age_days = serializers.SerializerMethodField()
     age_months = serializers.SerializerMethodField()
     age_display = serializers.SerializerMethodField()
+    due_date = serializers.SerializerMethodField()
+    gestation_weeks = serializers.SerializerMethodField()
 
     class Meta:
         model = BabyProfile
@@ -148,6 +150,9 @@ class BabyProfileSerializer(serializers.ModelSerializer):
             "name",
             "gender",
             "birthday",
+            "is_born",
+            "due_date",
+            "gestation_weeks",
             "birth_weight",
             "birth_height",
             "birth_head_circumference",
@@ -169,6 +174,18 @@ class BabyProfileSerializer(serializers.ModelSerializer):
 
     def get_age_display(self, obj):
         return obj.get_age_display()
+
+    def get_due_date(self, obj):
+        return str(obj.birthday) if not getattr(obj, "is_born", True) else None
+
+    def get_gestation_weeks(self, obj):
+        from datetime import date
+        today = date.today()
+        if not getattr(obj, "is_born", True) or obj.birthday > today:
+            delta = obj.birthday - today
+            if delta.days >= 0:
+                return max(1, min(40, 40 - (delta.days // 7)))
+        return None
 
 
 class BrandProfileSerializer(serializers.ModelSerializer):

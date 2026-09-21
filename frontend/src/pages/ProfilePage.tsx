@@ -43,13 +43,15 @@ export default function ProfilePage() {
   const [showAdd, setShowAdd] = useState(false);
   const [showStageModal, setShowStageModal] = useState(false);
   const [babyForm, setBabyForm] = useState({
+    status: (user?.is_pregnant ? "pregnant" : "born") as "pregnant" | "born",
     name: "",
     gender: "unknown",
-    birthday: new Date().toISOString().slice(0, 10),
+    birthday: user?.is_pregnant && user?.due_date ? user.due_date : new Date().toISOString().slice(0, 10),
     birth_weight: "",
   });
   const [editingBaby, setEditingBaby] = useState<BabyProfile | null>(null);
   const [editBabyForm, setEditBabyForm] = useState({
+    status: "born" as "pregnant" | "born",
     name: "",
     gender: "unknown",
     birthday: "",
@@ -107,18 +109,30 @@ export default function ProfilePage() {
 
   const addBaby = async () => {
     if (!babyForm.name.trim()) return;
+    const isBorn = babyForm.status === "born";
     const payload: Partial<BabyProfile> = {
       name: babyForm.name.trim(),
       gender: babyForm.gender,
       birthday: babyForm.birthday,
+      is_born: isBorn,
     };
-    if (babyForm.birth_weight) payload.birth_weight = Number(babyForm.birth_weight);
+    if (isBorn && babyForm.birth_weight) payload.birth_weight = Number(babyForm.birth_weight);
     const created = await authApi.createBaby(payload).catch(() => null);
     if (created) {
       setBabies((prev) => [...prev, created]);
       setShowAdd(false);
-      setBabyForm({ ...babyForm, name: "" });
-      showToast("宝宝档案已添加");
+      setBabyForm({
+        status: user?.is_pregnant ? "pregnant" : "born",
+        name: "",
+        gender: "unknown",
+        birthday: user?.is_pregnant && user?.due_date ? user.due_date : new Date().toISOString().slice(0, 10),
+        birth_weight: "",
+      });
+      await fetchMe();
+      try {
+        window.dispatchEvent(new CustomEvent("stageChanged"));
+      } catch {}
+      showToast(isBorn ? "宝宝档案已添加并同步阶段" : "未出生宝宝档案已添加并同步预产期");
     } else {
       showToast("添加失败，请稍后重试");
     }
@@ -126,7 +140,9 @@ export default function ProfilePage() {
 
   const openEditBaby = (b: BabyProfile) => {
     setEditingBaby(b);
+    const isBorn = b.is_born ?? (new Date(b.birthday) <= new Date());
     setEditBabyForm({
+      status: isBorn ? "born" : "pregnant",
       name: b.name || "",
       gender: b.gender || "unknown",
       birthday: b.birthday || new Date().toISOString().slice(0, 10),
@@ -139,19 +155,27 @@ export default function ProfilePage() {
     if (!editingBaby || !editBabyForm.name.trim()) return;
     setSavingBaby(true);
     try {
+      const isBorn = editBabyForm.status === "born";
       const payload: Partial<BabyProfile> = {
         name: editBabyForm.name.trim(),
         gender: editBabyForm.gender as any,
         birthday: editBabyForm.birthday,
+        is_born: isBorn,
         note: editBabyForm.note.trim(),
       };
-      if (editBabyForm.birth_weight) {
+      if (isBorn && editBabyForm.birth_weight) {
         payload.birth_weight = Number(editBabyForm.birth_weight);
+      } else {
+        payload.birth_weight = null as any;
       }
       const updated = await authApi.updateBaby(editingBaby.id, payload);
       setBabies((prev) => prev.map((b) => (b.id === editingBaby.id ? { ...b, ...updated } : b)));
       setEditingBaby(null);
-      showToast("宝宝档案已更新");
+      await fetchMe();
+      try {
+        window.dispatchEvent(new CustomEvent("stageChanged"));
+      } catch {}
+      showToast("宝宝档案已更新并同步阶段");
     } catch {
       showToast("更新失败，请重试");
     } finally {
@@ -164,7 +188,11 @@ export default function ProfilePage() {
     try {
       await authApi.deleteBaby(b.id);
       setBabies((prev) => prev.filter((item) => item.id !== b.id));
-      showToast("宝宝档案已删除");
+      await fetchMe();
+      try {
+        window.dispatchEvent(new CustomEvent("stageChanged"));
+      } catch {}
+      showToast("宝宝档案已删除并更新阶段");
     } catch {
       showToast("删除失败，请重试");
     }
@@ -174,7 +202,11 @@ export default function ProfilePage() {
     try {
       await authApi.setPrimaryBaby(id);
       setBabies((prev) => prev.map((b) => ({ ...b, is_primary: b.id === id })));
-      showToast("已设为默认宝宝");
+      await fetchMe();
+      try {
+        window.dispatchEvent(new CustomEvent("stageChanged"));
+      } catch {}
+      showToast("已设为默认宝宝并同步孕育阶段");
     } catch {
       showToast("设置失败");
     }
@@ -225,12 +257,42 @@ export default function ProfilePage() {
             <LogOut className="h-5 w-5" />
           </button>
         </div>
-        {user?.due_date ? (
+        {user?.is_pregnant && user?.due_date ? (
           <div className="mt-3 flex items-center justify-between rounded-xl bg-white/15 px-3 py-2 text-sm">
             <span>预产期：{user.due_date}</span>
             <button
               onClick={() => setShowStageModal(true)}
-              className="rounded-lg bg-white/20 px-2 py-0.5 text-xs hover:bg-white/30"
+              className="rounded-lg bg-white/20 px-2 py-0.5 text-xs hover:bg-white/30 cursor-pointer"
+            >
+              修改
+            </button>
+          </div>
+        ) : !user?.is_pregnant && user?.baby_birthday ? (
+          <div className="mt-3 flex items-center justify-between rounded-xl bg-white/15 px-3 py-2 text-sm">
+            <span>宝宝出生日期：{user.baby_birthday}</span>
+            <button
+              onClick={() => setShowStageModal(true)}
+              className="rounded-lg bg-white/20 px-2 py-0.5 text-xs hover:bg-white/30 cursor-pointer"
+            >
+              修改
+            </button>
+          </div>
+        ) : user?.due_date ? (
+          <div className="mt-3 flex items-center justify-between rounded-xl bg-white/15 px-3 py-2 text-sm">
+            <span>预产期：{user.due_date}</span>
+            <button
+              onClick={() => setShowStageModal(true)}
+              className="rounded-lg bg-white/20 px-2 py-0.5 text-xs hover:bg-white/30 cursor-pointer"
+            >
+              修改
+            </button>
+          </div>
+        ) : user?.baby_birthday ? (
+          <div className="mt-3 flex items-center justify-between rounded-xl bg-white/15 px-3 py-2 text-sm">
+            <span>宝宝出生日期：{user.baby_birthday}</span>
+            <button
+              onClick={() => setShowStageModal(true)}
+              className="rounded-lg bg-white/20 px-2 py-0.5 text-xs hover:bg-white/30 cursor-pointer"
             >
               修改
             </button>
@@ -240,7 +302,7 @@ export default function ProfilePage() {
             <span>尚未设置预产期或宝宝生日</span>
             <button
               onClick={() => setShowStageModal(true)}
-              className="rounded-lg bg-white px-2.5 py-0.5 text-xs font-semibold text-brand-600 hover:bg-orange-50"
+              className="rounded-lg bg-white px-2.5 py-0.5 text-xs font-semibold text-brand-600 hover:bg-orange-50 cursor-pointer"
             >
               立即设置
             </button>
@@ -252,7 +314,7 @@ export default function ProfilePage() {
       <section className="card">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="font-semibold text-gray-800">宝宝档案</h2>
-          <button className="text-sm text-brand-500 hover:underline" onClick={() => setShowAdd((v) => !v)}>
+          <button className="text-sm text-brand-500 hover:underline cursor-pointer" onClick={() => setShowAdd((v) => !v)}>
             <Plus className="mr-0.5 inline h-3.5 w-3.5" />
             添加宝宝
           </button>
@@ -260,30 +322,67 @@ export default function ProfilePage() {
 
         {showAdd && (
           <div className="mb-4 space-y-3 rounded-xl bg-cream p-4">
-            <div>
-              <label className="label">宝宝昵称</label>
-              <input className="input" placeholder="如：小土豆" value={babyForm.name} onChange={(e) => setBabyForm((f) => ({ ...f, name: e.target.value }))} />
+            <div className="flex rounded-xl bg-gray-200/70 p-1">
+              <button
+                type="button"
+                className={`flex-1 rounded-lg py-1.5 text-xs font-semibold transition cursor-pointer ${
+                  babyForm.status === "pregnant" ? "bg-white text-brand-600 shadow-xs" : "text-gray-500 hover:text-gray-700"
+                }`}
+                onClick={() => setBabyForm((f) => ({ ...f, status: "pregnant", birthday: user?.due_date || f.birthday }))}
+              >
+                🌱 怀孕中 / 尚未出生（预产期）
+              </button>
+              <button
+                type="button"
+                className={`flex-1 rounded-lg py-1.5 text-xs font-semibold transition cursor-pointer ${
+                  babyForm.status === "born" ? "bg-white text-brand-600 shadow-xs" : "text-gray-500 hover:text-gray-700"
+                }`}
+                onClick={() => setBabyForm((f) => ({ ...f, status: "born", birthday: user?.baby_birthday || new Date().toISOString().slice(0, 10) }))}
+              >
+                👶 宝宝已出生
+              </button>
             </div>
+
+            <div>
+              <label className="label text-xs">
+                {babyForm.status === "pregnant" ? "宝宝胎名 / 小名 *" : "宝宝昵称 *"}
+              </label>
+              <input
+                className="input"
+                placeholder={babyForm.status === "pregnant" ? "例如：小核桃、大宝" : "例如：小土豆"}
+                value={babyForm.name}
+                onChange={(e) => setBabyForm((f) => ({ ...f, name: e.target.value }))}
+              />
+            </div>
+
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="label">性别</label>
+                <label className="label text-xs">{babyForm.status === "pregnant" ? "预估性别" : "性别"}</label>
                 <select className="input" value={babyForm.gender} onChange={(e) => setBabyForm((f) => ({ ...f, gender: e.target.value }))}>
-                  <option value="girl">女宝</option>
-                  <option value="boy">男宝</option>
-                  <option value="unknown">未透露</option>
+                  <option value="girl">女宝 👧</option>
+                  <option value="boy">男宝 👦</option>
+                  <option value="unknown">保密 / 未知 🐣</option>
                 </select>
               </div>
-              <div>
-                <label className="label">出生体重 (kg)</label>
-                <input type="number" step="0.01" className="input" value={babyForm.birth_weight} onChange={(e) => setBabyForm((f) => ({ ...f, birth_weight: e.target.value }))} />
-              </div>
+              {babyForm.status === "born" ? (
+                <div>
+                  <label className="label text-xs">出生体重 (kg)</label>
+                  <input type="number" step="0.01" className="input" placeholder="例如：3.2" value={babyForm.birth_weight} onChange={(e) => setBabyForm((f) => ({ ...f, birth_weight: e.target.value }))} />
+                </div>
+              ) : (
+                <div className="flex items-end pb-1 text-xs text-brand-600">
+                  <span>💡 保存后将同步为当前孕育阶段</span>
+                </div>
+              )}
             </div>
+
             <div>
-              <label className="label">出生日期</label>
+              <label className="label text-xs">{babyForm.status === "pregnant" ? "预产期 *" : "出生日期 *"}</label>
               <input type="date" className="input" value={babyForm.birthday} onChange={(e) => setBabyForm((f) => ({ ...f, birthday: e.target.value }))} />
             </div>
-            <button className="btn-primary w-full" onClick={addBaby}>
-              保存
+
+            <button className="btn-primary w-full cursor-pointer" onClick={addBaby}>
+              {babyForm.status === "pregnant" ? "保存未出生宝宝档案并同步阶段" : "保存宝宝档案"}
             </button>
           </div>
         )}
@@ -292,49 +391,70 @@ export default function ProfilePage() {
           <p className="py-4 text-center text-sm text-gray-400">还没有添加宝宝档案</p>
         ) : (
           <ul className="space-y-2">
-            {babies.map((b) => (
-              <li key={b.id} className="flex items-center gap-3 rounded-xl border border-gray-100 p-3 hover:border-brand-200 transition">
-                <div className="flex h-10 w-10 items-center justify-center rounded-full bg-brand-50 text-brand-500 shrink-0">
-                  <Baby className="h-5 w-5" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-gray-700 truncate">
-                    {b.name}
-                    {b.is_primary && <span className="ml-1.5 rounded-full bg-brand-100 px-2 py-0.5 text-xs text-brand-600">默认</span>}
-                  </p>
-                  <p className="text-xs text-gray-400">
-                    {b.birthday}
-                    {b.age_display ? ` · ${b.age_display}` : (b.age_months != null && ` · ${b.age_months >= 36 ? `${Math.floor(b.age_months / 12)}岁${b.age_months % 12 > 0 ? `${b.age_months % 12}个月` : ""}` : `${b.age_months}个月`}`)}
-                    {b.birth_weight != null && ` · ${b.birth_weight}kg`}
-                  </p>
-                </div>
-                <div className="flex items-center gap-1 shrink-0">
-                  {!b.is_primary && (
+            {babies.map((b) => {
+              const isUnborn = b.is_born === false || (b.is_born == null && new Date(b.birthday) > new Date());
+              let unbornDetail = "";
+              if (isUnborn) {
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const target = new Date(b.birthday);
+                target.setHours(0, 0, 0, 0);
+                const diffDays = Math.ceil((target.getTime() - today.getTime()) / 86400000);
+                const weeks = Math.max(1, Math.min(40, 40 - Math.floor(diffDays / 7)));
+                unbornDetail = diffDays >= 0 ? `预产期：${b.birthday} · 孕 ${weeks} 周 (距预产期还有 ${diffDays} 天)` : `预产期：${b.birthday} · 已过预产期`;
+              }
+
+              return (
+                <li key={b.id} className="flex items-center gap-3 rounded-xl border border-gray-100 p-3 hover:border-brand-200 transition">
+                  <div className={`flex h-10 w-10 items-center justify-center rounded-full shrink-0 ${isUnborn ? "bg-amber-50 text-amber-500" : "bg-brand-50 text-brand-500"}`}>
+                    <Baby className="h-5 w-5" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-gray-700 truncate flex items-center gap-1.5">
+                      <span>{b.name}</span>
+                      {isUnborn && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-700 font-medium">孕育中</span>}
+                      {b.is_primary && <span className="rounded-full bg-brand-100 px-2 py-0.5 text-xs text-brand-600">默认</span>}
+                    </p>
+                    <p className="text-xs text-gray-400 mt-0.5">
+                      {isUnborn ? (
+                        unbornDetail
+                      ) : (
+                        <>
+                          出生日期：{b.birthday}
+                          {b.age_display ? ` · ${b.age_display}` : (b.age_months != null && ` · ${b.age_months >= 36 ? `${Math.floor(b.age_months / 12)}岁${b.age_months % 12 > 0 ? `${b.age_months % 12}个月` : ""}` : `${b.age_months}个月`}`)}
+                          {b.birth_weight != null && ` · ${b.birth_weight}kg`}
+                        </>
+                      )}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1 shrink-0">
+                    {!b.is_primary && (
+                      <button
+                        className="rounded-lg bg-orange-50 px-2.5 py-1 text-xs text-brand-600 hover:bg-orange-100 transition font-medium cursor-pointer"
+                        onClick={() => setPrimary(b.id)}
+                        title="设为默认宝宝并同步阶段"
+                      >
+                        设为默认
+                      </button>
+                    )}
                     <button
-                      className="rounded-lg bg-orange-50 px-2.5 py-1 text-xs text-brand-600 hover:bg-orange-100 transition font-medium cursor-pointer"
-                      onClick={() => setPrimary(b.id)}
-                      title="设为默认宝宝"
+                      className="p-1.5 text-gray-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition cursor-pointer"
+                      onClick={() => openEditBaby(b)}
+                      title="编辑宝宝档案"
                     >
-                      设为默认
+                      <Edit3 className="h-4 w-4" />
                     </button>
-                  )}
-                  <button
-                    className="p-1.5 text-gray-400 hover:text-brand-600 hover:bg-brand-50 rounded-lg transition cursor-pointer"
-                    onClick={() => openEditBaby(b)}
-                    title="编辑宝宝档案"
-                  >
-                    <Edit3 className="h-4 w-4" />
-                  </button>
-                  <button
-                    className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition cursor-pointer"
-                    onClick={() => deleteBaby(b)}
-                    title="删除宝宝档案"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
-                </div>
-              </li>
-            ))}
+                    <button
+                      className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition cursor-pointer"
+                      onClick={() => deleteBaby(b)}
+                      title="删除宝宝档案"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         )}
 
@@ -344,11 +464,35 @@ export default function ProfilePage() {
             <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl space-y-4">
               <div className="flex items-center justify-between border-b pb-3">
                 <h3 className="font-bold text-gray-800 text-base">编辑宝宝档案</h3>
-                <button onClick={() => setEditingBaby(null)} className="text-gray-400 hover:text-gray-600 text-sm">✕</button>
+                <button onClick={() => setEditingBaby(null)} className="text-gray-400 hover:text-gray-600 text-sm cursor-pointer">✕</button>
               </div>
+
+              <div className="flex rounded-xl bg-gray-100 p-1">
+                <button
+                  type="button"
+                  className={`flex-1 rounded-lg py-1.5 text-xs font-semibold transition cursor-pointer ${
+                    editBabyForm.status === "pregnant" ? "bg-white text-brand-600 shadow-xs" : "text-gray-500 hover:text-gray-700"
+                  }`}
+                  onClick={() => setEditBabyForm((f) => ({ ...f, status: "pregnant" }))}
+                >
+                  🌱 怀孕中 / 尚未出生
+                </button>
+                <button
+                  type="button"
+                  className={`flex-1 rounded-lg py-1.5 text-xs font-semibold transition cursor-pointer ${
+                    editBabyForm.status === "born" ? "bg-white text-brand-600 shadow-xs" : "text-gray-500 hover:text-gray-700"
+                  }`}
+                  onClick={() => setEditBabyForm((f) => ({ ...f, status: "born" }))}
+                >
+                  👶 宝宝已出生
+                </button>
+              </div>
+
               <div className="space-y-3">
                 <div>
-                  <label className="label text-xs">宝宝昵称 *</label>
+                  <label className="label text-xs">
+                    {editBabyForm.status === "pregnant" ? "宝宝胎名 / 小名 *" : "宝宝昵称 *"}
+                  </label>
                   <input
                     className="input"
                     value={editBabyForm.name}
@@ -358,31 +502,37 @@ export default function ProfilePage() {
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="label text-xs">性别</label>
+                    <label className="label text-xs">{editBabyForm.status === "pregnant" ? "预估性别" : "性别"}</label>
                     <select
                       className="input"
                       value={editBabyForm.gender}
                       onChange={(e) => setEditBabyForm((f) => ({ ...f, gender: e.target.value }))}
                     >
-                      <option value="girl">女宝</option>
-                      <option value="boy">男宝</option>
-                      <option value="unknown">保密</option>
+                      <option value="girl">女宝 👧</option>
+                      <option value="boy">男宝 👦</option>
+                      <option value="unknown">保密 / 未知 🐣</option>
                     </select>
                   </div>
-                  <div>
-                    <label className="label text-xs">出生体重 (kg)</label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      className="input"
-                      value={editBabyForm.birth_weight}
-                      onChange={(e) => setEditBabyForm((f) => ({ ...f, birth_weight: e.target.value }))}
-                      placeholder="如：3.2"
-                    />
-                  </div>
+                  {editBabyForm.status === "born" ? (
+                    <div>
+                      <label className="label text-xs">出生体重 (kg)</label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        className="input"
+                        value={editBabyForm.birth_weight}
+                        onChange={(e) => setEditBabyForm((f) => ({ ...f, birth_weight: e.target.value }))}
+                        placeholder="如：3.2"
+                      />
+                    </div>
+                  ) : (
+                    <div className="flex items-end pb-1 text-xs text-brand-600">
+                      <span>💡 保存将同步孕期阶段</span>
+                    </div>
+                  )}
                 </div>
                 <div>
-                  <label className="label text-xs">出生日期 *</label>
+                  <label className="label text-xs">{editBabyForm.status === "pregnant" ? "预产期 *" : "出生日期 *"}</label>
                   <input
                     type="date"
                     className="input"
@@ -396,21 +546,21 @@ export default function ProfilePage() {
                     className="input"
                     value={editBabyForm.note}
                     onChange={(e) => setEditBabyForm((f) => ({ ...f, note: e.target.value }))}
-                    placeholder="选填，如健康情况/早产等"
+                    placeholder="选填，如健康情况/待产医院等"
                   />
                 </div>
               </div>
               <div className="flex justify-end gap-2 pt-2">
                 <button
                   type="button"
-                  className="rounded-xl border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50"
+                  className="rounded-xl border border-gray-200 px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 cursor-pointer"
                   onClick={() => setEditingBaby(null)}
                 >
                   取消
                 </button>
                 <button
                   type="button"
-                  className="btn-primary px-5 py-2 text-sm"
+                  className="btn-primary px-5 py-2 text-sm cursor-pointer"
                   disabled={savingBaby || !editBabyForm.name.trim()}
                   onClick={saveEditBaby}
                 >

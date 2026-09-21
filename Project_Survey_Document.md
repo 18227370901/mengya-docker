@@ -1428,3 +1428,114 @@ MODE 环境变量已设置 → 直接使用（校验取值）
   - 本地与服务器端调用 `./run.sh start` 时，精准检测到已存在的 `pgvector/pgvector:pg18`，终端提示 `检测到服务器本地已存在 pgvector/pgvector:pg18 镜像，直接复用本地镜像（pull_policy: never）`，零网络耗时、零重复镜像创建；
   - 访问 `http://<IP>:5174/`，前端页面瞬间加载就绪，`index-Csjd7_MT.js` 与 `index-Bzw05dMi.css` 均返回 HTTP 200，React 成功渲染登录界面与首页，后端 API 请求（`/api/auth/registration-mode/` 等）正常触发并交互；
   - 提供了完整的数据库数据备份（`./run.sh db_backup`）与恢复（`./run.sh db_restore`）链路，跨版本切换数据库平稳可靠。
+
+### 12.28 用户登录「记住登录 / 下次免输账密」全平台功能落地 (REQ-28)
+- **需求背景与业务价值**：
+  - 用户反馈在日常使用中，每次登录或退出后再进入都需要重复输入手机号/用户名和密码，在母婴高频使用场景下操作繁琐。
+  - 用户明确要求：**在 Docker 版与传统版本代码中均新增「记住登录」功能，实现用户勾选后下次登录免输账密，提高使用便捷性与用户体验**。
+- **架构设计与关键技术落地**：
+  - **1. 凭证安全持久化与编解码 (`frontend/src/pages/LoginPage.tsx`)**：
+    - 前端引入安全 Base64 凭证编解码器（`encodeCredential` / `decodeCredential`），统一支持 UTF-8 与特殊字符安全转换；
+    - 使用独立命名空间存储键：
+      - `mengya_remember_me` / `mengya_remember_login`：记住登录勾选状态（`"1"` / `"true"`）；
+      - `mengya_saved_account`：已保存的手机号或用户名；
+      - `mengya_saved_password`：已编码存储的密码凭证；
+    - 与 JWT 访问令牌（`mengya_access` / `mengya_refresh`）进行职责与存储键解耦，互不干扰。
+  - **2. 极速状态初始化与零闪烁免输账密回显**：
+    - 在 React 组件挂载初始化时通过 `useState` 延迟初始化器同步读取 `localStorage`；
+    - 状态一旦命中记住标记，输入框初始状态即自动注入已存账号与解密密码，复选框自动同步勾选态；
+    - 自动触发账号风控探针防抖钩子（`authApi.captchaStatus`），确保回显账号的安全策略（验证码要求、锁定倒计时、冻结检测）精准生效；
+    - 用户进入登录页无需任何多余输入，可直接点击「登录」一键进入系统，真正达成「免输账密」业务诉求。
+  - **3. 凭据全生命周期动态管理与主动安全清除**：
+    - **登录成功持久化**：用户提交登录且校验成功后，依据复选框勾选状态写入或更新本地凭据；
+    - **主动取消即时清除**：用户在登录页手动取消勾选「记住登录」时，立即触发 `handleRememberMeChange` 擦除本地所有已存账密与记住状态；未勾选状态下成功登录亦确保清除旧凭据；
+    - **系统退出解耦保护**：用户在系统内部点击退出登录（`authStore.logout`）时，仅清理身份 JWT Token 并重定向至登录页，保留已记住的免输账密凭据，保证下次重登的顺畅体验。
+  - **4. 交互式 UI 布局规范化对齐**：
+    - 将「记住登录（下次免输账密）」与「忘记密码？」规范重构为水平并排居中对齐，位于密码输入框正下方；
+    - 统一采用主题色 `accent-brand-500` 样式，提升表单视觉连贯性与操作直观性。
+  - **5. 静态产物重新编译与多环境一致性同步**：
+    - 运行前端编译构建流程，生成最新版生产静态指纹产物并同步分发至 `templates/index.html` 与 `static/assets/`；
+    - 重启传统部署版服务进程（`run.ps1 restart`），并在 Docker 容器版中保持一致，经接口探针与页面加载验证无误。
+### 12.29 用户登录设置宝宝资料与孕育阶段切换无法再次更新 Bug 根因彻底修复 (REQ-29)
+- **需求背景与故障现象**：
+  - 用户反馈：在首页或「我的」个人中心档案设置宝宝资料/孕育阶段后，无法再次更新。
+  - 具体复现路径：
+    1. 用户在档案弹窗中先选择「宝宝已出生」，并录入出生日期（如 `2026-08-15`），点击保存退出后系统成功生效；
+    2. 用户再次点击档案弹窗，尝试切换为「怀孕中」，并选择预产期（如 `2027-05-20`），点击保存退出，前端没有弹出任何错误提示；
+    3. 但实际上数据并没有修改成功，页面阶段依然停留在「宝宝已出生」或推算异常，导致用户无法在孕育阶段间自由流转。
+  - 用户明确要求：**在不修改已有功能点的前提下，深入分析根因并在传统版本与 Docker 版本中同步修复，完成后重启传统版本进程供测试验证，并更新 PSD 与 README 文档**。
+- **根因深度剖析 (Root Cause Analysis)**：
+  - **1. 前端序列化剔除与字段清理缺失 (`frontend/src/components/SetStageModal.tsx`)**：
+    - 前端原实现中，当切换为「怀孕中」时，向后端传递的载荷为 `{ due_date: dueDate, is_pregnant: true, baby_birthday: undefined }`；切换为「已出生」时则传递 `{ baby_birthday: birthday, is_pregnant: false, due_date: undefined }`；
+    - 原生 JavaScript 的 `JSON.stringify()` 在序列化对象时会**静默剔除值为 `undefined` 的键值对**。因此发送至后端的 HTTP PUT 请求体中根本不包含 `baby_birthday` 或 `due_date`，后端无法感知用户「清空对向历史日期」的业务意图。
+  - **2. 前端弹窗状态单次闭包初始化陷阱 (`SetStageModal.tsx`)**：
+    - 弹窗的内部 state（`tab`、`dueDate`、`birthday`）原先仅在组件初次挂载时读取 `user` 进行一次性初始化，缺乏对 `isOpen` 弹窗唤醒和 `user` 响应式变更的生命周期监听（缺少 `useEffect` 同步），导致二次打开弹窗时表单回显与实际阶段产生状态漂移。
+  - **3. 后端模型更新互斥防御缺失 (`apps/core/views.py` `MeView.put`)**：
+    - 后端 `MeView.put` 使用 `UserSerializer(..., partial=True)`，仅根据传入的非空字段进行更新；
+    - 当用户由「宝宝已出生」切换为「怀孕中」时，因请求中未带清空指令，数据库中原有的 `baby_birthday` 被完整保留；反之由「怀孕中」切换为「已出生」时，历史 `due_date` 也未被清理，导致数据库中同时存在有效的 `due_date` 与 `baby_birthday` 脏数据。
+  - **4. 阶段推算算法短路设计缺陷 (`apps/core/utils/stage_utils.py` & `apps/core/models/user.py`)**：
+    - 在阶段推算核心函数 `get_stage_info` 及用户模型属性 `User.current_stage` 中，原有逻辑为：
+      `if due_date and not baby_birthday:`
+    - 由于数据库中残留着上一次的 `baby_birthday`，该条件因 `baby_birthday` 不为空直接判定为 `False`，使得即使用户明确设置了 `is_pregnant=True` 与最新预产期，算法也会短路穿透进入「宝宝已出生」分支，引发前端显示未修改的假象。
+  - **5. 个人中心档案卡片渲染顺序漏洞 (`frontend/src/pages/ProfilePage.tsx`)**：
+    - 原逻辑采用线性条件渲染 `user?.due_date ? ... : user?.baby_birthday ? ...`，未结合用户的 `is_pregnant` 真实状态进行区分，当两字段并存时出现展示错乱或误报「尚未设置预产期或宝宝生日」。
+- **全栈修复方案与架构落地**：
+  - **1. 前端表单显式清空与响应式同步 (`SetStageModal.tsx`)**：
+    - 切换为「怀孕中」时，将 `baby_birthday` 明确指定为 `null as any`；切换为「已出生」时将 `due_date` 明确指定为 `null as any`，确保经过 `JSON.stringify` 序列化后能作为 `null` 精准传输给后端，明确下达清空指令；
+    - 增加 `useEffect([isOpen, user])` 监听，在弹窗每次被唤起时，依据当前最新的 `user.is_pregnant`、`due_date`、`baby_birthday` 动态重新校准表单状态与选中的 tab。
+  - **2. 后端数据清洗与互斥防御机制 (`apps/core/views.py`)**：
+    - 在 `MeView.put` 中增加互斥业务守卫：
+      - 当 `is_pregnant` 为 `True` 时，强制在输入载荷中将 `baby_birthday` 置为 `None`；
+      - 当 `is_pregnant` 为 `False` 时，强制在输入载荷中将 `due_date` 置为 `None`；
+    - 在反序列化持久化后增加数据库层互斥清理防御：若用户处于孕期且存在 `baby_birthday`，将数据库 `baby_birthday` 清空为 `NULL`；若用户处于已出生阶段且存在 `due_date`，将数据库 `due_date` 清空为 `NULL`。
+  - **3. 阶段推导逻辑重构升级 (`stage_utils.py` & `models/user.py`)**：
+    - 解除原有的硬编码强短路限制，优先以用户显式的 `is_pregnant` 布尔值为首要判定依据：
+      - `is_pregnant=True` 且存在预产期时，无条件进入孕期计算逻辑；
+      - `is_pregnant=False` 且存在出生日期时，无条件进入宝宝月龄计算逻辑；
+    - 兜底兼容未指定 `is_pregnant` 的历史老数据推导。
+  - **4. 个人中心档案视觉回显精准化 (`ProfilePage.tsx`)**：
+    - 重构展示判断分支：`user?.is_pregnant && user?.due_date` 优先展示预产期；`!user?.is_pregnant && user?.baby_birthday` 精准展示宝宝出生日期，彻底消除信息错位。
+  - **5. 静态产物编译同步与多环境交付**：
+    - 运行 Vite 生产编译（产物哈希更新为 `index-gczm57Pb.js` 与 `index-CDthB3I7.css`），同步分发至 `templates/index.html` 与 `static/assets/`；
+    - 传统版本与 Docker 版本全量代码双向对齐，传统版本一体化服务无缝重启（端口 5173）。
+- **验证与效果评估**：
+  - 编写端到端 API 自动化测试脚本，模拟完整生命周期流程：
+    1. 登录管理员获取 JWT 访问令牌；
+    2. 设置为「宝宝已出生」（`baby_birthday: 2026-08-15`, `is_pregnant: false`），校验返回 `is_pregnant == False`, `baby_birthday == '2026-08-15'`, `due_date is None`, `stage.type == 'baby'`；
+    3. 切换为「怀孕中」（`due_date: 2027-05-20`, `is_pregnant: true`），校验返回 `is_pregnant == True`, `due_date == '2027-05-20'`, `baby_birthday is None`, `stage.type == 'pregnancy'`；
+    4. 重新发起 `GET /api/users/me/`，校验持久化结果完全一致，断言全部 100% 通过（`ALL TESTS PASSED PERFECTLY!`）。
+### 12.30 全站接口安全闭环收敛与未出生宝宝档案全流程阶段同步落地 (REQ-30)
+- **需求背景与安全加固诉求**：
+  - 用户反馈：系统存在 `/admin/login/?next=/admin/users` 等可直接跳转至 Django 原生登录后台的接口暴露隐患，且未加认证的 Swagger/OpenAPI 接口文档亦存在敏感信息泄露风险；
+  - 用户明确要求：**从安全角度考虑，严格禁止暴露其他接口，只允许从登录进入，并且账号认证成功后才可以进行其他操作**；
+  - 用户业务优化诉求：**在「我的」页面宝宝档案模块，需要实现可以新增未出生的宝宝档案，并且实现跟首页、我的孕育阶段数据的全自动双向同步**。
+- **架构设计与全栈落地措施**：
+  - **1. 全站接口安全收敛与原生后台彻底闭环**：
+    - **移除 Django 原生 Admin 挂载**：在 `config/urls.py` 中彻底移除 `path("admin/", admin.site.urls)`；
+    - **安全重定向主动拦截**：在路由前置显式挂载重定向规则，凡外部直接访问 `/admin/login/` 或 `/admin/` 一律 302 安全重定向至前端统一登录页 `/login`；
+    - **下线公共 API 文档与元数据**：移除 `api/schema/` 与 `api/docs/` 公开路由，杜绝整站 API 契约与内部数据结构被探测；
+    - **SPA 路由全接管**：移除 SPA 回退正则中的 `admin/` 排除项，使前端管理路由（`/admin/users`、`/admin/registration`、`/admin/products`、`/admin/audit-logs`）统一由 React SPA 接管；
+    - **前端双层管理守卫 (`AdminGuard`)**：在 `frontend/src/App.tsx` 中封装 `AdminGuard` 守卫，未登录强制重定向至 `/login`，已登录但非管理员（`!user.is_staff`）阻断并引导至首页；
+    - **后端 API 白名单极简化**：除 8 项公开认证与风控探针接口外，其余 40 余项业务 API 均由 `SingleSessionJWTAuthentication` 与 `IsAuthenticated` 严格防护，匿名访问一律返回 401 Unauthorized。
+  - **2. 未出生宝宝档案模型升级与状态流转 (`apps/core/models/baby.py` & `serializers`)**：
+    - **数据模型增强**：`BabyProfile` 新增 `is_born = models.BooleanField(default=True, verbose_name="是否已出生")`，创建并执行数据库迁移 `0024_babyprofile_is_born_alter_babyprofile_birthday.py`；
+    - **未出生阶段支持**：未出生宝宝以 `birthday` 承载预产期，模型层 `get_age_display` 增强返回：“胎儿 (孕X周，距预产期Y天)”；
+    - **序列化器扩展**：`BabyProfileSerializer` 扩展返回 `is_born`、`due_date` 与 `gestation_weeks`，为前端提供结构化孕周与预产期数据。
+  - **3. 前端「我的」页面宝宝档案重构 (`frontend/src/pages/ProfilePage.tsx`)**：
+    - **新增弹窗状态分流**：增加「🌱 怀孕中 / 尚未出生（预产期）」与「👶 宝宝已出生」状态切换栏；
+    - **未出生模式**：录入「宝宝胎名/小名」（如“小核桃”）、选择预产期（带周数与倒计时提示）、选择预估性别，隐藏出生体重/身高；
+    - **出生转正无缝衔接**：在档案编辑弹窗中可一键切换为「已出生」，补填真实出生日期与体重，完成从胎儿到新生儿的档案转换；
+    - **列表视觉精细化**：未出生宝宝卡片展示专属琥珀色「孕育中」徽章与预产期倒计时。
+  - **4. 全站孕育阶段双向全自动数据同步**：
+    - **后端联动同步**：`BabyViewSet` 在创建、修改、设为默认及删除宝宝档案时，自动触发 `_sync_user_stage`，联动同步 `User.is_pregnant`、`due_date` 与 `baby_birthday`；
+    - **前端事件驱动响应**：档案操作成功后自动触发 `fetchMe()` 并广播 `stageChanged` 全局自定义事件；
+    - **首页协同联动**：首页顶部阶段卡片即时刷新为“孕X周，距预产期Y天”，时光轴（Timeline）推荐与适龄指南自动切换至对应孕周内容；
+    - **首页阶段弹窗对称互通 (`SetStageModal.tsx`)**：在「怀孕中」选项卡中同步增加「宝宝胎名/小名（选填）」输入项，保存时自动创建未出生宝宝档案，达成「首页 ⇄ 档案」完全对称互通。
+- **验证与效果评估**：
+  - 编写端到端自动化测试脚本，全面验证通过：
+    1. `/admin/login/?next=/admin/users` 成功触发 302 安全重定向至 `/login`，彻底杜绝 Django Admin 原生后台暴露；
+    2. `/api/docs/` 成功返回 404，阻断 API 架构探测；
+    3. 匿名请求受保护 API 严格返回 401；
+    4. 创建未出生宝宝档案后，`is_born=False`，用户资料与阶段自动同步为孕期模式；
+    5. 将宝宝更新为已出生后，`is_born=True`，用户资料与阶段自动同步为新生儿月龄模式；
+    6. 测试用例 100% 执行通过（`ALL TESTS PASSED WITH 100% SUCCESS!`）。

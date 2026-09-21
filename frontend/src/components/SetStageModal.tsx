@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Baby, Calendar, Heart, Loader2, Sparkles, X } from "lucide-react";
 import { authApi } from "@/api/auth";
 import { useAuthStore } from "@/store/authStore";
@@ -11,13 +11,29 @@ interface SetStageModalProps {
 
 export default function SetStageModal({ isOpen, onClose, onSuccess }: SetStageModalProps) {
   const { user, fetchMe } = useAuthStore();
-  const [tab, setTab] = useState<"pregnant" | "born">(user?.baby_birthday ? "born" : "pregnant");
+  const [tab, setTab] = useState<"pregnant" | "born">(() => {
+    const isPreg = user?.is_pregnant ?? (Boolean(user?.due_date) && !user?.baby_birthday);
+    return isPreg ? "pregnant" : (user?.baby_birthday ? "born" : "pregnant");
+  });
   const [dueDate, setDueDate] = useState(user?.due_date || "");
   const [birthday, setBirthday] = useState(user?.baby_birthday || "");
   const [babyName, setBabyName] = useState("");
   const [gender, setGender] = useState("secret");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  // 每次打开弹窗或 user 变更时，根据当前最新 user 数据动态同步
+  useEffect(() => {
+    if (isOpen) {
+      const isPreg = user?.is_pregnant ?? (Boolean(user?.due_date) && !user?.baby_birthday);
+      setTab(isPreg ? "pregnant" : (user?.baby_birthday ? "born" : "pregnant"));
+      setDueDate(user?.due_date || "");
+      setBirthday(user?.baby_birthday || "");
+      setBabyName("");
+      setGender("secret");
+      setError("");
+    }
+  }, [isOpen, user]);
 
   if (!isOpen) return null;
 
@@ -118,13 +134,24 @@ export default function SetStageModal({ isOpen, onClose, onSuccess }: SetStageMo
         await authApi.updateMe({
           due_date: dueDate,
           is_pregnant: true,
-          baby_birthday: undefined,
+          baby_birthday: null as any,
         });
+        if (babyName.trim()) {
+          try {
+            await authApi.createBaby({
+              name: babyName.trim(),
+              gender: gender === "secret" ? "unknown" : gender,
+              birthday: dueDate,
+              is_born: false,
+              is_primary: true,
+            });
+          } catch {}
+        }
       } else {
         await authApi.updateMe({
           baby_birthday: birthday,
           is_pregnant: false,
-          due_date: undefined,
+          due_date: null as any,
         });
         // 如果输入了宝宝姓名，同时创建宝宝档案
         if (babyName.trim()) {
@@ -231,6 +258,39 @@ export default function SetStageModal({ isOpen, onClose, onSuccess }: SetStageMo
               <p className="mt-1 text-xs text-gray-400">
                 可参考医院 B 超或末次月经推算日期（末次月经第一天 + 280 天，距离当前不超过10个月）
               </p>
+            </div>
+            <div>
+              <label className="label text-sm">宝宝胎名 / 小名（选填）</label>
+              <input
+                type="text"
+                className="input"
+                placeholder="例如：小汤圆、大宝（保存后将同步建立宝宝档案）"
+                value={babyName}
+                onChange={(e) => setBabyName(e.target.value)}
+              />
+            </div>
+            <div>
+              <label className="label text-sm">预估性别</label>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { value: "secret", label: "保密/未知" },
+                  { value: "boy", label: "男宝 👦" },
+                  { value: "girl", label: "女宝 👧" },
+                ].map((item) => (
+                  <button
+                    key={item.value}
+                    type="button"
+                    className={`rounded-xl py-2 text-xs font-medium border transition ${
+                      gender === item.value
+                        ? "border-brand-500 bg-orange-50/60 text-brand-600 font-semibold"
+                        : "border-gray-200 text-gray-600 hover:bg-gray-50"
+                    }`}
+                    onClick={() => setGender(item.value)}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         )}

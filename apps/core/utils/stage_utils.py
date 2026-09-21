@@ -5,15 +5,30 @@ from typing import Optional
 def get_stage_info(
     due_date: Optional[date] = None,
     baby_birthday: Optional[date] = None,
+    is_pregnant: Optional[bool] = None,
 ) -> dict:
     """
     根据预产期或宝宝生日计算当前阶段信息。
+    优先依据 is_pregnant 明确标识；若未指定则通过 due_date 与 baby_birthday 综合推导。
     返回：阶段类型、阶段值、显示文本、推荐标签等。
     """
     today = date.today()
 
+    # 判定当前是否优先按孕期计算：
+    # 1) 显式声明 is_pregnant is True 且存在预产期
+    # 2) 或 is_pregnant 为 None 时，存在 due_date 且未指定 baby_birthday
+    # 3) 或即使存在 baby_birthday，但显式指定了 is_pregnant=True
+    is_pregnancy_mode = False
+    if due_date:
+        if is_pregnant is True:
+            is_pregnancy_mode = True
+        elif is_pregnant is False:
+            is_pregnancy_mode = False
+        else:
+            is_pregnancy_mode = not bool(baby_birthday)
+
     # 情况1：孕期
-    if due_date and not baby_birthday:
+    if is_pregnancy_mode and due_date:
         delta = due_date - today
         if delta.days < 0:
             weeks = 40
@@ -82,6 +97,20 @@ def get_stage_info(
             "period": period,
             "stage_key": stage_key,
             "is_pregnant": False,
+        }
+
+    # 保底：若只有 due_date 且未被标记为非孕期
+    if due_date and (is_pregnant is not False):
+        delta = due_date - today
+        weeks = 40 if delta.days < 0 else max(1, min(40 - (delta.days // 7), 40))
+        label = f"孕{weeks}周"
+        return {
+            "type": "pregnancy",
+            "value": weeks,
+            "label": label,
+            "trimester": "孕早期" if weeks <= 13 else "孕中期" if weeks <= 27 else "孕晚期",
+            "stage_key": f"pregnancy_{weeks}w",
+            "is_pregnant": True,
         }
 
     # 情况3：未设置

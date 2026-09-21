@@ -42,6 +42,45 @@ function PermissionGuard({ perm, children }: { perm: string; children: React.Rea
   return <>{children}</>;
 }
 
+function AdminGuard({ children }: { children: React.ReactNode }) {
+  const { user, loading } = useAuthStore();
+  const navigate = useNavigate();
+
+  if (loading) {
+    return (
+      <div className="flex min-h-[50vh] items-center justify-center text-gray-400">
+        正在加载...
+      </div>
+    );
+  }
+
+  if (!user) {
+    navigate("/login", { replace: true });
+    return null;
+  }
+
+  if (!user.is_staff) {
+    return (
+      <div className="card my-12 mx-auto max-w-md space-y-4 py-12 text-center">
+        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-red-50 text-red-500">
+          <ShieldAlert className="h-7 w-7" />
+        </div>
+        <div>
+          <h2 className="text-lg font-bold text-gray-800">无权访问管理后台</h2>
+          <p className="mt-1 text-xs text-gray-400">该页面仅限系统超级管理员访问，已对非授权账号严格阻断。</p>
+        </div>
+        <button
+          className="btn-primary inline-flex items-center gap-1.5"
+          onClick={() => navigate("/")}
+        >
+          <Home className="h-4 w-4" /> 返回首页
+        </button>
+      </div>
+    );
+  }
+  return <>{children}</>;
+}
+
 import { Route, Routes } from "react-router-dom";
 import MainLayout from "./layouts/MainLayout";
 import RequireAuth from "./layouts/RequireAuth";
@@ -104,10 +143,10 @@ export default function App() {
         <Route path="/ai-assistant" element={<PermissionGuard perm="menu_ai_assistant"><AIAssistantPage /></PermissionGuard>} />
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/settings/ai" element={<AIConfigPage />} />
-        <Route path="/admin/registration" element={<RegistrationManagePage />} />
-        <Route path="/admin/products" element={<ProductAdminPage />} />
-        <Route path="/admin/users" element={<UserManagePage />} />
-        <Route path="/admin/audit-logs" element={<AuditLogPage />} />
+        <Route path="/admin/registration" element={<AdminGuard><RegistrationManagePage /></AdminGuard>} />
+        <Route path="/admin/products" element={<AdminGuard><ProductAdminPage /></AdminGuard>} />
+        <Route path="/admin/users" element={<AdminGuard><UserManagePage /></AdminGuard>} />
+        <Route path="/admin/audit-logs" element={<AdminGuard><AuditLogPage /></AdminGuard>} />
         <Route path="/brands" element={<BrandListPage />} />
         <Route path="/brands/:id" element={<BrandDetailPage />} />
         <Route path="/fetal-stories" element={<PermissionGuard perm="menu_fetal_stories"><FetalStoryPage /></PermissionGuard>} />

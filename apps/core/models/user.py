@@ -71,6 +71,19 @@ class User(AbstractUser):
         from datetime import date
 
         today = date.today()
+        # 优先依据明确的 is_pregnant 标识
+        if self.is_pregnant and self.due_date:
+            delta = self.due_date - today
+            weeks = 40 - (delta.days // 7) if delta.days > 0 else 40
+            weeks = max(1, min(weeks, 40))
+            return f"pregnancy_{weeks}w"
+        if not self.is_pregnant and self.baby_birthday:
+            delta = today - self.baby_birthday
+            if delta.days < 0:
+                return "waiting_for_birth"
+            if delta.days < 30:
+                return f"baby_{delta.days}d"
+            return f"baby_{delta.days // 30}m"
         if self.due_date and not self.baby_birthday:
             delta = self.due_date - today
             weeks = 40 - (delta.days // 7) if delta.days > 0 else 40
@@ -83,6 +96,11 @@ class User(AbstractUser):
             if delta.days < 30:
                 return f"baby_{delta.days}d"
             return f"baby_{delta.days // 30}m"
+        if self.due_date:
+            delta = self.due_date - today
+            weeks = 40 - (delta.days // 7) if delta.days > 0 else 40
+            weeks = max(1, min(weeks, 40))
+            return f"pregnancy_{weeks}w"
         return "unknown"
 
     def __str__(self):

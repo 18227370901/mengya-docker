@@ -4,9 +4,70 @@ import { Eye, EyeOff, KeyRound, RefreshCw, Sprout, Lock } from "lucide-react";
 import { authApi } from "@/api/auth";
 import { useAuthStore } from "@/store/authStore";
 
+const encodeCredential = (val: string): string => {
+  try {
+    return btoa(encodeURIComponent(val));
+  } catch {
+    return val;
+  }
+};
+
+const decodeCredential = (val: string): string => {
+  try {
+    return decodeURIComponent(atob(val));
+  } catch {
+    return val;
+  }
+};
+
 export default function LoginPage() {
-  const [phone, setPhone] = useState("");
-  const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState<boolean>(() => {
+    try {
+      return (
+        localStorage.getItem("mengya_remember_me") === "1" ||
+        localStorage.getItem("mengya_remember_login") === "true"
+      );
+    } catch {
+      return false;
+    }
+  });
+
+  const [phone, setPhone] = useState<string>(() => {
+    try {
+      const isRemembered =
+        localStorage.getItem("mengya_remember_me") === "1" ||
+        localStorage.getItem("mengya_remember_login") === "true";
+      if (isRemembered) {
+        return localStorage.getItem("mengya_saved_account") || "";
+      }
+    } catch {}
+    return "";
+  });
+
+  const [password, setPassword] = useState<string>(() => {
+    try {
+      const isRemembered =
+        localStorage.getItem("mengya_remember_me") === "1" ||
+        localStorage.getItem("mengya_remember_login") === "true";
+      if (isRemembered) {
+        const saved = localStorage.getItem("mengya_saved_password") || "";
+        return saved ? decodeCredential(saved) : "";
+      }
+    } catch {}
+    return "";
+  });
+
+  const handleRememberMeChange = (checked: boolean) => {
+    setRememberMe(checked);
+    if (!checked) {
+      try {
+        localStorage.removeItem("mengya_remember_me");
+        localStorage.removeItem("mengya_remember_login");
+        localStorage.removeItem("mengya_saved_account");
+        localStorage.removeItem("mengya_saved_password");
+      } catch {}
+    }
+  };
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -215,6 +276,21 @@ export default function LoginPage() {
     setLoading(true);
     try {
       const data = await authApi.login({ phone: phone.trim(), password, captcha: needCaptcha ? captcha : undefined });
+      if (rememberMe) {
+        try {
+          localStorage.setItem("mengya_remember_me", "1");
+          localStorage.setItem("mengya_remember_login", "true");
+          localStorage.setItem("mengya_saved_account", phone.trim());
+          localStorage.setItem("mengya_saved_password", encodeCredential(password));
+        } catch {}
+      } else {
+        try {
+          localStorage.removeItem("mengya_remember_me");
+          localStorage.removeItem("mengya_remember_login");
+          localStorage.removeItem("mengya_saved_account");
+          localStorage.removeItem("mengya_saved_password");
+        } catch {}
+      }
       setAuth(data.user, data.access, data.refresh);
       navigate("/");
     } catch (err) {
@@ -447,6 +523,24 @@ export default function LoginPage() {
                   </button>
                 </div>
               </div>
+              <div className="flex items-center justify-between pt-0.5 pb-0.5">
+                <label className="flex items-center gap-2 cursor-pointer select-none text-sm text-gray-600 hover:text-gray-800">
+                  <input
+                    type="checkbox"
+                    checked={rememberMe}
+                    onChange={(e) => handleRememberMeChange(e.target.checked)}
+                    className="h-4 w-4 rounded border-gray-300 text-brand-500 focus:ring-brand-400 cursor-pointer accent-brand-500"
+                  />
+                  <span>记住登录（下次免输账密）</span>
+                </label>
+                <button
+                  type="button"
+                  className="text-sm text-brand-500 hover:underline"
+                  onClick={() => { setShowForgot(true); setError(""); }}
+                >
+                  忘记密码？
+                </button>
+              </div>
               {needCaptcha && (
                 <div>
                   <label className="label">验证码</label>
@@ -522,14 +616,6 @@ export default function LoginPage() {
                 {loading ? "登录中…" : waitSeconds > 0 ? `请等待 ${waitSeconds}s` : lockSeconds > 0 ? `锁定中 ${lockSeconds}s` : "登录"}
               </button>
             </form>
-            <div className="mt-3 text-center">
-              <button
-                className="text-sm text-brand-500 hover:underline"
-                onClick={() => { setShowForgot(true); setError(""); }}
-              >
-                忘记密码？
-              </button>
-            </div>
             <p className="mt-3 text-center text-sm text-gray-500">
               还没有账号？<Link to="/register" className="text-brand-500 hover:underline">立即注册</Link>
             </p>

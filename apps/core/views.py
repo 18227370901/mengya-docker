@@ -537,7 +537,7 @@ class MeView(APIView):
 
     def get(self, request):
         user = request.user
-        stage = get_stage_info(user.due_date, user.baby_birthday)
+        stage = get_stage_info(user.due_date, user.baby_birthday, user.is_pregnant)
         return Response(
             {
                 "code": 0,
@@ -551,13 +551,39 @@ class MeView(APIView):
         )
 
     def put(self, request):
-        serializer = UserSerializer(request.user, data=request.data, partial=True)
+        put_data = request.data.copy() if hasattr(request.data, "copy") else dict(request.data)
+        is_pregnant_val = put_data.get("is_pregnant")
+        if is_pregnant_val is True or str(is_pregnant_val).lower() == "true":
+            put_data["is_pregnant"] = True
+            # 切换为孕期时，若未显式传 baby_birthday 则置为 None
+            if "baby_birthday" not in put_data or put_data.get("baby_birthday") is None:
+                put_data["baby_birthday"] = None
+        elif is_pregnant_val is False or str(is_pregnant_val).lower() == "false":
+            put_data["is_pregnant"] = False
+            # 切换为已出生时，若未显式传 due_date 则置为 None
+            if "due_date" not in put_data or put_data.get("due_date") is None:
+                put_data["due_date"] = None
+
+        serializer = UserSerializer(request.user, data=put_data, partial=True)
         serializer.is_valid(raise_exception=True)
-        serializer.save()
-        audit(request, "profile_update", "更新个人资料/孕育阶段", "user", request.user.id,
-              request.user.nickname or request.user.phone, "更新个人资料、预产期或宝宝生日")
-        stage = get_stage_info(request.user.due_date, request.user.baby_birthday)
-        return Response({"code": 0, "message": "已更新", "data": {"user": UserSerializer(request.user).data, "stage": stage}})
+        user = serializer.save()
+
+        # 数据库层互斥清理防御：孕期时清空 baby_birthday，已出生时清空 due_date
+        fields_to_update = []
+        if user.is_pregnant and user.baby_birthday is not None:
+            user.baby_birthday = None
+            fields_to_update.append("baby_birthday")
+        elif not user.is_pregnant and user.baby_birthday and user.due_date is not None:
+            user.due_date = None
+            fields_to_update.append("due_date")
+
+        if fields_to_update:
+            user.save(update_fields=fields_to_update)
+
+        audit(request, "profile_update", "更新个人资料/孕育阶段", "user", user.id,
+              user.nickname or user.phone, "更新个人资料、预产期或宝宝生日")
+        stage = get_stage_info(user.due_date, user.baby_birthday, user.is_pregnant)
+        return Response({"code": 0, "message": "已更新", "data": {"user": UserSerializer(user).data, "stage": stage}})
 
 
 class AIConfigView(APIView):
@@ -832,23 +858,57 @@ class BabyViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         return BabyProfile.objects.filter(user=self.request.user)
 
+    def _sync_user_stage(self, user, baby):
+        """将宝宝档案（未出生/已出生）同步至用户的孕育阶段"""
+        from datetime import date
+        today = date.today()
+        is_born = getattr(baby, "is_born", True)
+        if not is_born or baby.birthday > today:
+            # 未出生宝宝 -> 同步为孕期模式
+            user.is_pregnant = True
+            user.due_date = baby.birthday
+            user.baby_birthday = None
+            user.save(update_fields=["is_pregnant", "due_date", "baby_birthday"])
+        else:
+            # 已出生宝宝 -> 同步为已出生模式
+            user.is_pregnant = False
+            user.baby_birthday = baby.birthday
+            user.due_date = None
+            user.save(update_fields=["is_pregnant", "due_date", "baby_birthday"])
+
     def perform_create(self, serializer):
         check_permission_or_403(self.request.user, "baby_create", "您没有添加宝宝档案的权限")
         baby = serializer.save(user=self.request.user)
+        total_babies = BabyProfile.objects.filter(user=self.request.user).count()
+        if total_babies == 1 or baby.is_primary or self.request.data.get("sync_stage", True):
+            BabyProfile.objects.filter(user=self.request.user).exclude(id=baby.id).update(is_primary=False)
+            baby.is_primary = True
+            baby.save(update_fields=["is_primary"])
+            self._sync_user_stage(self.request.user, baby)
         b_name = getattr(baby, "name", "") or f"宝宝#{baby.id}"
         audit(self.request, "baby_create", "添加宝宝档案", "baby", baby.id, b_name, f"添加宝宝 {b_name}")
 
     def perform_update(self, serializer):
         check_permission_or_403(self.request.user, "baby_update", "您没有修改宝宝档案的权限")
         baby = serializer.save()
+        if baby.is_primary or BabyProfile.objects.filter(user=self.request.user).count() == 1:
+            self._sync_user_stage(self.request.user, baby)
         b_name = getattr(baby, "name", "") or f"宝宝#{baby.id}"
         audit(self.request, "baby_update", "修改宝宝档案", "baby", baby.id, b_name, f"更新宝宝档案 {b_name}")
 
     def perform_destroy(self, instance):
         check_permission_or_403(self.request.user, "baby_delete", "您没有删除宝宝档案的权限")
+        user = self.request.user
+        was_primary = instance.is_primary
         b_name = getattr(instance, "name", "") or f"宝宝#{instance.id}"
         audit(self.request, "baby_delete", "删除宝宝档案", "baby", instance.id, b_name, f"删除宝宝档案 {b_name}")
         instance.delete()
+        if was_primary:
+            remaining = BabyProfile.objects.filter(user=user).order_by("-id").first()
+            if remaining:
+                remaining.is_primary = True
+                remaining.save(update_fields=["is_primary"])
+                self._sync_user_stage(user, remaining)
 
     @action(detail=True, methods=["post"])
     def set_primary(self, request, pk=None):
@@ -856,9 +916,10 @@ class BabyViewSet(viewsets.ModelViewSet):
         BabyProfile.objects.filter(user=request.user).update(is_primary=False)
         baby.is_primary = True
         baby.save()
+        self._sync_user_stage(request.user, baby)
         b_name = getattr(baby, "name", "") or f"宝宝#{baby.id}"
         audit(request, "baby_switch", "切换默认宝宝", "baby", baby.id, b_name, f"设为默认宝宝 {b_name}")
-        return Response({"code": 0, "message": "已设为默认宝宝", "data": None})
+        return Response({"code": 0, "message": "已设为默认宝宝并同步孕育阶段", "data": None})
 
     @action(detail=True, methods=["post"])
     def set_default(self, request, pk=None):
