@@ -8,12 +8,11 @@
 
 ---
 
-## 一、微服务架构模型与双版本共存隔离设计
+## 一、单体一体化微服务架构模型与双版本共存隔离设计
 
 | 容器服务 | 基础镜像 / 技术栈 | 内部端口 | 宿主机暴露策略与隔离设计（与传统版零冲突） |
 | :--- | :--- | :--- | :--- |
-| **frontend** | `node:20-alpine` (React + Vite) | `5173` | **宿主机映射端口调整为 `5174`**：避开传统版 `5173`，支持宿主机双版本同时无冲突运行。 |
-| **backend** | `python:3.11-slim` (Django + DRF) | `8000` | **安全内部隔离（仅 expose）**：不对宿主机暴露 8000 端口，仅通过 Docker 网络内网互联。 |
+| **backend** | `python:3.11-slim` (Django + DRF + React 前端一体化托管) | `8000` | **宿主机映射端口为 `5174`**：通过 Docker 多阶段构建将前端打包产物合并至后端，彻底移除 Node 与 Nginx 容器，避开传统版 `5173`，支持宿主机双版本同时无冲突运行。 |
 | **db** | `pgvector/pgvector:pg18` (PostgreSQL) | `5432` | **安全内部隔离（仅 expose）**：不对宿主机暴露 5432 端口，数据持久化至数据卷 `pgdata`。 |
 | **redis** | `redis:7-alpine` (可选 profile) | `6379` | **安全内部隔离（仅 expose）**：仅在内部容器网络暴露，供 Celery 任务调度与缓存。 |
 | **worker** | `python:3.11-slim` (Celery Worker) | - | **后台任务执行**：与 backend 共享代码环境与内部通信。 |
@@ -169,6 +168,8 @@ mengya-docker/
 │   │   ├── utils/            # 权限矩阵计算 (permissions.py)、渲染器、阶段推算
 │   │   └── views.py          # 全量 API 视图控制器
 ├── config/                   # Django 与 Celery 项目主配置
+├── templates/                # 一体化前端模板（index.html 生产产物）
+├── static/                   # 一体化前端静态资源（assets、fetal-stories 等）
 ├── frontend/                 # React + Vite 前端工程
 │   ├── src/
 │   │   ├── api/              # API 请求层（含认证、权限矩阵、AI连通性测试、商品评测等）
@@ -182,8 +183,8 @@ mengya-docker/
 │   ├── mengya_ssl.conf       # 443 HTTPS SNI 虚拟主机与反代配置模板
 │   ├── nginx.conf            # HTTP 基础反代配置
 │   └── ssl/                  # SSL 证书存放目录
-├── Dockerfile                # 后端 Django 容器构建定义（基于当前平铺代码上下文）
-├── docker-compose.yml        # 多容器微服务编排定义（安全隔离模型）
+├── Dockerfile                # 多阶段构建一体化生产镜像（前端编译+Django全栈托管，零Node零Nginx）
+├── docker-compose.yml        # 微服务编排定义（精简为 db + backend 双核心容器）
 ├── .env                      # 容器环境变量
 ├── .env.example              # 环境变量配置模板
 ├── requirements.txt          # 后端 Python 依赖清单

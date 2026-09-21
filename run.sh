@@ -3,9 +3,9 @@
 # 萌芽（mengya）平台 - Docker 容器化模式管理脚本 (mengya-docker)
 #
 # 架构模型：
-#   - 编排：Docker Compose 现代化微服务网络（db, backend, frontend, redis, worker）
-#   - 宿主机暴露端口：仅前端 5174 端口（通过 FRONTEND_PORT 避开传统版 5173，支持双版本共存）
-#   - 容器内部安全隔离：PostgreSQL(5432)、Redis(6379)、Django(8000) 均仅在容器内网互联，不对宿主机暴露
+#   - 编排：Docker Compose 现代化微服务网络（db, backend 一体化, redis, worker）
+#   - 宿主机暴露端口：仅一体化服务 5174 端口（通过 FRONTEND_PORT 避开传统版 5173，支持双版本共存）
+#   - 容器内部安全隔离：PostgreSQL(5432)、Redis(6379) 仅在容器内网互联，不对宿主机暴露；Django(8000) 映射至宿主机 FRONTEND_PORT(5174)
 #   - 宿主机 Nginx 集成：支持 ./run.sh add_nginx 生成 /opt/service/nginx/conf.d/mengya_docker_ssl.conf，实现 443 SNI 多站点无冲突共存
 #
 # 支持命令：
@@ -219,7 +219,7 @@ start_docker() {
     echo "  安全网络模型:"
     echo "    - 数据库 (PostgreSQL 5432): 内部互联，不对外暴露端口"
     echo "    - 缓存与队列 (Redis 6379):  内部互联，不对外暴露端口"
-    echo "    - 后端 API (Django 8000):   内部互联，不对外暴露端口"
+    echo "    - 一体化服务 (Django 8000): 映射宿主机端口 $FRONTEND_PORT (统一托管 API 与前端 SPA 页面)"
     echo "============================================"
 }
 
@@ -262,7 +262,7 @@ status_docker() {
     # shellcheck disable=SC2086
     $compose $extra_args ps -a
     echo "--------------------------------------------"
-    echo "  前端映射端口: $FRONTEND_PORT"
+    echo "  服务映射端口: $FRONTEND_PORT (一体化托管前端与后端)"
     echo "  Nginx 配置文件: $([ -f "$NGINX_CONF" ] && echo "已就绪 ($NGINX_CONF)" || echo "未生成 (可执行 ./run.sh add_nginx)")"
     echo "============================================"
 }
@@ -430,18 +430,13 @@ server {
     # 文件上传限制
     client_max_body_size 20M;
 
-    # 反向代理至 Docker 映射的前端服务（前端内部反代后端 API 与 Admin）
+    # 反向代理至 Docker 映射的一体化服务（统一托管前端静态页面、后端 API 与 Admin）
     location / {
         proxy_pass http://127.0.0.1:$FRONTEND_PORT;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
-
-        # WebSocket 支持 (Vite HMR)
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
 
         proxy_connect_timeout 60s;
         proxy_read_timeout 120s;
