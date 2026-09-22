@@ -1646,3 +1646,24 @@ MODE 环境变量已设置 → 直接使用（校验取值）
   - 传统版本成功执行 `run.sh restart` 重启，`GET http://127.0.0.1:5173/` 稳定响应 HTTP 200；
   - `ensure_admin` 分别测试默认 `admin` 与自定义 `admin_yy`，成功验证历史管理员完全清理，仅保留唯一自定义管理员，且真实普通用户 100% 完好保留；
   - 传统版本停止与重启操作不再干扰 Docker 容器进程，双版本环境端口与环境配置彻底解耦。
+
+### 12.34 多 SNI 域名统一访问地址输出优化与 .env 空格配置安全自愈 (REQ-34)
+- **需求背景与现象**：
+  - 用户反馈关键现象：在 `run.sh` 中配置多个 SNI 域名（例如 `SERVER_NAME="mengya.ghca.kdns.fr mengya.local"`）后，启动/重启完成时控制台输出显示为：`统一访问地址: https://mengya.ghca.kdns.fr/ (HTTPS 443 SNI 唯一入口)`，仅打印了第 1 个 SNI 域名的访问地址，且带有歧义的“唯一入口”字样，缺少其他所有已生效 SNI 域名的直观入口指引。
+- **根因分析**：
+  - `run.sh` 历史在输出完成横幅及 `status` 状态时，使用了 `PRIMARY_DOMAIN=$(echo "$SERVER_NAME" | awk '{print $1}')` 简单截取首个域名，写死了单行输出逻辑；
+  - 实际上底层 OpenSSL 证书 SAN 扩展以及 Nginx 的 `server_name` 指令均已完整生效所有域名，仅在用户交互展示层面未做多域名遍历；
+  - 此外，当 `update_env_var` 将包含空格的多域名持久化至 `.env` 时，若未包裹双引号，会导致下一次 Bash `source .env` 时将第二个域名误解析为可执行命令从而报错 `command not found`。
+- **优化与自愈方案**：
+  - **1. 多域名自适应格式化输出函数 (`print_access_urls`)**：
+    - 智能计算域名个数 `domain_count=$(echo "$SERVER_NAME" | wc -w)`；
+    - 单域名时保持紧凑单行格式：`统一访问地址: https://domain/ (HTTPS SNI 入口)`；
+    - 多域名时层级分明列出所有可用入口：主访问入口及附加入口列表，自动适配非 443 端口后缀；
+    - 全面覆盖 `start`、`restart`、`status`、`add_nginx` 等全命令生命周期。
+  - **2. `.env` 多域名空格值双引号自动包裹与自愈**：
+    - `update_env_var` 在写入带空格值时自动添加双引号；
+    - 在 Bash `source .env` 前增加正则自动修复逻辑，若用户手动编辑 `.env` 漏写引号也能自愈，彻底杜绝语法解析崩溃。
+- **测试与验证效果**：
+  - 传统版与 Docker 版同步落地；
+  - 分别使用单域名（`mengya.local`）与多域名（`mengya.ghca.kdns.fr mengya.local baby.local`）测试验证；
+  - 多域名场景下控制台清晰列出所有 SNI 域名对应 HTTPS 完整链接，彻底消除信息遗漏。

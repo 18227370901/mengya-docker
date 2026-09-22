@@ -45,9 +45,11 @@ if [ ! -f ".env" ]; then
 fi
 
 if [ -f ".env" ]; then
+    # 自动修复 .env 中带空格但未加引号的值（避免 bash source .env 时报 command not found）
+    sed -i.bak -E 's/^([A-Za-z0-9_]+)=([^"#][^#]*[[:space:]][^#]*)$/\1="\2"/' ".env" 2>/dev/null && rm -f ".env.bak"
     set -a
     # shellcheck disable=SC1091
-    . ./.env
+    . ./.env 2>/dev/null || true
     set +a
 fi
 
@@ -56,8 +58,13 @@ update_env_var() {
     local key="$1"
     local val="$2"
     if [ -f ".env" ]; then
+        # 智能添加引号：若包含空格且未加双引号，自动包裹双引号以保障 bash source 安全
+        local formatted_val="$val"
+        if [[ "$val" =~ [[:space:]] ]] && [[ ! "$val" =~ ^\".*\"$ ]]; then
+            formatted_val="\"$val\""
+        fi
         if grep -q "^${key}=" ".env" 2>/dev/null; then
-            sed -i.bak "s|^${key}=.*|${key}=${val}|" ".env" 2>/dev/null && rm -f ".env.bak"
+            sed -i.bak "s|^${key}=.*|${key}=${formatted_val}|" ".env" 2>/dev/null && rm -f ".env.bak"
         else
             # 确保在末尾追加前文件以换行符结尾，避免与注释行等粘连
             if [ -s ".env" ]; then
@@ -67,7 +74,7 @@ update_env_var() {
                     echo "" >> ".env"
                 fi
             fi
-            echo "${key}=${val}" >> ".env"
+            echo "${key}=${formatted_val}" >> ".env"
         fi
     fi
 }
@@ -90,6 +97,37 @@ resolve_abs_path() {
             ;;
     esac
 }
+# 格式化输出 SNI 访问地址清单（智能支持单域名与多域名）
+print_access_urls() {
+    local label="${1:-统一访问地址}"
+    local port="${2:-$EXTERNAL_PORT}"
+    local port_suffix=""
+    if [ -n "$port" ] && [ "$port" != "443" ] && [ "$port" != "80" ]; then
+        port_suffix=":$port"
+    fi
+
+    local domain_count
+    domain_count=$(echo "$SERVER_NAME" | wc -w)
+
+    if [ "$domain_count" -le 1 ]; then
+        local single_domain
+        single_domain=$(echo "$SERVER_NAME" | awk '{print $1}')
+        [ -z "$single_domain" ] && single_domain="mengya-docker.local"
+        echo "  ${label}: https://${single_domain}${port_suffix}/ (与传统版共存，零冲突)"
+    else
+        echo "  ${label} (支持 $domain_count 个 SNI 域名):"
+        local idx=1
+        for d in $SERVER_NAME; do
+            if [ "$idx" -eq 1 ]; then
+                echo "    - 主访问入口:   https://${d}${port_suffix}/"
+            else
+                echo "    - 附加入口[$((idx - 1))]: https://${d}${port_suffix}/"
+            fi
+            idx=$((idx + 1))
+        done
+    fi
+}
+
 
 
 # 外部访问端口与域名设置（与传统版完全隔离）
@@ -455,7 +493,7 @@ start_docker() {
     echo "  Nginx SNI 匹配域名: $SERVER_NAME"
     if [ -f "$NGINX_CONF" ]; then
         echo "  Nginx 反代状态: 已配置 ($NGINX_CONF -> 443 端口)"
-        echo "  统一访问入口: https://$MAIN_DOMAIN/ (与传统版共存，零冲突)"
+        print_access_urls "统一访问入口" "$EXTERNAL_PORT"
     else
         echo "  Nginx 反代状态: 尚未生成，可按需执行 ./run.sh add_nginx 生成"
     fi
@@ -510,6 +548,9 @@ status_docker() {
     echo "  服务映射端口: $FRONTEND_PORT (一体化托管前端与后端)"
     echo "  数据库镜像:   $DB_IMAGE (拉取策略: $DB_PULL_POLICY, 挂载目录: $DB_DATA_DIR)"
     echo "  Nginx 配置文件: $([ -f "$NGINX_CONF" ] && echo "已就绪 ($NGINX_CONF)" || echo "未生成 (可执行 ./run.sh add_nginx)")"
+    if [ -f "$NGINX_CONF" ]; then
+        print_access_urls "统一访问入口" "$EXTERNAL_PORT"
+    fi
     echo "============================================"
 }
 
@@ -696,6 +737,7 @@ EOF
     echo "  配置文件已生成: $NGINX_CONF"
     echo "  SSL 证书路径:   $CERT_FILE"
     echo "  SNI 匹配域名:   $SERVER_NAME (以 SERVER_NAME 为准，主域名: $MAIN_DOMAIN)"
+    print_access_urls "HTTPS 访问入口" "$EXTERNAL_PORT"
     echo "  配置优势: 与传统版完全隔离，通过 SNI 域名 ($SERVER_NAME) 共享 443 端口！"
     echo "  请执行 'nginx -t && nginx -s reload' 加载新配置。"
 
