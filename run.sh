@@ -485,27 +485,26 @@ gen_ssl_cert() {
     echo "  操作私钥对象: $KEY_FILE"
 
     local do_update="n"
-    if [ -f "$CERT_FILE" ] || [ -f "$KEY_FILE" ]; then
-        echo -e "\033[1;33m[提示] 检测到已存在 SSL 证书或私钥文件。\033[0m"
+    if [ -s "$CERT_FILE" ] && [ -s "$KEY_FILE" ]; then
+        echo -e "\033[1;33m[提示] 检测到已存在有效的 SSL 证书与私钥文件。\033[0m"
         echo -e "\033[1;31m[注意] 若选择更新，将重新生成自签名证书并覆盖现有文件内容（已有正式证书将被替换）！\033[0m"
-        printf "是否需要更新 SSL 证书文件内容？(y/N): "
-        read choice
+        local choice="n"
+        if [ -t 0 ]; then
+            printf "是否需要更新 SSL 证书文件内容？(y/N): "
+            read -r choice || choice="n"
+        fi
+        case "$choice" in
+            [yY]|[yY][eE][sS])
+                do_update="y"
+                ;;
+            *)
+                do_update="n"
+                ;;
+        esac
     else
-        echo -e "\033[1;33m[提示] 检测到目标 SSL 证书文件尚不存在。\033[0m"
-        echo "  - 选择更新(y): 将调用 OpenSSL 自动生成适用于域名 [$MAIN_DOMAIN] 的自签名证书并写入；"
-        echo "  - 选择否(n): 仅保证文件存在（创建空占位文件，避免 Nginx 启动报错），不写入自签名内容。"
-        printf "是否需要生成并写入 SSL 证书内容？(y/N): "
-        read choice
+        echo "  检测到 SSL 证书缺失或文件为空，自动生成自签名证书以保障 Nginx 正常加载..."
+        do_update="y"
     fi
-
-    case "$choice" in
-        [yY]|[yY][eE][sS])
-            do_update="y"
-            ;;
-        *)
-            do_update="n"
-            ;;
-    esac
 
     if [ "$do_update" = "y" ]; then
         echo "  正在生成并更新自签名 SSL 证书（主域名: $MAIN_DOMAIN，SAN: $SAN_LIST）..."
@@ -519,15 +518,11 @@ gen_ssl_cert() {
                 -subj "/C=CN/O=mengya-docker/CN=$MAIN_DOMAIN" 2>/dev/null || true
             echo "  ✅ SSL 证书与私钥已更新成功: $CERT_FILE"
         else
-            echo "  [警告] 未找到 openssl 命令，无法生成证书内容，将仅保证文件存在。"
-            [ ! -f "$CERT_FILE" ] && touch "$CERT_FILE" 2>/dev/null || true
-            [ ! -f "$KEY_FILE" ] && touch "$KEY_FILE" 2>/dev/null || true
+            echo "  [警告] 未找到 openssl 命令，无法生成有效证书内容！"
         fi
     else
         echo "  保持现有证书内容不变，跳过证书更新。"
-        [ ! -f "$CERT_FILE" ] && touch "$CERT_FILE" 2>/dev/null || true
-        [ ! -f "$KEY_FILE" ] && touch "$KEY_FILE" 2>/dev/null || true
-        echo "  ✅ 证书文件状态确认: 保留已有内容（或已保证空占位文件存在）"
+        echo "  ✅ 证书文件状态确认: 保留已有有效内容 ($CERT_FILE)"
     fi
 }
 
@@ -604,6 +599,8 @@ server {
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Port \$server_port;
+        proxy_set_header X-Forwarded-Host \$host;
 
         proxy_connect_timeout 60s;
         proxy_read_timeout 120s;
@@ -617,6 +614,33 @@ EOF
     echo "  SNI 匹配域名:   $SERVER_NAME (以 SERVER_NAME 为准，主域名: $MAIN_DOMAIN)"
     echo "  配置优势: 与传统版完全隔离，通过 SNI 域名 ($SERVER_NAME) 共享 443 端口！"
     echo "  请执行 'nginx -t && nginx -s reload' 加载新配置。"
+
+    # 检测并警告 NGINX_CONF_DIR 中遗留的 8000 端口旧配置
+    if [ -d "$NGINX_CONF_DIR" ]; then
+        local stale_conf
+        stale_conf=$(grep -rnw "$NGINX_CONF_DIR" -e "127\.0\.0\.1:8000" -e "backend:8000" 2>/dev/null | cut -d: -f1 | sort -u || true)
+        if [ -n "$stale_conf" ]; then
+            echo -e "\033[1;33m[安全提示] 在 $NGINX_CONF_DIR 中检测到包含 8000 端口代理的旧配置文件:\033[0m"
+            for sc in $stale_conf; do
+                echo -e "\033[1;33m  - $sc\033[0m"
+            done
+            echo -e "\033[1;33m  宿主机未监听 8000 端口，若旧文件被 Nginx 加载会导致登录报 502 Bad Gateway，建议清理或重命名！\033[0m"
+        fi
+    fi
+
+    # 尝试自动检测并重载宿主机 Nginx 服务
+    if command -v nginx >/dev/null 2>&1; then
+        echo "==> 检查并重载宿主机 Nginx 配置..."
+        if nginx -t >/dev/null 2>&1; then
+            if nginx -s reload 2>/dev/null; then
+                echo "  ✅ Nginx 配置重载成功，SNI 域名反代规则已实时生效！"
+            else
+                echo "  [提示] Nginx 未在运行或需要 root 权限重载，请按需执行: sudo nginx -s reload"
+            fi
+        else
+            echo "  [警告] Nginx 语法测试未通过，请检查 /etc/nginx 或 $NGINX_CONF_DIR 配置: nginx -t"
+        fi
+    fi
 }
 
 exec_docker() {

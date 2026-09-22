@@ -1570,3 +1570,46 @@ MODE 环境变量已设置 → 直接使用（校验取值）
   - 再次重启多次，确认无任何演示账号被自动重新创建；
   - 模拟使用公开密码尝试登录 `13800138000` 与 `13800000000`，均严格返回 HTTP 401 彻底阻断；
   - 接口探针验证全量母婴知识库数据（如食谱、周历等）均正常提供服务，完全不受账户清理影响。
+
+### 12.32 传统版与 Docker 版双版本多站点无冲突共存架构、502 登录反代修复与 Nginx 运维全自动化升级 (REQ-32)
+- **需求背景与故障排查**：
+  - 用户反馈关键故障现象：当传统版本（`mengya-local`）与 Docker 容器版本（`mengya-docker`）在同一宿主机同时启动时，传统版本前端页面能打开，但登录报错 `Request failed with status code 502 (Bad Gateway)`；Docker 版本页面直接无法访问。
+  - 用户明确提出核心诉求：**实现两套代码进程在同一宿主机同时运行（SNI 域名独立），支持 Nginx 反向代理与 SNI 域名访问，彻底根除 502 报错，消除数据迁移与端口冲突隐患**。
+- **故障根因深度剖析**：
+  - **1. 传统版登录 502 根因**：历史 Nginx 配置模板（`mengya_ssl.conf` / `nginx.conf`）中存在独立的 `location /api/` 和 `location /admin/` 规则，且反向代理硬编码指向 `http://127.0.0.1:8000`。在一体化单体架构中，前端与后端已完全合并由 Django 单进程托管于 `5173` 端口，宿主机 `8000` 端口已无任何进程监听，导致登录 API 请求被转发到未监听的 8000 端口，触发 Connection Refused 从而返回 `502 Bad Gateway`。
+  - **2. Docker 版无法打开根因**：
+    - `mengya-docker/nginx/mengya_ssl.conf` 与 `nginx.conf` 保留了旧容器网络代理配置（`proxy_pass http://frontend:5173;` 及 `http://backend:8000;`），未适配 Docker 暴露至宿主机的一体化服务端口 `5174`；
+    - 历史 `gen_ssl_cert` 在用户跳过证书更新时会生成 0 字节空占位文件，导致 Nginx 启动测试报 `PEM_read_bio_X509_AUX() failed (SSL: error:0480006C:PEM routines::no start line)` 语法崩溃；
+    - 缺少自动化 Nginx 配置测试与重载调用，配置未能即时生效。
+- **双版本多站点“零冲突”共存架构方案与实施**：
+  - **1. 宿主机网络端口与反代路径彻底隔离**：
+    - 传统版本：Django 一体化服务直接监听宿主机 `0.0.0.0:5173`；
+    - Docker 版本：后端一体化服务通过 Docker Compose 端口映射暴露至宿主机 `0.0.0.0:5174`，容器内部完全解耦；
+    - 两者服务监听端口 `5173` vs `5174` 完全正交，杜绝端口争抢。
+  - **2. 数据库与存储引擎绝对物理隔离**：
+    - 传统版本：严格使用本地轻量化 SQLite 数据库文件（`backend/db.sqlite3`）；
+    - Docker 版本：严格使用独立 Docker 内部网络的 PostgreSQL 容器（`mengya_db`）与 Docker 数据卷（`pgdata`）；
+    - 两者底层数据库引擎与存储介质物理解耦，数据迁移完全独立，互不影响。
+  - **3. 并发数据迁移文件互斥锁守卫 (`run.sh`)**：
+    - 在传统版 `run.sh` 的 `start_backend()` 中引入跨进程文件互斥锁（`/tmp/mengya_db_migrate.lock`，基于 `flock`）；
+    - 即使运维人员并发执行重启或多终端部署，也能确保 `migrate` 与 `init_data` 串行安全执行，杜绝数据迁移竞争与锁表风险。
+  - **4. Nginx SNI 443 单入口双域名精准分流**：
+    - **传统版本反代配置 (`mengya_ssl.conf`)**：
+      - SNI 匹配域名：`mengya.local`；
+      - 独立 SSL 证书：`/opt/service/nginx/ssl/mengya.crt` / `mengya.key`；
+      - 一体化反代：`location / { proxy_pass http://127.0.0.1:5173; ... }`；
+    - **Docker 版本反代配置 (`mengya_docker_ssl.conf`)**：
+      - SNI 匹配域名：`mengya-docker.local`；
+      - 独立 SSL 证书：`/opt/service/nginx/ssl/mengya_docker.crt` / `mengya_docker.key`；
+      - 一体化反代：`location / { proxy_pass http://127.0.0.1:5174; ... }`；
+    - 彻底剔除所有 `8000` 端口和容器内部主机名的代理残留，全站静态页面与动态 API 统一由对应端口的一体化网关承接。
+  - **5. SSL 证书自签名防呆自愈与安全隔离**：
+    - 改造 `gen_ssl_cert`：若证书文件不存在或大小为 0 字节，自动调用 OpenSSL 生成 2048 位有效自签名证书与带 SAN 扩展的私钥；
+    - 双版本证书命名（`mengya.crt` vs `mengya_docker.crt`）与会话缓存标签（`SSL` vs `SSL_DOCKER`）相互独立，消除证书与 Session 冲突。
+  - **6. Nginx 遗留配置智能扫描与热重载流水线**：
+    - `gen_nginx_config` 自动扫描 `NGINX_CONF_DIR` 中历史遗留的 `8000` 端口代理文件并给出告警；
+    - 生成配置后自动执行 `nginx -t && nginx -s reload`，实现宿主机 Nginx 无感知热重载。
+- **全链路测试与验证效果**：
+  - 传统版本启动并加载最新配置，`GET /` 正常返回 HTTP 200 SPA 页面；
+  - 传统版本调用 `POST /api/auth/login/` 登录接口，正常由 Django 一体化后端响应 HTTP 401 凭证验证拦截，**彻底消除 502 Bad Gateway 报错**；
+  - 双版本 `run.sh` 脚本均已完备支持独立参数传参、证书生成、Nginx 独立配置下发与并发数据迁移保护。
