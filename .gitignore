@@ -39,3 +39,22 @@ Thumbs.db
 .run/
 .run_mode
 frontend/start_vite.mjs
+
+# 静态目录下的图片副本由构建流程处理，避免与 frontend/public 重复推送到 GitHub
+static/fetal-stories/
+
+# 严禁将 SSL 证书与私钥推送到 GitHub
+*.key
+*.pem
+*.crt
+*.pfx
+*.p12
+nginx/ssl/*
+!nginx/ssl/.gitkeep
+
+# 严禁将 IDE 配置推送到 GitHub
+.idea/
+.vscode/
+*.swp
+*~
+*.bak
