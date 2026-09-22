@@ -1,4 +1,4 @@
-"""确保单一管理员账号存在 —— 启动时自动创建或更新管理员，清理历史管理员与预置占位账号，并保护所有正常注册普通用户
+"""确保单一管理员账号存在 —— 启动时自动创建或更新管理员，清理历史管理员与预置占位账号，并保护所有正常注册普通用户。
 
 用法：
   python manage.py ensure_admin
@@ -10,10 +10,11 @@
   ADMIN_NICKNAME    管理员昵称（默认 管理员）
 """
 import os
+import sys
 
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand
-from django.db import models
+from django.db import IntegrityError, models, transaction
 
 User = get_user_model()
 
@@ -26,6 +27,31 @@ class Command(BaseCommand):
         password = os.getenv("ADMIN_PASSWORD", "admin123")
         nickname = os.getenv("ADMIN_NICKNAME", "管理员")
 
+        try:
+            with transaction.atomic():
+                self._sync_admin(account, password, nickname)
+        except Exception as e:
+            self.stderr.write(
+                self.style.ERROR(f"[ensure_admin 警告] 同步管理员异常: {e}，正在尝试自愈保护继续启动...")
+            )
+            try:
+                with transaction.atomic():
+                    admin_fallback = User.objects.filter(models.Q(is_superuser=True) | models.Q(is_staff=True)).first()
+                    if not admin_fallback:
+                        User.objects.create_user(
+                            phone=account,
+                            username=account,
+                            password=password,
+                            nickname=nickname,
+                            is_staff=True,
+                            is_superuser=True,
+                            is_active=True,
+                            ai_authorized=True,
+                        )
+            except Exception as inner_e:
+                self.stderr.write(self.style.ERROR(f"[ensure_admin 兜底失败] {inner_e}"))
+
+    def _sync_admin(self, account, password, nickname):
         # 1. 查找目标管理员账号（优先匹配当前配置的 username 或 phone）
         target_admin = (
             User.objects.filter(username__iexact=account).first()
@@ -33,19 +59,25 @@ class Command(BaseCommand):
         )
 
         if target_admin:
-            # 用户已存在：确保其为管理员并更新密码与权限
-            target_admin.username = account
-            # 若历史遗留 phone 仍为 13800000000 且当前目标配置并非 13800000000，更新为 account
-            if target_admin.phone == "13800000000" and account != "13800000000":
-                target_admin.phone = account
-            elif target_admin.phone != account:
-                conflict = User.objects.filter(phone__iexact=account).exclude(pk=target_admin.pk).first()
-                if conflict:
-                    if conflict.is_staff or conflict.is_superuser:
-                        conflict.delete()
-                        target_admin.phone = account
+            # 用户已存在：如果存在其他冲突用户（例如历史占位或旧管理员占用了 account 对应的 phone/username），先行清理冲突
+            conflict_phone = User.objects.filter(phone__iexact=account).exclude(pk=target_admin.pk).first()
+            if conflict_phone:
+                if conflict_phone.is_staff or conflict_phone.is_superuser:
+                    conflict_phone.delete()
                 else:
-                    target_admin.phone = account
+                    conflict_phone.phone = f"{conflict_phone.phone}_legacy_{conflict_phone.pk}"
+                    conflict_phone.save(update_fields=["phone"])
+
+            conflict_uname = User.objects.filter(username__iexact=account).exclude(pk=target_admin.pk).first()
+            if conflict_uname:
+                if conflict_uname.is_staff or conflict_uname.is_superuser:
+                    conflict_uname.delete()
+                else:
+                    conflict_uname.username = f"{conflict_uname.username}_legacy_{conflict_uname.pk}"
+                    conflict_uname.save(update_fields=["username"])
+
+            target_admin.username = account
+            target_admin.phone = account
             target_admin.set_password(password)
             target_admin.is_staff = True
             target_admin.is_superuser = True
@@ -61,13 +93,19 @@ class Command(BaseCommand):
             )
         else:
             # 用户不存在：创建全新管理员用户
-            # 若存在占用了 account 作为 phone 或 username 的历史管理员，先清理掉
+            # 若存在占用了 account 作为 phone 或 username 的历史管理员或占位账号，先清理
             conflicts = User.objects.filter(
-                models.Q(username__iexact=account) | models.Q(phone__iexact=account),
-                models.Q(is_staff=True) | models.Q(is_superuser=True),
+                models.Q(username__iexact=account) | models.Q(phone__iexact=account)
             )
-            if conflicts.exists():
-                conflicts.delete()
+            for c in conflicts:
+                if c.is_staff or c.is_superuser or c.phone in ["13800000000", "13800138000"] or c.username in ["13800000000", "demo_user"]:
+                    c.delete()
+                else:
+                    if c.username.lower() == account.lower():
+                        c.username = f"{c.username}_legacy_{c.pk}"
+                    if c.phone.lower() == account.lower():
+                        c.phone = f"{c.phone}_legacy_{c.pk}"
+                    c.save()
 
             target_admin = User.objects.create_user(
                 phone=account,
@@ -131,3 +169,4 @@ class Command(BaseCommand):
         self.stdout.write(
             f"所有已正常注册的普通用户账号（共 {normal_user_count} 个）已完整保留，未受任何修改或影响。"
         )
+

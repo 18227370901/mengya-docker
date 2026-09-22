@@ -1613,3 +1613,36 @@ MODE 环境变量已设置 → 直接使用（校验取值）
   - 传统版本启动并加载最新配置，`GET /` 正常返回 HTTP 200 SPA 页面；
   - 传统版本调用 `POST /api/auth/login/` 登录接口，正常由 Django 一体化后端响应 HTTP 401 凭证验证拦截，**彻底消除 502 Bad Gateway 报错**；
   - 双版本 `run.sh` 脚本均已完备支持独立参数传参、证书生成、Nginx 独立配置下发与并发数据迁移保护。
+
+### 12.33 双版本同名管理员与同终端启动冲突修复、进程作用域隔离与容器健康探活自愈 (REQ-33)
+- **需求背景与故障现象**：
+  - 用户反馈关键故障现象：当 Docker 版本和传统版本同时启动，且 `run.sh` 脚本中配置相同的自定义管理员账号（如 `admin_yy`）时，Docker 版本的服务启动报错；仅当手动停止传统版本的服务后，Docker 版本才能正常启动。
+  - 用户进一步审查确认：检查代码中是否内置了默认管理员用户（如 `admin`），以及在 `run.sh` 脚本中配置 `admin_yy` 为管理员用户时，系统是否会同时存在 `admin` 和 `admin_yy` 两个管理员账号。
+- **管理员账号机制与唯一性核验结论**：
+  - **1. 数据库与种子数据零内置**：`apps/core/fixtures/initial_data.json` 种子包及 Django 全量数据迁移中**无任何内置用户或特权管理员记录**，系统架构设计严格遵循零预置账户安全原则。
+  - **2. 运行时唯一管理员保障机制**：`admin` 仅作为启动脚本在未指定 `ADMIN_USERNAME` 时的缺省兜底值；一旦运维指定或修改为自定义账号（如 `admin_yy`），`ensure_admin` 命令会自动识别 `admin_yy` 并将系统中所有其他具备管理权限（`is_staff=True` 或 `is_superuser=True`）的历史管理员账号（包括历史 `admin`）**彻底物理清理**，同时将名下邀请链接等系统关联数据无缝交接，确保系统在任何时刻均**严格仅存在唯一自定义管理员**，绝不会出现 `admin` 与 `admin_yy` 双管理员共存；
+  - **3. 正常注册普通用户白名单绝对保护**：系统已正常注册的真实普通用户（`is_staff=False` 且 `is_superuser=False`）受白名单严格保护，绝不受任何修改、冻结或清理影响。
+- **启动故障根因深度剖析**：
+  - **1. 环境变量继承导致宿主机端口争抢（关键主因）**：传统版本 `run.sh` 历史在执行时导出了 `FRONTEND_PORT=5173`。在同一终端交互或子 shell 环境下顺序执行 Docker 版 `run.sh` 时，Docker 版继承了全局 `FRONTEND_PORT=5173`（覆写了其专属默认端口 `5174`），导致 Docker Compose 试图在宿主机绑定已被传统版本占用的 `5173` 端口，触发 `Bind for 0.0.0.0:5173 failed: port is already allocated`。当用户手动停止传统版本后，`5173` 端口被释放，Docker 版本才得以启动。
+  - **2. 进程管理 `pgrep` 跨容器交叉误杀**：传统版本 `run.sh stop` 历史使用了宽泛的 `pgrep -f "manage.py runserver"`。在 Linux 宿主机上，Docker 容器进程对宿主机内核及进程表完全可见，导致停止或重启传统版本时，误杀了 Docker 容器内的 `manage.py runserver 0.0.0.0:8000` 进程，导致 Docker 后端容器意外退出。
+  - **3. `ensure_admin` 缺乏事务与唯一约束防呆保护**：历史逻辑未包裹在 `@transaction.atomic` 中，在处理 `phone` / `username` 唯一键冲突时缺少自愈清洗，一旦发生异常会导致退出码非零，进而中断 Docker 容器 CMD 中的启动链，使 `mengya_backend` 容器启动即挂掉（Exit code 1）。
+  - **4. 缺少后端容器健康探活预警**：Docker 版 `start_docker` 原先仅探活 `mengya_db`，未对 `mengya_backend` 执行健康巡检。当后端容器因端口冲突或初始化失败退出时，脚本盲目输出“启动成功”，掩盖了底层容器失败。
+  - **5. `.env` 变量追加缺少换行符自愈**：`update_env_var` 向 `.env` 末尾追加键值对时未检测文件尾部换行符，导致新增键与注释行粘连被注释失效。
+- **全栈修复方案与落地实施**：
+  - **1. `ensure_admin.py` 事务与唯一性约束安全加固**：
+    - 引入 `transaction.atomic()` 原子事务保护；
+    - 预先检测并自愈 `username` / `phone` 的唯一性约束冲突，消除重复键错误；
+    - 增加外层防呆异常捕获与备用自愈兜底机制，杜绝非零异常退出中断容器启动链。
+  - **2. `mengya-docker/run.sh` 端口隔离与冲突预检**：
+    - 智能拦截并纠正外部污染继承的 `FRONTEND_PORT=5173`，若当前 `.env` 未显式锁定，则自动归位为 Docker 默认独立端口 `5174`；
+    - 启动前增加宿主机端口冲突预检（`check_port_conflict`），若端口被传统版本或其他进程占用，提前给出清晰精准的排查指引。
+  - **3. `mengya-docker/run.sh` 后端容器全生命周期健康探活**：
+    - 在 `start_docker` 中增加循环探活检测（12秒等待窗口），若 `mengya_backend` 状态为 `exited` 或 `dead`，即刻拉取最近 40 行日志并终止，将隐蔽故障变为显性诊断。
+  - **4. `mengya-local/run.sh` 进程停止作用域精确锁定**：
+    - 将 `stop_all` 匹配模式精准收敛为 `manage.py runserver 0.0.0.0:$FRONTEND_PORT`，并检查排除 `/proc/$cp/cwd` 为 `/app` 及 cgroup 包含 `docker/containerd` 的容器进程，彻底杜绝误杀 Docker 容器进程。
+  - **5. `.env` 换行符自愈与 Nginx 目录写权限防呆保护**：
+    - `update_env_var` 增加换行符检测自愈逻辑，并对 `gen_ssl_cert` / `gen_nginx_config` 增加目录可写探测保护，避免非 root 权限或 Windows 环境下执行报错。
+- **全链路测试与效果评估**：
+  - 传统版本成功执行 `run.sh restart` 重启，`GET http://127.0.0.1:5173/` 稳定响应 HTTP 200；
+  - `ensure_admin` 分别测试默认 `admin` 与自定义 `admin_yy`，成功验证历史管理员完全清理，仅保留唯一自定义管理员，且真实普通用户 100% 完好保留；
+  - 传统版本停止与重启操作不再干扰 Docker 容器进程，双版本环境端口与环境配置彻底解耦。

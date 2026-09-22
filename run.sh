@@ -59,6 +59,14 @@ update_env_var() {
         if grep -q "^${key}=" ".env" 2>/dev/null; then
             sed -i.bak "s|^${key}=.*|${key}=${val}|" ".env" 2>/dev/null && rm -f ".env.bak"
         else
+            # 确保在末尾追加前文件以换行符结尾，避免与注释行等粘连
+            if [ -s ".env" ]; then
+                local last_char
+                last_char=$(tail -c 1 ".env" 2>/dev/null || true)
+                if [ -n "$last_char" ]; then
+                    echo "" >> ".env"
+                fi
+            fi
             echo "${key}=${val}" >> ".env"
         fi
     fi
@@ -87,6 +95,11 @@ resolve_abs_path() {
 # 外部访问端口与域名设置（与传统版完全隔离）
 PORT="${PORT:-${EXTERNAL_PORT:-443}}"
 EXTERNAL_PORT="$PORT"
+# Docker 版本默认运行在 5174 端口，避免与传统版本默认的 5173 端口冲突
+# 如果环境变量被继承为 5173（例如来自同终端中启动的传统版本环境），且 .env 中未显式锁定为 5173，则自动纠正为 5174
+if [ "$FRONTEND_PORT" = "5173" ] && ! grep -q "^FRONTEND_PORT=" .env 2>/dev/null; then
+    FRONTEND_PORT="5174"
+fi
 FRONTEND_PORT="${FRONTEND_PORT:-5174}"
 SERVER_NAME="${SERVER_NAME:-${DOMAIN:-mengya-docker.local}}"
 
@@ -316,11 +329,49 @@ db_restore() {
     esac
 }
 
+# 检查宿主机端口冲突（防止与传统版或外部已有服务冲突）
+check_port_conflict() {
+    local port="$1"
+    local occupied=0
+    if command -v ss >/dev/null 2>&1; then
+        if ss -tlpn "sport = :$port" 2>/dev/null | grep -q ":$port\b"; then
+            occupied=1
+        fi
+    elif command -v netstat >/dev/null 2>&1; then
+        if netstat -tlpn 2>/dev/null | grep -q ":$port\b"; then
+            occupied=1
+        fi
+    elif command -v lsof >/dev/null 2>&1; then
+        if lsof -i ":$port" -sTCP:LISTEN >/dev/null 2>&1; then
+            occupied=1
+        fi
+    fi
+
+    if [ "$occupied" = "1" ]; then
+        # 检查占用是否正是当前 mengya_backend 容器
+        local container_has_port
+        container_has_port=$(docker ps --filter "name=mengya_backend" --format "{{.Ports}}" 2>/dev/null || true)
+        if [[ "$container_has_port" != *":$port->"* ]]; then
+            echo -e "\033[1;31m[错误] 宿主机端口 $port 已被其他服务占用（如传统版本或其他进程）！\033[0m"
+            echo -e "\033[1;33m[排查建议]："
+            echo "  1. 若传统版本正在运行占用 5173，请确保 Docker 版本使用独立端口 5174：./run.sh -p 5174 start"
+            echo "  2. 若两套服务同时运行，请通过各自独立域名（如 mengya.local 与 mengya-docker.local）经由 Nginx 反向代理访问。\033[0m"
+            return 1
+        fi
+    fi
+    return 0
+}
+
 start_docker() {
     cleanup_cache
     check_docker_env
     choose_db_image
     check_db_volume_compatibility
+
+    # 启动前预检宿主机端口冲突
+    if ! check_port_conflict "$FRONTEND_PORT"; then
+        exit 1
+    fi
 
     # 补全主流程中缺失的 SSL 证书与 Nginx 配置创建函数调用
     gen_ssl_cert
@@ -358,6 +409,35 @@ start_docker() {
             echo "  1. 若需保留原有数据：请指定原数据库镜像启动（如 DB_IMAGE=postgres:15-alpine ./run.sh start），执行 ./run.sh db_backup 备份数据，再切换至新镜像导入；"
             echo "  2. 若无需保留旧数据：请执行 docker compose down -v 清空旧数据卷，然后重新执行 ./run.sh start 自动全新初始化全量数据。\033[0m"
         fi
+        echo -e "\033[1;31m============================================================\033[0m"
+        exit 1
+    fi
+
+    # 探活检查后端一体化容器 mengya_backend 运行状态与初始化进度
+    echo "  正在检测后端容器 mengya_backend 启动状态..."
+    local backend_ready=0
+    for _ in $(seq 1 12); do
+        sleep 1
+        local b_status
+        b_status=$(docker inspect --format='{{.State.Status}}' mengya_backend 2>/dev/null || echo "")
+        if [ "$b_status" = "running" ]; then
+            backend_ready=1
+            break
+        elif [ "$b_status" = "exited" ] || [ "$b_status" = "dead" ]; then
+            backend_ready=0
+            break
+        fi
+    done
+
+    local final_b_status
+    final_b_status=$(docker inspect --format='{{.State.Status}}' mengya_backend 2>/dev/null || echo "")
+    if [ "$final_b_status" = "exited" ] || [ "$final_b_status" = "dead" ]; then
+        echo ""
+        echo -e "\033[1;31m============================================================\033[0m"
+        echo -e "\033[1;31m[错误] 后端一体化容器 mengya_backend 启动后异常退出！\033[0m"
+        echo "--- 后端容器最近日志 ---"
+        $compose logs --tail=40 backend 2>/dev/null || true
+        echo "------------------------"
         echo -e "\033[1;31m============================================================\033[0m"
         exit 1
     fi
@@ -534,7 +614,11 @@ gen_nginx_config() {
     NGINX_CERT_DIR=$(resolve_abs_path "$NGINX_CERT_DIR")
     NGINX_CONF="$NGINX_CONF_DIR/mengya_docker_ssl.conf"
 
-    mkdir -p "$NGINX_CONF_DIR" "$NGINX_CERT_DIR"
+    if ! mkdir -p "$NGINX_CONF_DIR" 2>/dev/null || ! (touch "$NGINX_CONF_DIR/.perm_test" 2>/dev/null && rm -f "$NGINX_CONF_DIR/.perm_test" 2>/dev/null); then
+        echo -e "\033[1;33m[提示] 目录 $NGINX_CONF_DIR 无写入权限或不存在，跳过自动生成 Nginx 配置文件。\033[0m"
+        echo -e "\033[1;33m       若需生成，请使用具备写入权限的账号执行: sudo ./run.sh add_nginx\033[0m"
+        return 0
+    fi
 
     # 主域名用于 OpenSSL 证书 CN 与控制台访问链接展示（以 SERVER_NAME 配置为准）
     local MAIN_DOMAIN
