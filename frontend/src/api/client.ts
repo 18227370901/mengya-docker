@@ -10,6 +10,7 @@ api.interceptors.request.use((config) => {
   const token = localStorage.getItem("mengya_access");
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
+    localStorage.setItem("mengya_last_active", String(Date.now()));
   }
   return config;
 });

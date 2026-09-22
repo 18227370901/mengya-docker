@@ -75,6 +75,7 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const kicked = searchParams.get("kicked") === "1";
+  const timeoutLogout = searchParams.get("timeout") === "1";
 
   // 验证码（风控）
   const [needCaptcha, setNeedCaptcha] = useState(false);
@@ -291,6 +292,10 @@ export default function LoginPage() {
           localStorage.removeItem("mengya_saved_password");
         } catch {}
       }
+      if ((data as any).admin_session_timeout_minutes !== undefined) {
+        localStorage.setItem("mengya_admin_timeout", String((data as any).admin_session_timeout_minutes));
+      }
+      localStorage.setItem("mengya_last_active", String(Date.now()));
       setAuth(data.user, data.access, data.refresh);
       navigate("/");
     } catch (err) {
@@ -492,6 +497,16 @@ export default function LoginPage() {
         {kicked && (
           <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
             <p className="text-sm text-amber-600">您的账号已在其他设备登录或服务已重启，请重新登录</p>
+          </div>
+        )}
+
+        {timeoutLogout && (
+          <div className="mb-4 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 flex items-start gap-2.5">
+            <Lock className="h-5 w-5 text-orange-500 shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-semibold text-orange-800">会话已超时</p>
+              <p className="text-xs text-orange-600 mt-0.5">由于您长时间未进行任何操作，为保障特权账户安全，系统已自动退出登录，请重新输入账号密码。</p>
+            </div>
           </div>
         )}
 

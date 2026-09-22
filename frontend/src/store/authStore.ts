@@ -47,6 +47,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const data = await authApi.me();
       const perms = (data as any).permissions || data.user.permissions || {};
+      if ((data as any).admin_session_timeout_minutes !== undefined) {
+        localStorage.setItem("mengya_admin_timeout", String((data as any).admin_session_timeout_minutes));
+      }
       set({ user: data.user, stage: data.stage, permissions: perms, loading: false });
     } catch {
       set({ loading: false });
@@ -56,6 +59,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   logout: () => {
     localStorage.removeItem("mengya_access");
     localStorage.removeItem("mengya_refresh");
+    localStorage.removeItem("mengya_last_active");
     set({ user: null, stage: null, token: null, permissions: {} });
   },
 
@@ -63,6 +67,9 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     try {
       const data = await authApi.me();
       const perms = (data as any).permissions || data.user.permissions || {};
+      if ((data as any).admin_session_timeout_minutes !== undefined) {
+        localStorage.setItem("mengya_admin_timeout", String((data as any).admin_session_timeout_minutes));
+      }
       set({ user: data.user, stage: data.stage, permissions: perms, loading: false });
     } catch {
       const refreshToken = localStorage.getItem("mengya_refresh");

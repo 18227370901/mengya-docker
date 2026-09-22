@@ -146,8 +146,8 @@ export const authApi = {
   userManageResetLock: (userId: number) =>
     api.put<ApiResponse<unknown>>("/admin/users/", { user_id: userId, reset_security_lock: true }).then((r) => r.data),
 
-  updateSecurityConfig: (data: { login_captcha_threshold?: number; login_freeze_threshold?: number; login_lock_minutes?: number; login_lock_seconds?: number; forgot_password_max_attempts?: number }) =>
-    api.put<ApiResponse<{ login_captcha_threshold: number; login_freeze_threshold: number; login_lock_minutes: number; login_lock_seconds: number; forgot_password_max_attempts: number }>>("/admin/users/", data).then((r) => r.data),
+  updateSecurityConfig: (data: { login_captcha_threshold?: number; login_freeze_threshold?: number; login_lock_minutes?: number; login_lock_seconds?: number; forgot_password_max_attempts?: number; admin_session_timeout_minutes?: number }) =>
+    api.put<ApiResponse<{ login_captcha_threshold: number; login_freeze_threshold: number; login_lock_minutes: number; login_lock_seconds: number; forgot_password_max_attempts: number; admin_session_timeout_minutes?: number }>>("/admin/users/", data).then((r) => r.data),
 
   userManageResetPassword: (userId: number, newPassword: string) =>
     api.post<ApiResponse<null>>("/admin/users/", { user_id: userId, new_password: newPassword }).then((r) => r.data),
@@ -253,5 +253,6 @@ export interface UserManageData {
     login_lock_minutes: number;
     login_lock_seconds?: number;
     forgot_password_max_attempts: number;
+    admin_session_timeout_minutes?: number;
   };
 }

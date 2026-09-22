@@ -116,6 +116,7 @@ def _security_setting():
             "lock_minutes": max(1, sec // 60),
             "lock_seconds": max(1, sec),
             "forgot_password_max_attempts": max(1, getattr(s, "forgot_password_max_attempts", 5) or 5),
+            "admin_session_timeout_minutes": max(0, getattr(s, "admin_session_timeout_minutes", 30) or 30),
         }
     except Exception:
         return {
@@ -123,6 +124,7 @@ def _security_setting():
             "freeze_threshold": 10,
             "lock_minutes": 5,
             "lock_seconds": 300,
+            "admin_session_timeout_minutes": 30,
             "forgot_password_max_attempts": 5,
         }
 
@@ -268,6 +270,7 @@ def register(request):
                 "user": UserSerializer(user).data,
                 "access": str(access_token),
                 "refresh": str(refresh),
+                "admin_session_timeout_minutes": getattr(SystemSetting.get_settings(), "admin_session_timeout_minutes", 30),
             },
         }
     )
@@ -417,6 +420,7 @@ def login(request):
                 "user": UserSerializer(user).data,
                 "access": str(access_token),
                 "refresh": str(refresh),
+                "admin_session_timeout_minutes": getattr(SystemSetting.get_settings(), "admin_session_timeout_minutes", 30),
             },
         }
     )
@@ -546,6 +550,7 @@ class MeView(APIView):
                     "user": UserSerializer(user).data,
                     "stage": stage,
                     "permissions": get_user_permissions(user),
+                    "admin_session_timeout_minutes": getattr(SystemSetting.get_settings(), "admin_session_timeout_minutes", 30),
                 },
             }
         )
@@ -2405,6 +2410,7 @@ class UserManageView(APIView):
                 "login_lock_minutes": setting.login_lock_minutes,
                 "login_lock_seconds": getattr(setting, "login_lock_seconds", (setting.login_lock_minutes or 5) * 60),
                 "forgot_password_max_attempts": getattr(setting, "forgot_password_max_attempts", 5),
+                "admin_session_timeout_minutes": getattr(setting, "admin_session_timeout_minutes", 30),
             },
         }})
 
@@ -2428,15 +2434,18 @@ class UserManageView(APIView):
                 setting.login_lock_seconds = max(1, min_val * 60)
             if "forgot_password_max_attempts" in request.data:
                 setting.forgot_password_max_attempts = max(1, int(request.data.get("forgot_password_max_attempts", 5)))
-            setting.save(update_fields=["login_captcha_threshold", "login_freeze_threshold", "login_lock_minutes", "login_lock_seconds", "forgot_password_max_attempts"])
+            if "admin_session_timeout_minutes" in request.data:
+                setting.admin_session_timeout_minutes = max(0, int(request.data.get("admin_session_timeout_minutes", 30)))
+            setting.save(update_fields=["login_captcha_threshold", "login_freeze_threshold", "login_lock_minutes", "login_lock_seconds", "forgot_password_max_attempts", "admin_session_timeout_minutes"])
             audit(request, "security_config", "修改安全风控配置", "系统", 1, "全局",
-                  f"验证码阈值={setting.login_captcha_threshold}，冻结阈值={setting.login_freeze_threshold}，熔断等待={setting.login_lock_seconds}秒({setting.login_lock_minutes}分钟)，密保上限={setting.forgot_password_max_attempts}次")
+                  f"验证码阈值={setting.login_captcha_threshold}，冻结阈值={setting.login_freeze_threshold}，熔断等待={setting.login_lock_seconds}秒({setting.login_lock_minutes}分钟)，密保上限={setting.forgot_password_max_attempts}次，管理员无操作超时={setting.admin_session_timeout_minutes}分钟")
             return Response({"code": 0, "message": "安全风控配置已更新", "data": {
                 "login_captcha_threshold": setting.login_captcha_threshold,
                 "login_freeze_threshold": setting.login_freeze_threshold,
                 "login_lock_minutes": setting.login_lock_minutes,
                 "login_lock_seconds": setting.login_lock_seconds,
                 "forgot_password_max_attempts": setting.forgot_password_max_attempts,
+                "admin_session_timeout_minutes": setting.admin_session_timeout_minutes,
             }})
         target = User.objects.filter(id=user_id).first()
         if not target:

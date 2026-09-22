@@ -1667,3 +1667,25 @@ MODE 环境变量已设置 → 直接使用（校验取值）
   - 传统版与 Docker 版同步落地；
   - 分别使用单域名（`mengya.local`）与多域名（`mengya.ghca.kdns.fr mengya.local baby.local`）测试验证；
   - 多域名场景下控制台清晰列出所有 SNI 域名对应 HTTPS 完整链接，彻底消除信息遗漏。
+
+
+### 12.35 登录安全风控模块：新增管理员登录无操作超时配置功能 (REQ-35)
+- **需求背景与安全合规**：
+  - 根据网络安全等级保护（等保2.0/3.0）特权账号安全基线要求，管理员拥有全系统最高级别敏感操作权限（用户状态冻结/解冻、重置密码、修改密保、系统参数与细粒度权限配置等）。
+  - 若管理员离开操作终端未主动退出，长时间挂机会带来终端窥探、越权利用及会话劫持风险，需具备管理员特权会话在预定空闲时间内自动登出注销的安全机制。
+- **数据模型扩展 (Django Backend)**：
+  - 数据模型：`SystemSetting.admin_session_timeout_minutes`（默认 30 分钟，范围 0-1440 分钟，0 表示禁用无操作超时功能）。
+  - 数据迁移：新增 `0025_systemsetting_admin_session_timeout_minutes.py` 迁移文件，在两套环境数据库平滑应用。
+- **接口契约与后端逻辑演进**：
+  - `GET /api/admin/users/`：在 `security_config` 节点中返回 `admin_session_timeout_minutes` 字段。
+  - `PUT /api/admin/users/`：支持接收 `admin_session_timeout_minutes` 参数，写入 `SystemSetting` 并记录系统安全配置操作审计日志（包含管理员无操作超时配置值）。
+  - `POST /api/auth/login/` 与 `GET /api/users/me/`：返回数据中携带 `admin_session_timeout_minutes`，使得客户端在登录或会话激活时即时获知生效超时时长。
+- **前端空闲监听与跨 Tab 协同引擎 (Frontend)**：
+  - **可视化配置面板**：在 `UserManagePage.tsx`「登录安全风控与找回密码阈值配置」面板中新增第 5 列配置项及快捷设置按钮（15分(严格)、30分(推荐)、60分(1小时)、0(禁用)）。
+  - **多源活跃监听**：`RequireAuth.tsx` 监听用户行为事件（`mousedown`、`mousemove`、`keydown`、`scroll`、`touchstart`、`click`），并配合 Axios 拦截器，在发送任何 API 请求时同步刷新活跃时间戳。
+  - **节流与跨标签页共享**：采用 3 秒节流写入 `localStorage("mengya_last_active")`，同源不同 Tab 共享活跃状态，彻底避免多开页面被误判踢出。
+  - **周期巡检与超时登出**：每 10 秒巡检一次时间差，若超时则主动调用 `authStore.logout()` 清除认证令牌与活跃状态，并自动跳转至 `/login?timeout=1`。
+  - **超时友好提示**：登录页捕获 `timeout=1` 参数，展示醒目的安全超时警告条，提示“由于您长时间未进行任何操作，为保障特权账户安全，系统已自动退出登录，请重新输入账号密码”。
+- **全链路测试与双版本同步**：
+  - Docker 版（`mengya-docker`）与传统本地版（`mengya-local`）全栈源码、数据迁移及编译产物严格同步。
+  - 传统版本重启后，`GET /api/auth/login/`、`GET /api/users/me/`、`GET /api/admin/users/`、`PUT /api/admin/users/`、`GET /api/admin/audit-logs/` 全流程实测通过。

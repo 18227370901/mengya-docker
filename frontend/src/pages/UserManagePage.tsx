@@ -134,7 +134,7 @@ export default function UserManagePage() {
 
   // 用户与安全风控状态
   const [users, setUsers] = useState<UserManageItem[]>([]);
-  const [secConfig, setSecConfig] = useState({ login_captcha_threshold: 3, login_freeze_threshold: 10, login_lock_minutes: 5, login_lock_seconds: 300, forgot_password_max_attempts: 5 });
+  const [secConfig, setSecConfig] = useState({ login_captcha_threshold: 3, login_freeze_threshold: 10, login_lock_minutes: 5, login_lock_seconds: 300, forgot_password_max_attempts: 5, admin_session_timeout_minutes: 30 });
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState({ nickname: "", role: "mother", is_staff: false, is_active: true });
@@ -146,7 +146,7 @@ export default function UserManagePage() {
   const [filterRole, setFilterRole] = useState("");
   const [searchKeyword, setSearchKeyword] = useState("");
   const [showSecConfig, setShowSecConfig] = useState(false);
-  const [secConfigForm, setSecConfigForm] = useState({ login_captcha_threshold: 3, login_freeze_threshold: 10, login_lock_minutes: 5, login_lock_seconds: 300, forgot_password_max_attempts: 5 });
+  const [secConfigForm, setSecConfigForm] = useState({ login_captcha_threshold: 3, login_freeze_threshold: 10, login_lock_minutes: 5, login_lock_seconds: 300, forgot_password_max_attempts: 5, admin_session_timeout_minutes: 30 });
   const [secConfigSaving, setSecConfigSaving] = useState(false);
 
   // 指定具体用户权限弹窗状态
@@ -210,6 +210,7 @@ export default function UserManagePage() {
         const cfg = {
           ...data.security_config,
           login_lock_seconds: sec,
+          admin_session_timeout_minutes: data.security_config.admin_session_timeout_minutes ?? 30,
         };
         setSecConfig(cfg);
         setSecConfigForm(cfg);
@@ -340,6 +341,7 @@ export default function UserManagePage() {
     if (secConfigForm.login_freeze_threshold < 2) { showToast("冻结阈值至少为2"); return; }
     if ((secConfigForm.login_lock_seconds ?? 300) < 1) { showToast("风控熔断时间至少为1秒"); return; }
     if ((secConfigForm.forgot_password_max_attempts ?? 5) < 1) { showToast("密保最大尝试次数至少为1"); return; }
+    if ((secConfigForm.admin_session_timeout_minutes ?? 30) < 0) { showToast("无操作超时时长不能小于0"); return; }
     if (secConfigForm.login_freeze_threshold <= secConfigForm.login_captcha_threshold) {
       showToast("冻结阈值应大于验证码阈值");
       return;
@@ -347,18 +349,22 @@ export default function UserManagePage() {
     setSecConfigSaving(true);
     try {
       const secVal = Number(secConfigForm.login_lock_seconds || 300);
+      const timeoutVal = Math.max(0, Number(secConfigForm.admin_session_timeout_minutes ?? 30));
       const res = await authApi.updateSecurityConfig({
         ...secConfigForm,
         login_lock_seconds: secVal,
         login_lock_minutes: Math.max(1, Math.floor(secVal / 60)),
+        admin_session_timeout_minutes: timeoutVal,
       });
       const updated = {
         ...secConfigForm,
         ...(res.data || {}),
         login_lock_seconds: res.data?.login_lock_seconds ?? secVal,
+        admin_session_timeout_minutes: res.data?.admin_session_timeout_minutes ?? timeoutVal,
       };
       setSecConfig(updated);
       setSecConfigForm(updated);
+      localStorage.setItem("mengya_admin_timeout", String(timeoutVal));
       setShowSecConfig(false);
       showToast("安全风控配置已更新");
     } catch { showToast("保存失败"); } finally { setSecConfigSaving(false); }
@@ -659,9 +665,9 @@ export default function UserManagePage() {
                 </button>
               </div>
               <p className="text-xs text-gray-500">
-                当前风控规则：连续密码失败 {secConfig.login_captcha_threshold} 次开启验证码，{secConfig.login_freeze_threshold} 次直接冻结账号（熔断锁定 {secConfig.login_lock_seconds ?? (secConfig.login_lock_minutes * 60)} 秒 / 约 {Math.ceil((secConfig.login_lock_seconds ?? (secConfig.login_lock_minutes * 60)) / 60)} 分钟）；找回密码密保最多尝试 {secConfig.forgot_password_max_attempts ?? 5} 次。
+                当前风控规则：连续密码失败 {secConfig.login_captcha_threshold} 次开启验证码，{secConfig.login_freeze_threshold} 次直接冻结账号（熔断锁定 {secConfig.login_lock_seconds ?? (secConfig.login_lock_minutes * 60)} 秒 / 约 {Math.ceil((secConfig.login_lock_seconds ?? (secConfig.login_lock_minutes * 60)) / 60)} 分钟）；找回密码密保最多尝试 {secConfig.forgot_password_max_attempts ?? 5} 次；管理员无操作超时 {(secConfig.admin_session_timeout_minutes ?? 30) > 0 ? `${secConfig.admin_session_timeout_minutes ?? 30} 分钟` : "已禁用"}。
               </p>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
                 <div>
                   <label className="label text-xs">开启验证码次数（≥1）</label>
                   <input
@@ -735,6 +741,43 @@ export default function UserManagePage() {
                     value={secConfigForm.forgot_password_max_attempts}
                     onChange={(e) => setSecConfigForm((f) => ({ ...f, forgot_password_max_attempts: Number(e.target.value) }))}
                   />
+                </div>
+                <div>
+                  <label className="label text-xs">管理员无操作超时（分钟）</label>
+                  <input
+                    type="number"
+                    min={0}
+                    max={1440}
+                    className="input"
+                    value={secConfigForm.admin_session_timeout_minutes ?? 30}
+                    onChange={(e) => setSecConfigForm((f) => ({ ...f, admin_session_timeout_minutes: Math.max(0, Number(e.target.value)) }))}
+                  />
+                  <div className="mt-1 flex flex-wrap gap-1">
+                    {[
+                      { label: "15分(严格)", val: 15 },
+                      { label: "30分(推荐)", val: 30 },
+                      { label: "60分(1小时)", val: 60 },
+                      { label: "0(禁用)", val: 0 },
+                    ].map((btn) => (
+                      <button
+                        key={btn.val}
+                        type="button"
+                        className={`rounded px-1.5 py-0.5 text-[10px] ${
+                          (secConfigForm.admin_session_timeout_minutes ?? 30) === btn.val
+                            ? "bg-brand-500 text-white font-bold"
+                            : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                        }`}
+                        onClick={() =>
+                          setSecConfigForm((f) => ({
+                            ...f,
+                            admin_session_timeout_minutes: btn.val,
+                          }))
+                        }
+                      >
+                        {btn.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
               <div className="flex gap-2 justify-end">
