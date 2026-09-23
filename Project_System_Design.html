@@ -921,6 +921,12 @@ erDiagram
 | **`OPENAI_BASE_URL`** | `https://api.openai.com/v1` | 运行时配置 | 大模型 API 基地址，支持中继网关与第三方大模型提供商直连 (`.env.example:16`)。 |
 | **`ENABLE_WORKER`** | `0` | 资源控制 | 为 `1` 时动态附加 `celery` profile，按需唤起 Redis 与 Celery Worker 容器。 |
 
+- **多 SNI 域名语法清洗 (`run.sh#normalize_domains`)**：智能清洗逗号、分号、多空格及引号混配语法，自动去除协议头与多余斜杠并精准去重，确保 Nginx 与 OpenSSL SAN 列表合法性。
+- **Nginx 反代配置智能差分比对与静默自愈引擎 (`run.sh#gen_nginx_config`)**：
+  - **智能差分比对**：在内存中预计算目标反代配置并与现有磁盘配置比对（自动忽略时间戳注释差异），配置完全一致时静默保留，杜绝冗余快照文件堆积并确保日常启动（`start`/`restart`）零干扰；
+  - **参数漂移自动安全自愈**：当检测到前端端口或 SNI 域名变更时，自动备份时间戳快照并同步重写宿主机 Nginx 独立反代配置（`mengya_docker_ssl.conf`），彻底消除端口不一致导致的 502 Bad Gateway 隐患；
+  - **免打扰锁定机制**：首行带 `# MANAGED_BY_ADMIN_DO_NOT_OVERWRITE` 标记时绝对跳过覆盖，在专属命令（`add_nginx`）下提供交互式覆盖确认，为个性化定制提供多层次防护。
+
 ### 8.2 认证、风控与防暴力破解模型
 
 ```mermaid
