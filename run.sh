@@ -716,7 +716,50 @@ server {
 "
     fi
 
+    # 策略 3 高亮提示（无论是否存在或是否包含特定注释，均高亮输出，避免首次使用的用户不知道有这个功能）
+    echo -e "\033[1;36m[提示] 若需对 Nginx 配置进行手工深度定制并防止启动时被自动覆盖，可在配置文件首行添加: # MANAGED_BY_ADMIN_DO_NOT_OVERWRITE\033[0m"
+
+    # 策略 3 检查：是否已存在免打扰锁定标记
+    if [ -f "$NGINX_CONF" ] && grep -q "MANAGED_BY_ADMIN_DO_NOT_OVERWRITE" "$NGINX_CONF" 2>/dev/null; then
+        echo -e "\033[1;32m[免打扰] 检测到 $NGINX_CONF 包含 '# MANAGED_BY_ADMIN_DO_NOT_OVERWRITE' 锁定标记，跳过自动覆盖，完全保留现有手工定制配置。\033[0m"
+        echo "  SSL 证书路径:   $CERT_FILE"
+        echo "  SNI 匹配域名:   $SERVER_NAME (以 SERVER_NAME 为准，主域名: $MAIN_DOMAIN)"
+        print_access_urls "HTTPS 访问入口" "$EXTERNAL_PORT"
+        return 0
+    fi
+
+    # 策略 1 检查：差异化对待子命令（仅在专属 add_nginx 命令下且文件已存在时，进行交互式覆盖确认）
+    if [ "$CMD" = "add_nginx" ] && [ -s "$NGINX_CONF" ]; then
+        echo -e "\033[1;33m[提示] 检测到已存在 Nginx 配置文件: $NGINX_CONF\033[0m"
+        echo -e "\033[1;31m[注意] 若选择更新，将生成标准反代配置并覆盖现有文件内容（若有手工修改将被替换）！\033[0m"
+        local choice="n"
+        if [ -t 0 ]; then
+            printf "是否需要更新 Nginx 配置文件内容？(y/N): "
+            read -r choice || choice="n"
+        fi
+        case "$choice" in
+            [yY]|[yY][eE][sS])
+                ;;
+            *)
+                echo "  保持现有 Nginx 配置文件内容不变，跳过配置更新。"
+                echo "  ✅ 配置文件状态确认: 保留已有有效内容 ($NGINX_CONF)"
+                print_access_urls "HTTPS 访问入口" "$EXTERNAL_PORT"
+                return 0
+                ;;
+        esac
+    fi
+
+    # 策略 2 实施：自动安全快照备份（若旧文件存在且非空，先备份带时间戳快照再执行覆盖）
+    if [ -s "$NGINX_CONF" ]; then
+        local BAK_FILE="${NGINX_CONF}.bak_$(date '+%Y%m%d%H%M%S')"
+        if cp -f "$NGINX_CONF" "$BAK_FILE" 2>/dev/null; then
+            echo -e "  \033[1;32m[安全备份] 已自动为现有 Nginx 配置创建安全快照: $BAK_FILE\033[0m"
+        fi
+    fi
+
     cat > "$NGINX_CONF" << EOF
+# 提示: 若需对此配置文件进行个性化手工调优并防止后续启动被自动覆盖，请在首行保留或添加:
+# MANAGED_BY_ADMIN_DO_NOT_OVERWRITE
 # ============================================================
 # 萌芽平台 (Docker 版) - 宿主机 Nginx HTTPS (SNI 443) 反向代理配置
 # 配置文件: $NGINX_CONF (独立命名，绝不覆盖传统版 mengya_ssl.conf)
