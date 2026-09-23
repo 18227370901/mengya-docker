@@ -344,3 +344,9 @@ Docker 版现已与传统版最新功能（v1.13 ~ v1.17）实现 100% 深度同
    - Django `config/urls.py` 升级双路径智能回退服务（`serve_fetal_story`），优先读 `static/`、缺失自动回退 `frontend/public/`，杜绝 404 破图；
    - `run.sh` 启动与构建阶段增加宿主机静态产物自愈同步，杜绝 Docker Compose volume `./static:/app/static` 遮蔽容器内编译产物；
    - 前端代理对齐与故事封面组件优雅容错兜底。
+
+19. **Docker 构建残留层安全自动清理与防膨胀机制 (v1.25)**：
+   - 在 `run.sh` 脚本生命周期中深度集成 `cleanup_docker_build_cache`，覆盖 `start`（启动前及带 `-b` 构建后）、`stop`（停服清理）、`restart`（全阶段）与 `build`（构建后）；
+   - 严格遵循最小破坏性安全原则，仅清理无标签虚悬镜像（`docker image prune -f`）与未引用的废弃构建缓存层（`docker builder prune -f || docker buildx prune -f`），100% 杜绝磁盘无限制膨胀，且绝对不影响当前正在运行的容器及宿主机上其他项目的有标签镜像；
+   - 新增 `--no-cache` CLI 启动/构建参数，支持无缓存强制全量编译镜像；
+   - 新增 `./run.sh clean`（别名 `./run.sh prune`）独立运维命令，支持一键安全清理构建残留、虚悬镜像与冗余垃圾，并自动输出 `docker system df` 磁盘占用概况。

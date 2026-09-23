@@ -182,6 +182,17 @@ check_docker_env() {
     fi
 }
 
+cleanup_docker_build_cache() {
+    if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+        echo -e "\033[32m  [清理] 正在自动清理上一次构建残留的虚悬镜像与 BuildKit 缓存层 (安全防膨胀)...\033[0m"
+        # 仅清理无标签虚悬镜像（dangling images），绝不影响当前运行容器及其他项目的有标签镜像
+        docker image prune -f >/dev/null 2>&1 || true
+        # 仅清理未引用的废弃构建缓存层（dangling builder cache）
+        docker builder prune -f >/dev/null 2>&1 || docker buildx prune -f >/dev/null 2>&1 || true
+        echo -e "\033[32m  ✅ Docker 构建残留缓存层清理完成 (无冗余空间占用)\033[0m"
+    fi
+}
+
 cleanup_cache() {
     echo -e "\x1b[32m正在清理本地缓存与 .git 冗余垃圾...\x1b[0m"
     cd "$SCRIPT_DIR" || return
@@ -193,6 +204,7 @@ cleanup_cache() {
     find "$SCRIPT_DIR" -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
     find "$SCRIPT_DIR" -type f -name "*.pyc" -delete 2>/dev/null || true
     rm -rf /tmp/gift-backup 2>/dev/null || true
+    cleanup_docker_build_cache
 }
 
 has_celery_tasks() {
@@ -438,6 +450,11 @@ start_docker() {
     # shellcheck disable=SC2086
     $compose $extra_args $up_flags
 
+    if [ "$DO_BUILD" = "1" ]; then
+        # 重新构建后，旧镜像变为无标签虚悬镜像，立即清理释放
+        cleanup_docker_build_cache
+    fi
+
     # 探活检查数据库容器是否因版本不兼容等原因异常退出
     sleep 2
     local db_status
@@ -524,6 +541,7 @@ stop_docker() {
     # shellcheck disable=SC2086
     $compose $extra_args down --remove-orphans
     echo "  容器已全部停止并释放网络资源"
+    cleanup_docker_build_cache
 }
 
 restart_docker() {
@@ -584,11 +602,18 @@ build_docker() {
     choose_db_image
     local compose
     compose=$(compose_cmd)
-    echo "==> 手动构建 Docker 容器镜像 ($compose build)..."
     local extra_args
     extra_args=$(compose_extra_args "$compose")
+    local build_opts=""
+    if [ "$NO_CACHE" = "1" ]; then
+        build_opts="--no-cache"
+        echo "==> 手动无缓存全新构建 Docker 容器镜像 ($compose build --no-cache)..."
+    else
+        echo "==> 手动构建 Docker 容器镜像 ($compose build)..."
+    fi
     # shellcheck disable=SC2086
-    $compose $extra_args build
+    $compose $extra_args build $build_opts
+    cleanup_docker_build_cache
 }
 
 # ===== SSL 证书创建函数（带交互式防误覆盖确认） =====
@@ -806,11 +831,12 @@ CUSTOM_ADMIN_NICK=""
 CUSTOM_DOMAIN=""
 CUSTOM_DB_IMAGE=""
 DO_BUILD=0
+NO_CACHE=0
 EXTRA_ARGS=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        start|stop|restart|status|logs|build|add_nginx|exec|init_data|seed|db_backup|backup|db_restore|restore|help)
+        start|stop|restart|status|logs|build|clean|prune|add_nginx|exec|init_data|seed|db_backup|backup|db_restore|restore|help)
             if [ -z "$CMD" ]; then
                 CMD="$1"
             else
@@ -819,6 +845,11 @@ while [ $# -gt 0 ]; do
             shift
             ;;
         -b|--build)
+            DO_BUILD=1
+            shift
+            ;;
+        --no-cache)
+            NO_CACHE=1
             DO_BUILD=1
             shift
             ;;
@@ -934,6 +965,14 @@ case "$CMD" in
     build)
         build_docker
         ;;
+    clean|prune)
+        cleanup_cache
+        if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+            echo ""
+            echo "==> 当前 Docker 磁盘使用概况："
+            docker system df || true
+        fi
+        ;;
     add_nginx)
         gen_ssl_cert
         gen_nginx_config
@@ -958,7 +997,8 @@ case "$CMD" in
         echo "  ./run.sh restart [选项]      重启 Docker 容器服务（重启前自动清理垃圾与缓存）"
         echo "  ./run.sh status              查看各容器运行状态与健康指标"
         echo "  ./run.sh logs [svc]          查看容器实时运行日志（如 ./run.sh logs backend）"
-        echo "  ./run.sh build               手动重新构建容器镜像"
+        echo "  ./run.sh build               手动重新构建容器镜像（构建后自动清理旧残留层）"
+        echo "  ./run.sh clean               一键清理残留构建缓存层、虚悬镜像与本地冗余垃圾"
         echo "  ./run.sh add_nginx [选项]    生成宿主机 /opt/service/nginx/conf.d 独立反代配置（与传统版零冲突）"
         echo "  ./run.sh exec <cmd>          在 backend 容器中执行任意命令"
         echo "  ./run.sh init_data [选项]    检查并补齐全量样例数据（食谱/胎教/百科/周历/清单/商品/品牌）"
@@ -972,7 +1012,8 @@ case "$CMD" in
         echo "  -P, --password <PASS>        自定义超级管理员登录密码（默认 admin123）"
         echo "  -n, --nickname <NAME>        自定义管理员昵称（默认 管理员）"
         echo "  -d, --domain <DOMAIN>        自定义绑定的 SNI 域名（默认 mengya-docker.local）"
-        echo "  -b, --build                  启动时强制重新构建容器镜像"
+        echo "  -b, --build                  启动时强制重新构建容器镜像（构建后自动清理旧残留层）"
+        echo "  --no-cache                   构建时禁用缓存并彻底重新编译镜像"
         echo "  --db-image <IMAGE>           指定数据库镜像（如 pgvector/pgvector:pg18 或 postgres:15-alpine）"
         echo ""
         echo "实用启动示例："
@@ -985,7 +1026,7 @@ case "$CMD" in
         ;;
     *)
         echo "未知命令: $CMD"
-        echo "支持的子命令: start | stop | restart | status | logs | build | add_nginx | exec | help"
+        echo "支持的子命令: start | stop | restart | status | logs | build | clean | add_nginx | exec | help"
         exit 1
         ;;
 esac
