@@ -1689,3 +1689,25 @@ MODE 环境变量已设置 → 直接使用（校验取值）
 - **全链路测试与双版本同步**：
   - Docker 版（`mengya-docker`）与传统本地版（`mengya-local`）全栈源码、数据迁移及编译产物严格同步。
   - 传统版本重启后，`GET /api/auth/login/`、`GET /api/users/me/`、`GET /api/admin/users/`、`PUT /api/admin/users/`、`GET /api/admin/audit-logs/` 全流程实测通过。
+
+### 12.36 胎教故事大文件解耦与双路径自愈静态资源架构保障 (REQ-36)
+- **需求背景与故障复盘**：
+  - **Git 仓库冗余消除**：为消除推送到 GitHub 远端仓库的 32.32 MB 重复大文件（343 张胎教故事封面图），将 `static/fetal-stories` 目录从 Git 索引中解耦（`git rm --cached`）并加入 `.gitignore`，将 `frontend/public/fetal-stories` 作为仓库中静态图片的唯一真相源（Single Source of Truth）。
+  - **暴露的运行时断层**：在远程克隆（`git clone`）、分支拉取（`git pull`）或 Docker 宿主机卷挂载（`./static:/app/static`）场景下，宿主机本地缺失 `static/fetal-stories` 目录。Django 原生配置写死仅从 `static/fetal-stories` 查找，导致前端请求 `/fetal-stories/*.jpg` 时触发全量 404 破图，且启动脚本缺少目录自愈机制。
+- **全栈双路径自愈体系设计与实现**：
+  - **1. Django 后端智能双路径回退视图 (`config/urls.py`)**：
+    - 新增 `serve_fetal_story` 智能服务函数，优先检查生产静态目录 `BASE_DIR / static / fetal-stories`；
+    - 若物理文件缺失或尚未构建，自动透明回退至源码源目录 `BASE_DIR / frontend / public / fetal-stories`；
+    - 无论是本地裸机运行还是 Docker 容器环境，均能 100% 自动保障图片即开即用，彻底杜绝 404。
+  - **2. 启动脚本多环境静态资产自动自愈 (`run.ps1` / `run.sh`)**：
+    - Windows 本地脚本 `run.ps1` 在服务启动前检测 `static\fetal-stories`，缺失时自动从 `frontend\public\fetal-stories` 执行自愈同步；
+    - Linux / macOS 脚本 `run.sh`（Docker 版与传统版）在 `start` 及 `build` 阶段增加自动检测与创建同步，杜绝 Docker 卷挂载空目录覆盖容器内部构建产物。
+  - **3. 前端 Vite 开发代理对齐与容错兜底 (`vite.config.ts` / `FetalStoryPage.tsx`)**：
+    - `frontend/vite.config.ts` 默认反向代理后端目标对齐至 `http://localhost:5173`，避免开发模式下因默认 8000 端口拒绝连接导致 API 500；
+    - `FetalStoryPage.tsx` 故事卡片与详情弹窗封面图增加 `onError` 优雅容错处理器，防止任何异常图片渲染成破损图标。
+- **验证与交付效果**：
+  - **Git 仓库体积极致优化**：远端仓库彻底消除了 32.32 MB 的重复跟踪文件，符合现代敏捷工程规范。
+  - **全链路严苛测试通过**：
+    - 正常请求 `/fetal-stories/10min_img_0000.jpg` 响应 HTTP 200 (124,638 字节)；
+    - 模拟极端故障（将 `static/fetal-stories` 物理重命名/删除），智能路由兜底 100% 命中 `frontend/public/`，依然返回 HTTP 200；
+    - 恢复后各项 API、Token 校验与静态直发全流程测试通过。

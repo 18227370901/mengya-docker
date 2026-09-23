@@ -292,6 +292,9 @@ function StoryCard({ story, onClick, compact }: { story: FetalStory; onClick: ()
           alt={story.title}
           className="h-20 w-20 flex-shrink-0 rounded-xl object-cover"
           loading="lazy"
+          onError={(e) => {
+            e.currentTarget.style.display = "none";
+          }}
         />
       )}
       <div className="flex min-w-0 flex-1 flex-col">
@@ -408,6 +411,9 @@ function StoryDetail({
               src={story.cover_image}
               alt={title}
               className="mb-4 h-40 w-full rounded-xl object-cover"
+              onError={(e) => {
+                e.currentTarget.style.display = "none";
+              }}
             />
           )}
           <h2 className="mb-1 text-xl font-bold text-gray-800">{title}</h2>

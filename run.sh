@@ -414,6 +414,14 @@ start_docker() {
     # 补全主流程中缺失的 SSL 证书与 Nginx 配置创建函数调用
     gen_ssl_cert
     gen_nginx_config
+
+    # 静态资源自愈：确保宿主机 static/fetal-stories 存在，避免挂载遮蔽容器内产物
+    if [ ! -d "$PROJECT_ROOT/static/fetal-stories" ] && [ -d "$PROJECT_ROOT/frontend/public/fetal-stories" ]; then
+        echo "  [自愈] 自动同步胎教故事静态产物至 static/fetal-stories (保障容器卷挂载)..."
+        mkdir -p "$PROJECT_ROOT/static"
+        cp -r "$PROJECT_ROOT/frontend/public/fetal-stories" "$PROJECT_ROOT/static/"
+    fi
+
     local compose
     compose=$(compose_cmd)
 
