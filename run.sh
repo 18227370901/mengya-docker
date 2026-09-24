@@ -180,7 +180,10 @@ ADMIN_PASSWORD="${ADMIN_PASSWORD:-admin123}"
 ADMIN_NICKNAME="${ADMIN_NICKNAME:-管理员}"
 
 NGINX_CONF_DIR=$(resolve_abs_path "${NGINX_CONF_DIR:-/opt/service/nginx/conf.d}")
-NGINX_CERT_DIR=$(resolve_abs_path "${NGINX_CERT_DIR:-/opt/service/nginx/ssl}")
+NGINX_CERT_DIR=$(resolve_abs_path "${NGINX_CERT_DIR:-$SCRIPT_DIR/ssl}")
+if [ ! -d "$NGINX_CERT_DIR" ]; then
+    mkdir -p "$NGINX_CERT_DIR"
+fi
 NGINX_CONF="$NGINX_CONF_DIR/mengya_docker_ssl.conf"
 ENABLE_HTTP_REDIRECT="${ENABLE_HTTP_REDIRECT:-1}"
 

@@ -19,7 +19,7 @@
 
 > **宿主机 NGINX 双版本多站点“零冲突”规范**：
 > - **独立配置文件**：执行 `./run.sh add_nginx` 时，向宿主机 `/opt/service/nginx/conf.d/mengya_docker_ssl.conf` 写入配置，绝不覆盖传统版的 `mengya_ssl.conf`。
-> - **独立证书路径**：证书写入宿主机 `/opt/service/nginx/ssl/mengya_docker.crt`，互不覆盖。
+> - **独立证书路径**：默认使用当前项目根目录下的 `ssl/` 目录（自动创建），独立存放 `mengya_docker.crt` 与 `mengya_docker.key`，互不覆盖。
 > - **SNI 域名分流**：默认匹配域名为 `mengya-docker.local`，与传统版的 `mengya.local` 共享宿主机 443 端口，通过 TLS 握手 SNI 域名精准路由，实现真正的单 IP / 443 单入口多站点安全共存！
 
 ---
@@ -126,7 +126,7 @@
 
 ### Nginx 反代路径智能绝对化与多域名 SAN 支持
 - **权威域名以 `SERVER_NAME` 为准**：通过 `-d / --domain` 自定义 SNI 域名，完整生效至 Nginx 配置中；自动提取首个域名为主域名用于证书 CN，并自动遍历所有域名写入 OpenSSL SAN 扩展列表，多域名访问全兼容。
-- **证书路径智能自动绝对化**：无论在 `.env` 或脚本中配置 `NGINX_CERT_DIR="./nginx/ssl"` 相对路径还是 `/opt/service/nginx/ssl` 绝对路径，脚本在生成配置时均自动基于项目目录规范化为物理绝对路径，彻底杜绝 Nginx 因相对路径寻找证书失败而崩溃。
+- **证书路径默认本地化与自动创建**：默认使用当前项目根目录下的 `ssl/` 目录（未显式配置 `NGINX_CERT_DIR` 时自动在当前项目下创建并使用 `ssl` 目录）；无论在 `.env` 或脚本中配置相对路径还是绝对路径，脚本在初始化时均自动规范化为物理绝对路径并自动创建目录，彻底杜绝 Nginx 因相对路径寻找证书失败或外部目录依赖而崩溃。
 
 
 
