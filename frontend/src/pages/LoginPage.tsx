@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { Eye, EyeOff, KeyRound, RefreshCw, Sprout, Lock } from "lucide-react";
+import { Eye, EyeOff, KeyRound, RefreshCw, Sprout, Lock, Moon, Sun } from "lucide-react";
+import { useThemeStore } from "@/store/themeStore";
 import { authApi } from "@/api/auth";
 import { useAuthStore } from "@/store/authStore";
 
@@ -21,6 +22,7 @@ const decodeCredential = (val: string): string => {
 };
 
 export default function LoginPage() {
+  const { isDark, toggleTheme } = useThemeStore();
   const [rememberMe, setRememberMe] = useState<boolean>(() => {
     try {
       return (
@@ -486,26 +488,39 @@ export default function LoginPage() {
     }
   };
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-brand-50 to-cream px-4">
-      <div className="w-full max-w-md rounded-3xl bg-white p-8 shadow-lg">
+    <div className="relative flex min-h-screen items-center justify-center bg-gradient-to-b from-brand-50 to-cream px-4 transition-colors duration-200 dark:from-gray-900 dark:to-gray-950">
+      {/* 右上角悬浮主题切换按钮 */}
+      <div className="absolute right-4 top-4 z-50">
+        <button
+          type="button"
+          onClick={toggleTheme}
+          className="flex h-9 w-9 items-center justify-center rounded-xl border border-gray-200/80 bg-white/80 text-gray-500 shadow-sm backdrop-blur transition hover:bg-gray-100 hover:text-brand-500 dark:border-gray-700/80 dark:bg-gray-800/80 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-amber-400"
+          title={isDark ? "切换为白天模式" : "切换为黑夜模式"}
+          aria-label="切换主题模式"
+        >
+          {isDark ? <Sun className="h-4 w-4 text-amber-400" /> : <Moon className="h-4 w-4" />}
+        </button>
+      </div>
+
+      <div className="w-full max-w-md rounded-3xl bg-white p-8 shadow-lg transition-colors duration-200 dark:border dark:border-gray-800 dark:bg-gray-900 dark:shadow-2xl">
         <div className="mb-6 flex flex-col items-center">
           <Sprout className="h-12 w-12 text-brand-500" />
-          <h1 className="mt-2 text-2xl font-bold text-gray-800">欢迎回到萌芽</h1>
-          <p className="mt-1 text-sm text-gray-400">从第一次胎动到第一次背书包</p>
+          <h1 className="mt-2 text-2xl font-bold text-gray-800 dark:text-gray-100">欢迎回到萌芽</h1>
+          <p className="mt-1 text-sm text-gray-400 dark:text-gray-500">从第一次胎动到第一次背书包</p>
         </div>
 
         {kicked && (
-          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
-            <p className="text-sm text-amber-600">您的账号已在其他设备登录或服务已重启，请重新登录</p>
+          <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 dark:border-amber-900/50 dark:bg-amber-950/40">
+            <p className="text-sm text-amber-600 dark:text-amber-400">您的账号已在其他设备登录或服务已重启，请重新登录</p>
           </div>
         )}
 
         {timeoutLogout && (
-          <div className="mb-4 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 flex items-start gap-2.5">
+          <div className="mb-4 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 flex items-start gap-2.5 dark:border-orange-900/50 dark:bg-orange-950/40">
             <Lock className="h-5 w-5 text-orange-500 shrink-0 mt-0.5" />
             <div>
-              <p className="text-sm font-semibold text-orange-800">会话已超时</p>
-              <p className="text-xs text-orange-600 mt-0.5">由于您长时间未进行任何操作，为保障特权账户安全，系统已自动退出登录，请重新输入账号密码。</p>
+              <p className="text-sm font-semibold text-orange-800 dark:text-orange-300">会话已超时</p>
+              <p className="text-xs text-orange-600 dark:text-orange-400 mt-0.5">由于您长时间未进行任何操作，为保障特权账户安全，系统已自动退出登录，请重新输入账号密码。</p>
             </div>
           </div>
         )}

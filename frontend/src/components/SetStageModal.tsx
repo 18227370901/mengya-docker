@@ -186,7 +186,7 @@ export default function SetStageModal({ isOpen, onClose, onSuccess }: SetStageMo
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-xs">
-      <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-150">
+      <div className="w-full max-w-md rounded-3xl bg-white dark:bg-gray-900 dark:border dark:border-gray-800 p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-150">
         {/* 头部 */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -194,24 +194,24 @@ export default function SetStageModal({ isOpen, onClose, onSuccess }: SetStageMo
               <Calendar className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="text-lg font-bold text-gray-800">设置您的孕育阶段</h2>
-              <p className="text-xs text-gray-400">定制精准周历、成长指南与专属好物推荐</p>
+              <h2 className="text-lg font-bold text-gray-800 dark:text-gray-100">设置您的孕育阶段</h2>
+              <p className="text-xs text-gray-400 dark:text-gray-500">定制精准周历、成长指南与专属好物推荐</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="rounded-full p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition"
+            className="rounded-full p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-800 dark:hover:text-gray-300 transition"
           >
             <X className="h-5 w-5" />
           </button>
         </div>
 
         {/* 切换 Tab */}
-        <div className="grid grid-cols-2 gap-2 rounded-2xl bg-gray-100 p-1">
+        <div className="grid grid-cols-2 gap-2 rounded-2xl bg-gray-100 dark:bg-gray-800 p-1">
           <button
             type="button"
             className={`flex items-center justify-center gap-2 rounded-xl py-2 text-sm font-semibold transition ${
-              tab === "pregnant" ? "bg-white text-brand-600 shadow-sm" : "text-gray-500 hover:text-gray-700"
+              tab === "pregnant" ? "bg-white text-brand-600 shadow-sm dark:bg-gray-700 dark:text-brand-400" : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
             }`}
             onClick={() => {
               setTab("pregnant");
@@ -224,7 +224,7 @@ export default function SetStageModal({ isOpen, onClose, onSuccess }: SetStageMo
           <button
             type="button"
             className={`flex items-center justify-center gap-2 rounded-xl py-2 text-sm font-semibold transition ${
-              tab === "born" ? "bg-white text-brand-600 shadow-sm" : "text-gray-500 hover:text-gray-700"
+              tab === "born" ? "bg-white text-brand-600 shadow-sm dark:bg-gray-700 dark:text-brand-400" : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
             }`}
             onClick={() => {
               setTab("born");
@@ -282,8 +282,8 @@ export default function SetStageModal({ isOpen, onClose, onSuccess }: SetStageMo
                     type="button"
                     className={`rounded-xl py-2 text-xs font-medium border transition ${
                       gender === item.value
-                        ? "border-brand-500 bg-orange-50/60 text-brand-600 font-semibold"
-                        : "border-gray-200 text-gray-600 hover:bg-gray-50"
+                        ? "border-brand-500 bg-orange-50/60 text-brand-600 font-semibold dark:bg-brand-950/60 dark:text-brand-400"
+                        : "border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
                     }`}
                     onClick={() => setGender(item.value)}
                   >
@@ -361,7 +361,7 @@ export default function SetStageModal({ isOpen, onClose, onSuccess }: SetStageMo
           </button>
           <button
             type="button"
-            className="rounded-2xl border border-gray-200 px-5 py-2.5 text-sm font-medium text-gray-500 hover:bg-gray-50"
+            className="rounded-2xl border border-gray-200 px-5 py-2.5 text-sm font-medium text-gray-500 hover:bg-gray-50 dark:border-gray-700 dark:text-gray-400 dark:hover:bg-gray-800"
             onClick={onClose}
           >
             取消

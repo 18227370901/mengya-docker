@@ -145,7 +145,7 @@ export default function FetalStoryPage() {
         </div>
 
         <select
-          className="rounded-xl border border-gray-200 px-3 py-1.5 text-sm text-gray-600"
+          className="rounded-xl border border-gray-200 px-3 py-1.5 text-sm text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
           value={narratorFilter}
           onChange={(e) => setNarratorFilter(e.target.value)}
         >

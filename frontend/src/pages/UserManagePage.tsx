@@ -1277,7 +1277,7 @@ export default function UserManagePage() {
       {/* ======================= 指定具体用户专属权限配置弹窗 ======================= */}
       {targetUserModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-xs">
-          <div className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-2xl bg-white shadow-xl overflow-hidden animate-fade-in">
+          <div className="flex max-h-[90vh] w-full max-w-3xl flex-col rounded-2xl bg-white dark:bg-gray-900 dark:border dark:border-gray-800 shadow-xl overflow-hidden animate-fade-in">
             {/* 弹窗头部 */}
             <div className="flex items-center justify-between border-b border-gray-100 px-6 py-4 bg-gradient-to-r from-orange-50/40 via-white to-pink-50/30">
               <div className="flex items-center gap-3">

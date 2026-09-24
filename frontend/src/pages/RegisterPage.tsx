@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { AlertCircle, CheckCircle2, Eye, EyeOff, Sprout } from "lucide-react";
+import { AlertCircle, CheckCircle2, Eye, EyeOff, Moon, Sprout, Sun } from "lucide-react";
+import { useThemeStore } from "@/store/themeStore";
 import { authApi } from "@/api/auth";
 
 const ROLE_OPTIONS = [
@@ -62,6 +63,7 @@ const getPasswordStrength = (pwd: string) => {
 };
 
 export default function RegisterPage() {
+  const { isDark, toggleTheme } = useThemeStore();
   // 密码强度评估
   const [phone, setPhone] = useState("");
   const [password, setPassword] = useState("");
@@ -138,8 +140,21 @@ export default function RegisterPage() {
   const blocked = regMode === "invitation_only" && inviteToken && inviteValid === false;
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-b from-brand-50 to-cream px-4">
-      <div className="w-full max-w-md rounded-3xl bg-white p-8 shadow-lg">
+    <div className="relative flex min-h-screen items-center justify-center bg-gradient-to-b from-brand-50 to-cream px-4 py-8 transition-colors duration-200 dark:from-gray-900 dark:to-gray-950">
+      {/* 右上角悬浮主题切换按钮 */}
+      <div className="absolute right-4 top-4 z-50">
+        <button
+          type="button"
+          onClick={toggleTheme}
+          className="flex h-9 w-9 items-center justify-center rounded-xl border border-gray-200/80 bg-white/80 text-gray-500 shadow-sm backdrop-blur transition hover:bg-gray-100 hover:text-brand-500 dark:border-gray-700/80 dark:bg-gray-800/80 dark:text-gray-300 dark:hover:bg-gray-700 dark:hover:text-amber-400"
+          title={isDark ? "切换为白天模式" : "切换为黑夜模式"}
+          aria-label="切换主题模式"
+        >
+          {isDark ? <Sun className="h-4 w-4 text-amber-400" /> : <Moon className="h-4 w-4" />}
+        </button>
+      </div>
+
+      <div className="w-full max-w-md rounded-3xl bg-white p-8 shadow-lg transition-colors duration-200 dark:border dark:border-gray-800 dark:bg-gray-900 dark:shadow-2xl">
         <div className="mb-6 flex flex-col items-center">
           <Sprout className="h-12 w-12 text-brand-500" />
           <h1 className="mt-2 text-2xl font-bold text-gray-800">注册萌芽账号</h1>
@@ -211,8 +226,8 @@ export default function RegisterPage() {
                     }}
                     className={`flex items-center justify-center gap-1.5 rounded-xl border py-2 px-2.5 text-sm font-medium transition cursor-pointer ${
                       role === opt.value
-                        ? "border-brand-500 bg-brand-50 text-brand-700 shadow-xs"
-                        : "border-gray-200 bg-white text-gray-600 hover:border-gray-300"
+                        ? "border-brand-500 bg-brand-50 text-brand-700 shadow-xs dark:bg-brand-950/60 dark:text-brand-300 dark:border-brand-500"
+                        : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:border-gray-600"
                     }`}
                   >
                     <span>{opt.icon}</span>

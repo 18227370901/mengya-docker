@@ -736,7 +736,7 @@ export default function AuditLogPage() {
       {/* 日志详情弹窗 */}
       {activeDetailLog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
+          <div className="w-full max-w-lg rounded-3xl bg-white dark:bg-gray-900 dark:border dark:border-gray-800 p-6 shadow-2xl space-y-4 animate-in fade-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between border-b border-gray-100 pb-3">
               <div className="flex items-center gap-2">
                 <div className="rounded-xl bg-brand-50 p-2 text-brand-600">

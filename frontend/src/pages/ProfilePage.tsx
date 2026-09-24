@@ -1,7 +1,8 @@
 import SetStageModal from "@/components/SetStageModal";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Bot, Baby, Bell, Edit3, Eye, EyeOff, Heart, HeartOff, KeyRound, LogOut, Package, Plus, Settings, ShieldCheck, Trash2, UserCheck, Users, ClipboardList, X, Loader2, Sparkles } from "lucide-react";
+import { Bot, Baby, Bell, Edit3, Eye, EyeOff, Heart, HeartOff, KeyRound, LogOut, Moon, Package, Plus, Settings, ShieldCheck, Sun, Trash2, UserCheck, Users, ClipboardList, X, Loader2, Sparkles } from "lucide-react";
+import { useThemeStore } from "@/store/themeStore";
 import { authApi } from "@/api/auth";
 import { useAuthStore } from "@/store/authStore";
 import type { BabyProfile } from "@/types";
@@ -38,6 +39,7 @@ const roleGreeting = (role?: string) => {
 
 export default function ProfilePage() {
   const { user, stage, logout, fetchMe } = useAuthStore();
+  const { theme, isDark, setTheme } = useThemeStore();
   const navigate = useNavigate();
   const [babies, setBabies] = useState<BabyProfile[]>([]);
   const [showAdd, setShowAdd] = useState(false);
@@ -321,12 +323,12 @@ export default function ProfilePage() {
         </div>
 
         {showAdd && (
-          <div className="mb-4 space-y-3 rounded-xl bg-cream p-4">
-            <div className="flex rounded-xl bg-gray-200/70 p-1">
+          <div className="mb-4 space-y-3 rounded-xl bg-cream dark:bg-gray-800/80 p-4">
+            <div className="flex rounded-xl bg-gray-200/70 dark:bg-gray-700/70 p-1">
               <button
                 type="button"
                 className={`flex-1 rounded-lg py-1.5 text-xs font-semibold transition cursor-pointer ${
-                  babyForm.status === "pregnant" ? "bg-white text-brand-600 shadow-xs" : "text-gray-500 hover:text-gray-700"
+                  babyForm.status === "pregnant" ? "bg-white text-brand-600 shadow-xs dark:bg-gray-800 dark:text-brand-400" : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
                 }`}
                 onClick={() => setBabyForm((f) => ({ ...f, status: "pregnant", birthday: user?.due_date || f.birthday }))}
               >
@@ -335,7 +337,7 @@ export default function ProfilePage() {
               <button
                 type="button"
                 className={`flex-1 rounded-lg py-1.5 text-xs font-semibold transition cursor-pointer ${
-                  babyForm.status === "born" ? "bg-white text-brand-600 shadow-xs" : "text-gray-500 hover:text-gray-700"
+                  babyForm.status === "born" ? "bg-white text-brand-600 shadow-xs dark:bg-gray-800 dark:text-brand-400" : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
                 }`}
                 onClick={() => setBabyForm((f) => ({ ...f, status: "born", birthday: user?.baby_birthday || new Date().toISOString().slice(0, 10) }))}
               >
@@ -461,7 +463,7 @@ export default function ProfilePage() {
         {/* 编辑宝宝档案模态框 */}
         {editingBaby && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4">
-            <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl space-y-4">
+            <div className="w-full max-w-md rounded-2xl bg-white dark:bg-gray-900 dark:border dark:border-gray-800 p-6 shadow-xl space-y-4">
               <div className="flex items-center justify-between border-b pb-3">
                 <h3 className="font-bold text-gray-800 text-base">编辑宝宝档案</h3>
                 <button onClick={() => setEditingBaby(null)} className="text-gray-400 hover:text-gray-600 text-sm cursor-pointer">✕</button>
@@ -728,6 +730,48 @@ export default function ProfilePage() {
 
       {/* 密保设置 */}
       <SecurityQuestionSection />
+
+      {/* 界面外观 */}
+      <section className="card">
+        <div className="mb-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            {isDark ? <Moon className="h-5 w-5 text-amber-400" /> : <Sun className="h-5 w-5 text-brand-500" />}
+            <h2 className="font-semibold text-gray-800 dark:text-gray-100">界面外观</h2>
+          </div>
+          <span className="text-xs text-gray-400 dark:text-gray-500">
+            当前：{isDark ? "黑夜模式" : "白天模式"}
+          </span>
+        </div>
+        <p className="mb-4 text-sm text-gray-400 dark:text-gray-500">
+          支持白天明亮与夜间护眼两种主题风格，随时自由切换。
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            type="button"
+            onClick={() => setTheme("light")}
+            className={`flex items-center justify-center gap-2 rounded-xl border p-3 text-sm font-medium transition cursor-pointer ${
+              !isDark
+                ? "border-brand-500 bg-brand-50 text-brand-700 shadow-xs dark:bg-brand-950/60 dark:text-brand-300"
+                : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:border-gray-600"
+            }`}
+          >
+            <Sun className="h-4 w-4 text-amber-500" />
+            <span>白天模式</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setTheme("dark")}
+            className={`flex items-center justify-center gap-2 rounded-xl border p-3 text-sm font-medium transition cursor-pointer ${
+              isDark
+                ? "border-brand-500 bg-brand-50 text-brand-700 shadow-xs dark:border-brand-500 dark:bg-brand-950/80 dark:text-brand-300"
+                : "border-gray-200 bg-white text-gray-600 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300 dark:hover:border-gray-600"
+            }`}
+          >
+            <Moon className="h-4 w-4 text-amber-400" />
+            <span>黑夜模式</span>
+          </button>
+        </div>
+      </section>
 
       {/* 管理员：管理面板 */}
       {user?.is_staff && (

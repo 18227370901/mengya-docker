@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import * as echarts from "echarts";
+import { useThemeStore } from "@/store/themeStore";
 
 interface GrowthPoint {
   date: string;
@@ -11,6 +12,7 @@ interface GrowthPoint {
 /** 生长曲线折线图（体重/身高/头围） */
 export default function GrowthChart({ points, height = 280 }: { points: GrowthPoint[]; height?: number }) {
   const ref = useRef<HTMLDivElement>(null);
+  const { isDark } = useThemeStore();
 
   useEffect(() => {
     if (!ref.current || !points?.length) return;
@@ -40,11 +42,28 @@ export default function GrowthChart({ points, height = 280 }: { points: GrowthPo
     }
 
     chart.setOption({
-      tooltip: { trigger: "axis" },
-      legend: { bottom: 0 },
+      tooltip: {
+        trigger: "axis",
+        backgroundColor: isDark ? "#1e293b" : "#ffffff",
+        borderColor: isDark ? "#334155" : "#e2e8f0",
+        textStyle: { color: isDark ? "#f1f5f9" : "#1e293b" },
+      },
+      legend: {
+        bottom: 0,
+        textStyle: { color: isDark ? "#cbd5e1" : "#666" },
+      },
       grid: { top: 20, right: 20, bottom: 50, left: 40 },
-      xAxis: { type: "category", data: dates, axisLabel: { color: "#888" } },
-      yAxis: { type: "value", axisLabel: { color: "#888" }, splitLine: { lineStyle: { color: "#f0f0f0" } } },
+      xAxis: {
+        type: "category",
+        data: dates,
+        axisLabel: { color: isDark ? "#94a3b8" : "#888" },
+        axisLine: { lineStyle: { color: isDark ? "#334155" : "#e5e7eb" } },
+      },
+      yAxis: {
+        type: "value",
+        axisLabel: { color: isDark ? "#94a3b8" : "#888" },
+        splitLine: { lineStyle: { color: isDark ? "#1e293b" : "#f0f0f0" } },
+      },
       series,
     });
     const onResize = () => chart.resize();
@@ -53,7 +72,7 @@ export default function GrowthChart({ points, height = 280 }: { points: GrowthPo
       window.removeEventListener("resize", onResize);
       chart.dispose();
     };
-  }, [points]);
+  }, [points, isDark]);
 
   return <div ref={ref} style={{ height }} className="w-full" />;
 }

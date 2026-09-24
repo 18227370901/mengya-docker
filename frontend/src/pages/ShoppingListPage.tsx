@@ -217,7 +217,7 @@ export default function ShoppingListPage() {
 
         {/* 分类下拉 */}
         <select
-          className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-600 outline-none focus:border-brand-300"
+          className="rounded-lg border border-gray-200 px-3 py-1.5 text-sm text-gray-600 outline-none focus:border-brand-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
           value={categoryFilter}
           onChange={(e) => setCategoryFilter(e.target.value)}
         >
@@ -231,7 +231,7 @@ export default function ShoppingListPage() {
         <div className="relative flex-1 min-w-[160px]">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-300" />
           <input
-            className="w-full rounded-lg border border-gray-200 py-1.5 pl-9 pr-3 text-sm outline-none focus:border-brand-300"
+            className="w-full rounded-lg border border-gray-200 py-1.5 pl-9 pr-3 text-sm outline-none focus:border-brand-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 dark:placeholder-gray-500"
             placeholder="搜索物品名称或备注…"
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}

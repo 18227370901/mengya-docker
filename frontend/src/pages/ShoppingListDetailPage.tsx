@@ -358,7 +358,7 @@ export default function ShoppingListDetailPage() {
       {/* 编辑弹窗 */}
       {editing && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => !savingEdit && setEditing(null)}>
-          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
+          <div className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white dark:bg-gray-900 dark:border dark:border-gray-800 p-5 shadow-xl" onClick={(e) => e.stopPropagation()}>
             <div className="mb-4 flex items-center justify-between">
               <h3 className="text-lg font-semibold text-gray-800">编辑物品</h3>
               <button className="text-gray-400 hover:text-gray-600" onClick={() => !savingEdit && setEditing(null)}>

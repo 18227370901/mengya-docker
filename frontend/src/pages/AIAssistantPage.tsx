@@ -201,7 +201,7 @@ export default function AIAssistantPage() {
                 <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                   <input
                     autoFocus
-                    className="min-w-0 flex-1 rounded border border-brand-200 px-2 py-1 text-xs outline-none"
+                    className="min-w-0 flex-1 rounded border border-brand-200 px-2 py-1 text-xs outline-none dark:border-brand-800 dark:bg-gray-800 dark:text-gray-100"
                     value={renameValue}
                     onChange={(e) => setRenameValue(e.target.value)}
                     onKeyDown={(e) => {
