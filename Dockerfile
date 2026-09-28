@@ -1,18 +1,7 @@
 # ============================================================
-# 第一阶段：前端编译构建阶段（临时 Node 环境，不进入最终镜像）
-# ============================================================
-FROM node:20-alpine AS frontend-builder
-
-WORKDIR /build
-
-COPY frontend/package.json frontend/package-lock.json* ./
-RUN npm install
-
-COPY frontend/ .
-RUN npm run build
-
-# ============================================================
-# 第二阶段：Django 后端一体化生产镜像（纯 Python 运行时，零 Node / 零 Nginx）
+# 萌芽（mengya）纯 Python 一体化生产镜像
+# 零 Node / 零 npm 运行时依赖，直接使用仓库内预编译前端资产
+# 云端服务器 git clone 即拉即跑，构建仅需 ~10 秒，彻底杜绝服务器 OOM
 # ============================================================
 FROM python:3.11-slim
 
@@ -31,11 +20,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# 将项目全量资产（包含预编译好的 templates/ 与 static/）同步写入镜像
 COPY . .
-
-# 从前端构建阶段复制静态文件产物至后端模板与静态目录
-COPY --from=frontend-builder /build/dist/index.html /app/templates/index.html
-COPY --from=frontend-builder /build/dist/ /app/static/
 
 EXPOSE 8000
 
