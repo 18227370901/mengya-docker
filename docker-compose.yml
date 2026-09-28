@@ -25,7 +25,7 @@ services:
     volumes:
       # PostgreSQL 18+ 镜像要求：数据卷必须挂载到父目录 /var/lib/postgresql（而非 /var/lib/postgresql/data）
       - pgdata:${DB_DATA_DIR:-/var/lib/postgresql}
-    # 仅在内部容器网络暴露端口，不对宿主机暴露 5432，保障数据库安全
+    # 仅在内部容器网络暴露端口，不对宿主机暴露 5432，保障数据库安全与传统版（SQLite）物理隔离
     expose:
       - "5432"
     # PostgreSQL 极致轻量化内核参数调优：常驻内存从 100MB+ 压减至 25MB~35MB

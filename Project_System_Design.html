@@ -1280,5 +1280,16 @@ flowchart TD
       });
     });
   </script>
+
+<div class="card" style="margin-top:20px;border-left:4px solid #10b981;padding:16px;background:var(--bg-card, #fff);">
+  <h3 style="margin-top:0;color:#10b981;">双版本数据库存储物理隔离规范 (v1.38)</h3>
+  <p>系统为传统本地版 (<code>mengya-local</code>) 与容器微服务版 (<code>mengya-docker</code>) 建立了底层数据的 <strong>100% 物理硬隔离机制</strong>：</p>
+  <ul>
+    <li><strong>传统本地版</strong>：默认严格固化使用宿主机独立单文件 SQLite (<code>mengya-local/db.sqlite3</code>)，切断上级目录环境变量污染，开箱即用；</li>
+    <li><strong>Docker 容器版</strong>：使用专属 PostgreSQL 18 容器，数据持久化于命名卷 <code>pgdata</code>，端口 5432 仅在 Compose 内网暴露，不对宿主机映射；</li>
+    <li>两者在数据存储介质、物理路径与网络访问上完全解耦，彻底杜绝数据交叉与冲突。</li>
+  </ul>
+</div>
+
 </body>
 </html>
