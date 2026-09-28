@@ -18,7 +18,7 @@ load_dotenv(BASE_DIR.parent / ".env")
 load_dotenv(BASE_DIR / ".env")
 
 SECRET_KEY = os.getenv("DJANGO_SECRET_KEY", "mengya-dev-insecure-secret-key-32bytes!")
-DEBUG = os.getenv("DJANGO_DEBUG", "True").lower() in ("1", "true", "yes")
+DEBUG = os.getenv("DJANGO_DEBUG", "False").lower() in ("1", "true", "yes")
 
 _env_hosts = os.getenv("DJANGO_ALLOWED_HOSTS", "").strip()
 if DEBUG or not _env_hosts or "*" in _env_hosts:
@@ -45,6 +45,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",
     "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -103,6 +104,7 @@ if DATABASE_URL:
                 "PASSWORD": p.password,
                 "HOST": db_host,
                 "PORT": db_port,
+                "CONN_MAX_AGE": int(os.getenv("DB_CONN_MAX_AGE", "60")),
             }
         }
 
@@ -163,6 +165,19 @@ STATIC_DIR = BASE_DIR / "static"
 STATICFILES_DIRS = [STATIC_DIR] if STATIC_DIR.exists() else []
 MEDIA_URL = "media/"
 MEDIA_ROOT = BASE_DIR / "media"
+
+# ===== WhiteNoise 高效静态资源托管与内核零拷贝强缓存 =====
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedStaticFilesStorage",
+    },
+}
+WHITENOISE_AUTOREFRESH = DEBUG
+WHITENOISE_MAX_AGE = 31536000 if not DEBUG else 0
+WHITENOISE_ROOT = STATIC_DIR if STATIC_DIR.exists() else None
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 

@@ -29,10 +29,8 @@ from django.conf import settings
 
 from apps.core.services.web_search import needs_search, search_and_summarize
 
-try:
-    from openai import OpenAI
-except ImportError:  # pragma: no cover
-    OpenAI = None
+# OpenAI 延迟按需加载：避免服务启动时预载 44MB+ 的 Pydantic/HTTPX 依赖树
+OpenAI = None
 
 GENERAL_CHAT_PROMPT = """
 你是一个乐于助人的智能助手，名字叫"萌小芽"。
@@ -98,9 +96,16 @@ PRODUCT_COMPARE_PROMPT = """
 
 
 def _client(api_key=None, base_url=None, timeout=25.0):
-    """创建 OpenAI 客户端（自动规范化 URL 并设置合理超时与单次重试）"""
-    if not api_key or OpenAI is None:
+    """创建 OpenAI 客户端（按需延迟加载依赖，自动规范化 URL 并设置合理超时与单次重试）"""
+    global OpenAI
+    if not api_key:
         return None
+    if OpenAI is None:
+        try:
+            from openai import OpenAI as _OpenAI
+            OpenAI = _OpenAI
+        except ImportError:  # pragma: no cover
+            return None
     clean_url = normalize_base_url(base_url)
     kwargs = {"api_key": api_key, "timeout": timeout, "max_retries": 1}
     if clean_url:

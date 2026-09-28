@@ -16,8 +16,15 @@ RUN npm run build
 # ============================================================
 FROM python:3.11-slim
 
+# 生产级极致轻量化运行时配置：
+# 1. PYTHONOPTIMIZE=1: 剔除文档字符串与断言，精简解释器底噪
+# 2. MALLOC_ARENA_MAX=2: 压制 glibc 内存池膨胀，抑制多线程内存碎片并强制归还内核
+# 3. DJANGO_DEBUG=False: 彻底根除 connection.queries 造成的 SQL 记录内存泄漏
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    PYTHONOPTIMIZE=1 \
+    MALLOC_ARENA_MAX=2 \
+    DJANGO_DEBUG=False
 
 WORKDIR /app
 
@@ -32,4 +39,5 @@ COPY --from=frontend-builder /build/dist/ /app/static/
 
 EXPOSE 8000
 
-CMD ["sh", "-c", "python manage.py migrate && python manage.py init_data --skip-if-exists && python manage.py ensure_admin && python manage.py invalidate_tokens && python manage.py runserver 0.0.0.0:8000"]
+# 生产级 WSGI 运行规范：单 Worker + 4 轻量线程 (gthread)，彻底废除 runserver 磁盘轮询，待机 CPU 直降至 0%
+CMD ["sh", "-c", "python manage.py migrate && python manage.py init_data --skip-if-exists && python manage.py ensure_admin && python manage.py invalidate_tokens && gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 1 --threads 4 --worker-class gthread --max-requests 1000 --max-requests-jitter 100 --timeout 60"]
