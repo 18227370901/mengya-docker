@@ -8,7 +8,7 @@
 #   worker   Celery 异步任务（可选， profile: celery）
 #
 # 资源控制保障：
-#   - 每一个容器内存上限 (mem_limit) 均严格限制在 100MB 以内，全面对齐轻量级云服务器环境
+#   - 容器内存自适应宿主机可用物理内存（不硬编码静态 mem_limit，避免 OOM 误杀且 docker stats LIMIT 准确映射机器配置）
 #   - Gunicorn 采用 1 Worker + 4 Threads (gthread)，彻底杜绝 CPU 空转轮询
 # ============================================================
 
@@ -18,7 +18,6 @@ services:
     image: ${DB_IMAGE:-pgvector/pgvector:pg18}
     pull_policy: ${DB_PULL_POLICY:-missing}
     container_name: mengya_db
-    mem_limit: 80m
     environment:
       POSTGRES_DB: mengya
       POSTGRES_USER: mengya
@@ -51,7 +50,6 @@ services:
     profiles: ["celery"]
     image: redis:7-alpine
     container_name: mengya_redis
-    mem_limit: 40m
     # 仅在内部容器网络暴露端口，不对宿主机暴露 6379
     expose:
       - "6379"
@@ -67,7 +65,6 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: mengya_backend
-    mem_limit: 100m
     env_file:
       - path: .env
         required: false
@@ -105,7 +102,6 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: mengya_worker
-    mem_limit: 100m
     env_file:
       - path: .env
         required: false
