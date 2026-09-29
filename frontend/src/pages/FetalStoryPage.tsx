@@ -9,9 +9,11 @@ import {
   BookMarked,
   Eye,
   List,
+  Sparkles,
   X,
 } from "lucide-react";
 import { fetalStoryApi } from "@/api/catalog";
+import { useAuthStore } from "@/store/authStore";
 import type { FetalStory } from "@/types";
 import CopyButton from "@/components/CopyButton";
 
@@ -46,24 +48,59 @@ const MONTHS = [
 ];
 
 export default function FetalStoryPage() {
+  const { stage } = useAuthStore();
   const [stories, setStories] = useState<FetalStory[]>([]);
   const [availableWeeks, setAvailableWeeks] = useState<number[]>([]);
-  const [selectedWeek, setSelectedWeek] = useState<number>(17);
+
+  // 计算孕周定位：胎教故事范围为 17~40 周
+  const getTargetWeek = useCallback((weeksList?: number[]) => {
+    if (stage?.is_pregnant && stage.value) {
+      const clamped = Math.min(Math.max(17, stage.value), 40);
+      if (weeksList && weeksList.length > 0) {
+        if (weeksList.includes(clamped)) return clamped;
+        return weeksList[0];
+      }
+      return clamped;
+    }
+    return weeksList && weeksList.length > 0 ? weeksList[0] : 17;
+  }, [stage]);
+
+  const [selectedWeek, setSelectedWeek] = useState<number>(() => getTargetWeek());
   const [narratorFilter, setNarratorFilter] = useState<string>("");
   const [activeStory, setActiveStory] = useState<FetalStory | null>(null);
   const [showEnglish, setShowEnglish] = useState(false);
   const [loading, setLoading] = useState(true);
   const [viewMode, setViewMode] = useState<"week" | "list">("week");
 
+  // 根据用户阶段信息变动自动定位
+  useEffect(() => {
+    if (stage?.is_pregnant && stage.value) {
+      const target = Math.min(Math.max(17, stage.value), 40);
+      setSelectedWeek((curr) => {
+        if (availableWeeks.length > 0 && !availableWeeks.includes(target)) {
+          return availableWeeks[0];
+        }
+        return target;
+      });
+    }
+  }, [stage, availableWeeks]);
+
   // 加载周列表
   useEffect(() => {
     fetalStoryApi.weeks().then((weeks) => {
       setAvailableWeeks(weeks);
-      if (weeks.length > 0 && !weeks.includes(selectedWeek)) {
-        setSelectedWeek(weeks[0]);
+      if (weeks.length > 0) {
+        setSelectedWeek((curr) => {
+          if (stage?.is_pregnant && stage.value) {
+            const target = Math.min(Math.max(17, stage.value), 40);
+            if (weeks.includes(target)) return target;
+          }
+          if (weeks.includes(curr)) return curr;
+          return weeks[0];
+        });
       }
     }).catch(() => {});
-  }, []);
+  }, [stage]);
 
   // 加载故事列表
   const loadStories = useCallback(() => {
@@ -178,6 +215,36 @@ export default function FetalStoryPage() {
         )}
       </div>
 
+      {/* 孕周自适应定位提示 */}
+      {viewMode === "week" && stage?.is_pregnant && stage.value && (
+        <div className="flex items-center justify-between rounded-xl bg-brand-50/80 px-4 py-2 text-xs text-brand-700 dark:bg-brand-950/40 dark:text-brand-300 border border-brand-100 dark:border-brand-900/50">
+          <div className="flex items-center gap-1.5">
+            <Sparkles className="h-3.5 w-3.5 text-brand-500 shrink-0" />
+            {stage.value < 17 ? (
+              <span>
+                您当前处于孕 <strong>{stage.value}</strong> 周（胎教故事自孕17周胎儿听觉发育起推荐，已为您定位至第17周故事）
+              </span>
+            ) : stage.value > 40 ? (
+              <span>
+                您当前处于孕 <strong>{stage.value}</strong> 周，已为您定位至第40周足月故事
+              </span>
+            ) : (
+              <span>
+                根据您当前的孕周（第 <strong>{stage.value}</strong> 周），已为您自动定位到本周胎教故事
+              </span>
+            )}
+          </div>
+          {stage.value >= 17 && stage.value <= 40 && selectedWeek !== stage.value && (
+            <button
+              onClick={() => setSelectedWeek(stage.value)}
+              className="ml-2 shrink-0 font-medium text-brand-600 hover:text-brand-800 underline dark:text-brand-400"
+            >
+              返回我的孕周 (第{stage.value}周)
+            </button>
+          )}
+        </div>
+      )}
+
       {/* 月份快选（仅 week 模式） */}
       {viewMode === "week" && (
         <div className="flex flex-wrap gap-2">
@@ -188,13 +255,20 @@ export default function FetalStoryPage() {
                   key={w}
                   className={`rounded-lg px-2.5 py-1 text-xs transition ${
                     selectedWeek === w
-                      ? "bg-brand-500 font-medium text-white"
+                      ? "bg-brand-500 font-medium text-white shadow-sm"
+                      : stage?.is_pregnant && stage.value === w
+                      ? "bg-brand-100 text-brand-700 font-medium ring-2 ring-brand-400 dark:bg-brand-950 dark:text-brand-300"
                       : availableWeeks.includes(w)
-                      ? "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                      : "bg-gray-50 text-gray-300"
+                      ? "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700"
+                      : "bg-gray-50 text-gray-300 dark:bg-gray-900 dark:text-gray-600"
                   }`}
                   onClick={() => availableWeeks.includes(w) && setSelectedWeek(w)}
                   disabled={!availableWeeks.includes(w)}
+                  title={
+                    stage?.is_pregnant && stage.value === w
+                      ? `第${w}周 (您当前孕周)`
+                      : `第${w}周`
+                  }
                 >
                   {w}
                 </button>
@@ -207,7 +281,7 @@ export default function FetalStoryPage() {
 
       {/* 周信息 */}
       {viewMode === "week" && (
-        <div className="flex items-center gap-2 text-sm text-gray-500">
+        <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
           <span className={`rounded-full px-2.5 py-0.5 text-xs ${TRIMESTER(selectedWeek).color}`}>
             {TRIMESTER(selectedWeek).label}
           </span>
@@ -215,6 +289,11 @@ export default function FetalStoryPage() {
           <span>{WEEK_DESC[selectedWeek] || ""}</span>
           <span>·</span>
           <span>{stories.length} 篇故事</span>
+          {stage?.is_pregnant && stage.value === selectedWeek && (
+            <span className="ml-1 rounded-full bg-brand-100 px-2 py-0.5 text-xs font-medium text-brand-600 dark:bg-brand-900/60 dark:text-brand-300">
+              当前孕周
+            </span>
+          )}
         </div>
       )}
 
