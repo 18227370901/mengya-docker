@@ -398,3 +398,35 @@ db_restore() {
             ;;
     esac
 }
+
+show_db_reconfig_guide() {
+    echo -e "\033[1;36m========================================================================\033[0m"
+    echo -e "\033[1;36m  【.env 与数据库存储方式选择及重新配置操作说明】\033[0m"
+    echo -e "\033[1;36m========================================================================\033[0m"
+    echo "  1. 支持的 3 大数据库模式（通过 .env 中 DB_MODE 变量记录）："
+    echo "     - sqlite    : 容器挂载本地 SQLite 单文件，完全零额外 DB 容器，与传统版独立物理隔离。"
+    echo "     - shared    : [宿主机已运行 PG 容器时推荐] 共享宿主机已有的 PostgreSQL 容器（如 pgvector-18），"
+    echo "                   自动幂等创建当前应用专属数据库（mengya）与账号，零多余容器，节约 80MB+ 内存。"
+    echo "     - dedicated : [Docker版默认推荐] 独立专属 PostgreSQL 容器（mengya_db），内部网络互联，"
+    echo "                   严格就地复用本地已有镜像，严禁网络拉取。"
+    echo ""
+    echo "  2. 数据库配置相关命令行参数："
+    echo "     --reconfig | --reconfig-db           强制唤醒硬件感知探针与交互决策菜单（保留其他已有配置）"
+    echo "     -m, --mode <sqlite|shared|dedicated> 命令行显式指定数据库模式并自动同步持久化至 .env"
+    echo "     --shared-pg <容器名>                 指定共享的宿主机 PostgreSQL 容器名（shared 模式使用）"
+    echo "     -y, --yes | --non-interactive        非交互/定时任务模式（若未配置自动采用智能推荐，绝不阻塞）"
+    echo ""
+    echo "  3. 首次使用与再次重新选择方式："
+    echo "     [方式一] 命令行显式重配（强烈推荐，最安全便捷）："
+    echo "              ./run.sh start --reconfig"
+    echo "              或在启动时直接指定目标模式："
+    echo "              ./run.sh start -m dedicated (或 -m shared / -m sqlite)"
+    echo "     [方式二] 修改 .env 文件中的 DB_MODE 变量："
+    echo "              若需切换模式，直接编辑 .env 将 DB_MODE=... 改为目标模式（如 DB_MODE=shared），"
+    echo "              或将 DB_MODE 这一行删除或留空，下次执行 ./run.sh start 即可自动重新唤起选择向导。"
+    echo "     [方式三] 直接删除整个 .env 文件的影响说明："
+    echo "              删除 .env 虽可重置向导，但会同时重置系统安全密钥 (SECRET_KEY)、自定义端口等参数，"
+    echo "              因此强烈建议优先采用 [方式一] 或 [方式二]。"
+    echo -e "\033[1;36m========================================================================\033[0m"
+    echo ""
+}

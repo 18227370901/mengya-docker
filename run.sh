@@ -310,7 +310,7 @@ EXTRA_ARGS=""
 
 while [ $# -gt 0 ]; do
     case "$1" in
-        start|stop|restart|status|logs|build|clean|prune|add_nginx|exec|init_data|seed|db_backup|backup|db_restore|restore|help)
+        start|stop|restart|status|logs|build|clean|prune|add_nginx|exec|init_data|seed|db_backup|backup|db_restore|restore|reconfig|reconfig_db|help)
             if [ -z "$CMD" ]; then
                 CMD="$1"
             else
@@ -497,6 +497,11 @@ case "$CMD" in
     db_restore|restore)
         db_restore $EXTRA_ARGS
         ;;
+    reconfig|reconfig_db)
+        RECONFIG_DB=1
+        setup_db_for_mode
+        echo -e "\033[0;32m[完成] 数据库模式已重新配置并保存至 .env (当前模式: $DB_MODE)\033[0m"
+        ;;
     help)
         echo ""
         echo "萌芽（mengya-docker）容器模式管理命令："
@@ -512,6 +517,7 @@ case "$CMD" in
         echo "  ./run.sh init_data [选项]    检查并补齐全量样例数据（食谱/胎教/百科/周历/清单/商品/品牌）"
         echo "  ./run.sh db_backup [文件]    导出数据库数据备份（跨版本通用 JSON 或 SQL）"
         echo "  ./run.sh db_restore <文件>   恢复导入数据库数据备份（支持 JSON 或 SQL）"
+        echo "  ./run.sh reconfig            交互式重新配置数据库存储方式（并自动更新 .env）"
         echo "  ./run.sh help                查看帮助信息"
         echo ""
         echo "常用自定义选项（支持在 start / restart / add_nginx 时追加，自动持久化至 .env）："
@@ -523,14 +529,22 @@ case "$CMD" in
         echo "  -b, --build                  启动时强制重新构建容器镜像（构建后自动清理旧残留层）"
         echo "  --no-cache                   构建时禁用缓存并彻底重新编译镜像"
         echo "  --db-image <IMAGE>           指定数据库镜像（如 pgvector/pgvector:pg18 或 postgres:15-alpine）"
+        echo "  -m, --mode <MODE>            显式指定数据库模式 (sqlite | shared | dedicated)"
+        echo "  --reconfig, --reconfig-db    重新唤起数据库决策向导，交互式切换数据库存储模式"
+        echo "  --shared-pg <CONTAINER>      指定共享模式下的宿主机 PostgreSQL 容器名称"
+        echo "  -y, --yes                    非交互式模式，免去任何等待（Cron / 重启自动采用推荐值）"
         echo ""
         echo "实用启动示例："
         echo "  ./run.sh start                                 # 默认启动（端口 5174，管理员 admin / admin123）"
         echo "  ./run.sh start -p 8080                         # 自定义以 8080 端口启动"
+        echo "  ./run.sh start --reconfig                      # 重新选择数据库模式（独立PG / 共享PG / SQLite）"
+        echo "  ./run.sh start -m dedicated                    # 直接以独立专属 PG 模式启动并保存至 .env"
+        echo "  ./run.sh start -m shared                       # 直接以共享宿主机已有 PG 模式启动并保存至 .env"
         echo "  ./run.sh start -p 5200 -u superadmin -P Pass123 # 自定义端口与管理员账密启动"
         echo "  ./run.sh restart -p 5300                       # 重启并变更为 5300 端口"
         echo "  ./run.sh add_nginx -d mengya.myhost.com        # 为指定域名生成独立反代配置"
         echo ""
+        show_db_reconfig_guide
         ;;
     *)
         echo "未知命令: $CMD"

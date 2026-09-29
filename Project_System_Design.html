@@ -1392,5 +1392,22 @@ done
   </ul>
 </div>
 
+
+<div style="margin-top:24px;padding:18px 24px;border-radius:8px;border-left:4px solid #3b82f6;background:var(--bg-card, #fff);">
+  <h3 style="margin-top:0;color:#3b82f6;">.env 环境变量持久化与数据库存储模式动态重配规范 (v1.43)</h3>
+  <p>为保障系统配置安全性并提供极致运维体验，系统建立了规范化的数据库模式重配与引导体系：</p>
+  <ul>
+    <li><strong>操作禁忌说明</strong>：不建议直接删除或清空 <code>.env</code> 文件，以防 <code>SECRET_KEY</code>（造成登录 Session 失效）与自定义端口重置；</li>
+    <li><strong>三种重选方式</strong>：
+      <ol>
+        <li><strong>命令行重配（推荐）</strong>：执行 <code>./run.sh reconfig</code> 或 <code>./run.sh start --reconfig</code> 交互重选，或通过 <code>-m &lt;mode&gt;</code> 单行切模；</li>
+        <li><strong>配置精准修改</strong>：编辑 <code>.env</code> 修改 <code>DB_MODE=...</code>，或仅删除该行以重新唤起向导；</li>
+        <li><strong>全量重置</strong>：删除 <code>.env</code> 时系统自动从 <code>.env.example</code> 初始化。</li>
+      </ol>
+    </li>
+    <li><strong>帮助模块与说明函数</strong>：底层通过 <code>bin/db.sh</code> 的 <code>show_db_reconfig_guide()</code> 驱动，在 <code>./run.sh help</code> 中完整呈现。</li>
+  </ul>
+</div>
+
 </body>
 </html>
