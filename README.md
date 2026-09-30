@@ -601,3 +601,30 @@ Docker 版现已与传统版最新功能（v1.13 ~ v1.17）实现 100% 深度同
 # 自定义数据库连接与实例名
 ./run.sh start -m dedicated --db-user custom_user --db-pass CustomPass456 --db-name mengya_prod
 ```
+
+### 10. 数据库全量变量集中归集于 config.sh 规范 (v1.47)
+
+#### 10.1 变量统一集中声明与维护
+为方便用户一次性定义所有可自定义的变量，而不是分散在多个脚本文件中单独排查，系统在 `bin/config.sh` 中集中收拢了全套数据库连接与运行时参数：
+- **核心配置文件**：`mengya-docker/bin/config.sh`（通过 `init_default_configs()` 与 `export_runtime_vars()`）；
+- **消除代码重复后备**：`bin/db.sh` 与 `bin/docker.sh` 彻底移除多余的 `:-mengya` 等硬编码默认值，直接消费 `config.sh` 导出的全局变量；
+- **配置覆盖优先级**：`CLI 命令行参数 (-p, --db-*)` > `.env 持久化配置` > `config.sh 代码默认定义`。
+
+#### 10.2 集中管理的数据库变量矩阵
+| 变量名 | 默认值 | 作用与说明 |
+| :--- | :--- | :--- |
+| `APP_NAME` | `mengya` | 应用与容器标识命名空间 |
+| `DB_MODE` | `dedicated` | 数据库部署模式 (`dedicated` / `shared` / `sqlite`) |
+| `DEFAULT_PG_IMAGE` | `postgres:15-alpine` | 内置默认 PG 镜像（本地无现存镜像时自动拉取） |
+| `DB_IMAGE` | `""` | 显式指定的 PG 镜像（为空时探针优先零下载复用本地已有镜像） |
+| `DB_PULL_POLICY` | `if_not_present` | 镜像拉取策略 (`never` / `if_not_present`) |
+| `DB_DATA_DIR` | `/var/lib/postgresql/data` | 容器内部数据持久化挂载目录（PG18+ 自动适配父目录） |
+| `DB_CONTAINER_NAME` | `${APP_NAME}-pg` | 独立 PG 专属容器名称 |
+| `SHARED_PG_CONTAINER` | `""` | 共享模式下目标宿主机 PG 容器名（为空由探针自动感知） |
+| `POSTGRES_USER` | `mengya` | 数据库用户名 |
+| `POSTGRES_PASSWORD` | `mengya123` | 数据库连接密码 |
+| `POSTGRES_DB` | `mengya` | 数据库名 / 实例名 |
+| `POSTGRES_PORT` | `5432` | 数据库连接端口 |
+| `POSTGRES_HOST` | `db` | 数据库访问主机（共享模式自动切换为共享容器名） |
+| `DATABASE_URL` | `""` | 完整数据库连接串（支持直接指定或由脚本自动拼装） |
+| `SQLITE_PATH` | `./data/db.sqlite3` | SQLite 单文件存储路径 |

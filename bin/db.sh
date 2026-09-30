@@ -19,10 +19,10 @@ detect_running_pg_containers() {
     if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
         return 0
     fi
-    local my_db="${DB_CONTAINER_NAME:-${APP_NAME:-mengya}-pg}"
+    local my_db="$DB_CONTAINER_NAME"
     docker ps --format '{{.Names}}\t{{.Image}}' 2>/dev/null | while read -r c_name c_img; do
         [ -z "$c_name" ] && continue
-        if [ "$c_name" = "$my_db" ] || [ "$c_name" = "mengya_db" ] || [ "$c_name" = "${APP_NAME:-mengya}_db" ]; then
+        if [ "$c_name" = "$my_db" ] || [ "$c_name" = "mengya_db" ] || [ "$c_name" = "${APP_NAME}_db" ]; then
             continue
         fi
         if echo "$c_img" | grep -qiE "postgres|pgvector"; then
@@ -32,7 +32,7 @@ detect_running_pg_containers() {
 }
 
 detect_best_pg_image() {
-    local default_img="${DEFAULT_PG_IMAGE:-postgres:15-alpine}"
+    local default_img="$DEFAULT_PG_IMAGE"
     if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
         echo "$default_img"
         return 0
@@ -76,7 +76,7 @@ detect_best_pg_image() {
 }
 
 choose_db_image() {
-    local default_img="${DEFAULT_PG_IMAGE:-postgres:15-alpine}"
+    local default_img="$DEFAULT_PG_IMAGE"
     if ! docker info >/dev/null 2>&1; then
         DB_IMAGE="${DB_IMAGE:-$default_img}"
         DB_PULL_POLICY="${DB_PULL_POLICY:-if_not_present}"
@@ -88,10 +88,12 @@ choose_db_image() {
         return 0
     fi
 
-    # 1. 判断是否属于用户显式自定义镜像（命令行 -i / --db-image 传入）
+    # 1. 判断是否属于用户显式自定义镜像（命令行 -i / --db-image 传入，或在 config.sh/.env 中显式指定）
     local is_user_custom=0
     if [ -n "$CUSTOM_DB_IMAGE" ]; then
         DB_IMAGE="$CUSTOM_DB_IMAGE"
+        is_user_custom=1
+    elif [ -n "$DB_IMAGE" ]; then
         is_user_custom=1
     fi
 
@@ -143,10 +145,8 @@ choose_db_image() {
 }
 
 choose_db_mode() {
-    local app_name="${APP_NAME:-mengya}"
-    export APP_NAME="$app_name"
-    local db_container="${app_name}-pg"
-    export DB_CONTAINER_NAME="$db_container"
+    export APP_NAME
+    export DB_CONTAINER_NAME
 
     # 若通过命令行参数直传 -m / --db-mode
     if [ -n "$CUSTOM_DB_MODE" ]; then
@@ -183,7 +183,7 @@ choose_db_mode() {
     else
         rec_mode="dedicated"
         rec_num=3
-        rec_reason="服务器硬件资源充足 (${ram_mb} MB)，推荐独立专属 PostgreSQL 容器 (${db_container})，数据独占且已应用 80MB 轻量化微服务调优！"
+        rec_reason="服务器硬件资源充足 (${ram_mb} MB)，推荐独立专属 PostgreSQL 容器 (${DB_CONTAINER_NAME})，数据独占且已应用 80MB 轻量化微服务调优！"
     fi
 
     # ===== 定时任务 / 免交互判定逻辑 =====
@@ -216,13 +216,13 @@ choose_db_mode() {
         return 0
     fi
 
-    # 4. 交互式终端菜单展示
+    # 5. 交互式终端菜单展示
     echo ""
     echo "========================================================================"
     echo "  萌芽（mengya-docker）环境与数据库部署模式检测"
     echo "========================================================================"
     echo "  [硬件检测] 宿主机总内存: ${ram_mb:-未知} MB"
-    echo "  [连接配置] 当前参数 -> 用户: ${POSTGRES_USER:-mengya} | 库名: ${POSTGRES_DB:-mengya} | 端口: ${POSTGRES_PORT:-5432} | 密码: ${POSTGRES_PASSWORD:+******}"
+    echo "  [连接配置] 当前参数 -> 用户: $POSTGRES_USER | 库名: $POSTGRES_DB | 端口: $POSTGRES_PORT | 密码: ${POSTGRES_PASSWORD:+******}"
     if [ -n "$running_pg_list" ]; then
         echo -e "  [运行实例] \033[0;32m检测到正在运行的 PostgreSQL 容器: [$running_pg_list]\033[0m"
     else
@@ -231,7 +231,7 @@ choose_db_mode() {
     if [ "$img_local_exists" -eq 1 ]; then
         echo -e "  [本地镜像] \033[0;32m检测到本地已有 PG 镜像: [$local_pg_img] (可直接复用，免网络下载)\033[0m"
     else
-        echo "  [本地镜像] 本地未检测到现存 PG 镜像 (选用 PG 模式将自动按需下载内置默认镜像: ${DEFAULT_PG_IMAGE:-postgres:15-alpine})"
+        echo "  [本地镜像] 本地未检测到现存 PG 镜像 (选用 PG 模式将自动按需下载内置默认镜像: $DEFAULT_PG_IMAGE)"
     fi
     echo "------------------------------------------------------------------------"
     echo "  系统智能推荐建议:"
@@ -240,7 +240,7 @@ choose_db_mode() {
     echo "  请选择您希望使用的数据库部署模式 (回车默认使用推荐选项 [$rec_num]):"
     echo "    [1] SQLite 本地化单文件 (适合超低配服务器，整站仅占 50MB 内存，防 OOM)"
     echo "    [2] 共享已有 PostgreSQL 实例 (共用已运行容器，自动建库建账号，零重复容器)"
-    echo "    [3] 独立 PostgreSQL 容器 (独占专属容器 ${db_container}，复用本地镜像)"
+    echo "    [3] 独立 PostgreSQL 容器 (独占专属容器 $DB_CONTAINER_NAME，复用本地镜像)"
     echo ""
 
     local choice=""
@@ -276,18 +276,16 @@ setup_db_for_mode() {
     choose_db_mode
     export DB_MODE
 
-    local app_name="${APP_NAME:-mengya}"
-    export APP_NAME="$app_name"
-    local db_container="${app_name}-pg"
-    export DB_CONTAINER_NAME="$db_container"
+    export APP_NAME
+    export DB_CONTAINER_NAME
 
     case "$DB_MODE" in
         sqlite)
             echo "==> 数据库部署模式: [1] SQLite 本地化单文件存储"
-            echo "  [模式特性] 零额外 PG 容器，整站常驻约 50MB 内存，数据持久化于 ./data/db.sqlite3"
-            mkdir -p "$SCRIPT_DIR/data"
-            if [ -f "$SCRIPT_DIR/db.sqlite3" ] && [ ! -f "$SCRIPT_DIR/data/db.sqlite3" ]; then
-                cp "$SCRIPT_DIR/db.sqlite3" "$SCRIPT_DIR/data/db.sqlite3" 2>/dev/null || true
+            echo "  [模式特性] 零额外 PG 容器，整站常驻约 50MB 内存，数据持久化于 $SQLITE_PATH"
+            mkdir -p "$(dirname "$SQLITE_PATH")"
+            if [ -f "$SCRIPT_DIR/db.sqlite3" ] && [ ! -f "$SQLITE_PATH" ]; then
+                cp "$SCRIPT_DIR/db.sqlite3" "$SQLITE_PATH" 2>/dev/null || true
             fi
             DATABASE_URL=""
             export DATABASE_URL
@@ -327,16 +325,16 @@ setup_db_for_mode() {
             update_env_var "SHARED_PG_CONTAINER" "$SHARED_PG_CONTAINER"
             echo "  [共享目标] 正在连接已有 PostgreSQL 容器: [$SHARED_PG_CONTAINER]"
 
-            local pg_user="${POSTGRES_USER:-mengya}"
-            local pg_pass="${POSTGRES_PASSWORD:-mengya123}"
-            local pg_db="${POSTGRES_DB:-mengya}"
+            local pg_user="$POSTGRES_USER"
+            local pg_pass="$POSTGRES_PASSWORD"
+            local pg_db="$POSTGRES_DB"
 
             if command -v docker >/dev/null 2>&1 && docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$SHARED_PG_CONTAINER"; then
                 echo "  [自动建库] 正在已有容器 $SHARED_PG_CONTAINER 中初始化专属用户与数据库..."
                 local superuser="postgres"
                 if ! docker exec "$SHARED_PG_CONTAINER" psql -U "$superuser" -d postgres -c "SELECT 1;" >/dev/null 2>&1; then
-                    if docker exec "$SHARED_PG_CONTAINER" psql -U mengya -d postgres -c "SELECT 1;" >/dev/null 2>&1; then
-                        superuser="mengya"
+                    if docker exec "$SHARED_PG_CONTAINER" psql -U "$pg_user" -d postgres -c "SELECT 1;" >/dev/null 2>&1; then
+                        superuser="$pg_user"
                     fi
                 fi
                 docker exec "$SHARED_PG_CONTAINER" psql -U "$superuser" -c "
@@ -364,11 +362,11 @@ END
                 echo -e "\033[1;33m  [提示] 目标容器 $SHARED_PG_CONTAINER 当前未在运行中，请确保该容器可正常访问。\033[0m"
             fi
 
-            local pg_port="${POSTGRES_PORT:-5432}"
+            local pg_port="$POSTGRES_PORT"
             local pg_host="${POSTGRES_HOST:-$SHARED_PG_CONTAINER}"
             if [ -n "$CUSTOM_DATABASE_URL" ]; then
                 DATABASE_URL="$CUSTOM_DATABASE_URL"
-            else
+            elif [ -z "$DATABASE_URL" ]; then
                 DATABASE_URL="postgresql://${pg_user}:${pg_pass}@${pg_host}:${pg_port}/${pg_db}"
             fi
             export DATABASE_URL
@@ -379,14 +377,14 @@ END
             echo "==> 数据库部署模式: [3] 独立专属 PostgreSQL 容器 (${DB_CONTAINER_NAME})"
             choose_db_image
             check_db_volume_compatibility
-            local pg_user="${POSTGRES_USER:-mengya}"
-            local pg_pass="${POSTGRES_PASSWORD:-mengya123}"
-            local pg_db="${POSTGRES_DB:-mengya}"
-            local pg_port="${POSTGRES_PORT:-5432}"
+            local pg_user="$POSTGRES_USER"
+            local pg_pass="$POSTGRES_PASSWORD"
+            local pg_db="$POSTGRES_DB"
+            local pg_port="$POSTGRES_PORT"
             local pg_host="${POSTGRES_HOST:-db}"
             if [ -n "$CUSTOM_DATABASE_URL" ]; then
                 DATABASE_URL="$CUSTOM_DATABASE_URL"
-            else
+            elif [ -z "$DATABASE_URL" ]; then
                 DATABASE_URL="postgresql://${pg_user}:${pg_pass}@${pg_host}:${pg_port}/${pg_db}"
             fi
             export DATABASE_URL
@@ -426,7 +424,7 @@ db_backup() {
     else
         echo -e "\033[1;33m[提示] Django dumpdata 导出受限，尝试通过 pg_dump 导出原生 SQL 备份...\033[0m"
         local sqlfile="${1:-mengya_pg_backup_$(date +%Y%m%d_%H%M%S).sql}"
-        if $compose exec -T db pg_dump -U mengya mengya > "$sqlfile" 2>/dev/null; then
+        if $compose exec -T db pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" > "$sqlfile" 2>/dev/null; then
             echo -e "\033[0;32m✅ PostgreSQL 原生数据导出成功！保存至文件: $sqlfile\033[0m"
         else
             echo -e "\033[1;31m[错误] 数据库备份失败，请确保容器服务正在运行中 (./run.sh start)。\033[0m"
@@ -457,7 +455,7 @@ db_restore() {
         *.sql)
             echo "  检测到 SQL 数据文件，使用 psql 执行原生导入..."
             docker cp "$infile" mengya_db:/tmp/restore.sql 2>/dev/null || true
-            $compose exec -T db psql -U mengya -d mengya -f /tmp/restore.sql
+            $compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f /tmp/restore.sql
             $compose exec -T db rm -f /tmp/restore.sql 2>/dev/null || true
             echo -e "\033[0;32m✅ 原生 SQL 数据恢复成功！\033[0m"
             ;;
@@ -475,21 +473,21 @@ show_db_reconfig_guide() {
     echo "  1. 支持的 3 大数据库模式（通过 .env 中 DB_MODE 变量记录）："
     echo "     - sqlite    : 容器挂载本地 SQLite 单文件，完全零额外 DB 容器，与传统版独立物理隔离。"
     echo "     - shared    : [宿主机已运行 PG 容器时推荐] 共享宿主机已有的 PostgreSQL 容器，"
-    echo "                   自动幂等创建当前应用专属数据库（mengya）与账号，零多余容器，节约 80MB+ 内存。"
-    echo "     - dedicated : [Docker版默认推荐] 独立专属 PostgreSQL 容器（mengya_db），内部网络互联，"
+    echo "                   自动幂等创建当前应用专属数据库（$POSTGRES_DB）与账号，零多余容器，节约 80MB+ 内存。"
+    echo "     - dedicated : [Docker版默认推荐] 独立专属 PostgreSQL 容器（$DB_CONTAINER_NAME），内部网络互联，"
     echo "                   严格就地复用本地已有镜像，严禁网络拉取。"
     echo ""
     echo "  2. 数据库配置相关命令行参数："
     echo "     --reconfig | --reconfig-db           强制唤醒硬件感知探针与交互决策菜单（保留其他已有配置）"
     echo "     -m, --mode <sqlite|shared|dedicated> 命令行显式指定数据库模式并自动同步持久化至 .env"
     echo "     --shared-pg <容器名>                 指定共享的宿主机 PostgreSQL 容器名（shared 模式使用）"
-    echo "     -y, --yes | --non-interactive        非交互/定时任务模式（若未配置自动采用智能推荐，绝不阻塞）
-     --db-user <用户名>                   自定义 PostgreSQL 用户名（默认: mengya）
-     --db-pass <密码>                     自定义 PostgreSQL 密码（默认: mengya123）
-     --db-name <库名/实例名>              自定义 PostgreSQL 数据库名（默认: mengya）
-     --db-port <端口>                     自定义 PostgreSQL 连接端口（默认: 5432）
-     --db-host <主机地址>                 自定义 PostgreSQL 主机地址（默认: db 或 共享容器名）
-     --database-url <完整URL>             直接指定完整 DATABASE_URL 连接串"
+    echo "     -y, --yes | --non-interactive        非交互/定时任务模式（若未配置自动采用智能推荐，绝不阻塞）"
+    echo "     --db-user <用户名>                   自定义 PostgreSQL 用户名（默认: $POSTGRES_USER）"
+    echo "     --db-pass <密码>                     自定义 PostgreSQL 密码（默认: $POSTGRES_PASSWORD）"
+    echo "     --db-name <库名/实例名>              自定义 PostgreSQL 数据库名（默认: $POSTGRES_DB）"
+    echo "     --db-port <端口>                     自定义 PostgreSQL 连接端口（默认: $POSTGRES_PORT）"
+    echo "     --db-host <主机地址>                 自定义 PostgreSQL 主机地址（默认: $POSTGRES_HOST）"
+    echo "     --database-url <完整URL>             直接指定完整 DATABASE_URL 连接串"
     echo ""
     echo "  3. 首次使用与再次重新选择方式："
     echo "     [方式一] 命令行显式重配（强烈推荐，最安全便捷）："

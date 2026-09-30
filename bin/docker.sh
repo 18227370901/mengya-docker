@@ -243,7 +243,7 @@ start_docker() {
     if [ "$DB_MODE" = "sqlite" ]; then
         echo "  数据库模式:   [1] SQLite 本地化单文件 (./data/db.sqlite3, 零额外 PG 容器)"
     elif [ "$DB_MODE" = "shared" ]; then
-        echo "  数据库模式:   [2] 共享 PostgreSQL 实例 (容器: $SHARED_PG_CONTAINER, 专属库: ${POSTGRES_DB:-mengya})"
+        echo "  数据库模式:   [2] 共享 PostgreSQL 实例 (容器: $SHARED_PG_CONTAINER, 专属库: $POSTGRES_DB)"
     else
         echo "  数据库模式:   [3] 独立专属 PostgreSQL 容器 (${DB_CONTAINER_NAME:-${APP_NAME:-mengya}-pg})"
         echo "  数据库镜像:   $DB_IMAGE (拉取策略: $DB_PULL_POLICY, 挂载目录: $DB_DATA_DIR)"
@@ -312,7 +312,7 @@ status_docker() {
     if [ "$DB_MODE" = "sqlite" ]; then
         echo "  数据存储位置: 宿主机本地挂载 ./data/db.sqlite3 (零额外 PG 容器，极简运行)"
     elif [ "$DB_MODE" = "shared" ]; then
-        echo "  共享 PG 容器: $SHARED_PG_CONTAINER (专属库: ${POSTGRES_DB:-mengya}, 用户: ${POSTGRES_USER:-mengya})"
+        echo "  共享 PG 容器: $SHARED_PG_CONTAINER (专属库: $POSTGRES_DB, 用户: $POSTGRES_USER)"
     else
         echo "  独立 PG 容器: ${DB_CONTAINER_NAME:-${APP_NAME:-mengya}-pg}"
         echo "  数据库镜像  : $DB_IMAGE (拉取策略: $DB_PULL_POLICY, 挂载目录: $DB_DATA_DIR)"

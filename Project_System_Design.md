@@ -975,3 +975,32 @@ done
 - **`parse_cli_args "$@"`**：专职承接所有命令行参数循环解析（包括 `-p`, `-u`, `-P`, `-d`, `-m`, `--db-*`, `--reconfig`, `-y` 等）；
 - **`apply_and_save_configs()`**：对用户显式传入的自定义参数进行校验，并自动调用 `update_env_var` 持久化同步写入 `.env` 文件；
 - **`export_runtime_vars()`**：统一向后置运行环境导出 Docker Compose 所需的核心环境变量。
+
+### 10.10 数据库全量变量集中归集于 config.sh 治理规范 (v1.47)
+
+#### 10.10.1 治理背景与单点收拢设计
+此前数据库相关变量分散在 `bin/config.sh`、`bin/db.sh` 以及 `bin/docker.sh` 等多个脚本中，并在多处存在冗余后备默认值（如 `${POSTGRES_USER:-mengya}`、`${POSTGRES_DB:-mengya}`）。用户若希望一次性自定义修改所有数据库默认配置，需要跨多个文件逐一排查，存在维护心智负担与遗漏风险。
+
+为此，系统在 v1.47 版本确立了**数据库全量变量统一集中归集规范**：
+1. **单一事实来源（Single Source of Truth）**：所有与数据库、存储引擎相关的可自定义变量，全部一站式归集至 `bin/config.sh` 的 `init_default_configs()` 与 `export_runtime_vars()` 中声明与导出；
+2. **严格三级配置优先级**：
+   $$\text{CLI 命令行显式参数 (--db-*, -m, --db-image)} > \text{.env 本地持久化配置} > \text{config.sh 代码级默认定义}$$
+3. **消除跨模块硬编码后备**：`bin/db.sh` 与 `bin/docker.sh` 彻底移除多余的 `:-mengya`、`:-5432` 等内联 fallback，统一直接消费 `config.sh` 预先计算并导出的规范变量。
+
+#### 10.10.2 一站式归集变量矩阵清单
+在 `mengya-docker/bin/config.sh` 中统一声明并维护的核心数据库变量如下：
+- `APP_NAME`：应用命名空间（默认 `mengya`）；
+- `DB_MODE`：数据库部署模式（Docker 版默认 `dedicated`，可选 `shared` / `sqlite`）；
+- `DEFAULT_PG_IMAGE`：内置默认 PG 镜像版本（默认 `postgres:15-alpine`）；
+- `DB_IMAGE`：用户指定或探针自适应复用的目标 PG 镜像；
+- `DB_PULL_POLICY`：镜像拉取策略（就地复用为 `never`，按需下载为 `if_not_present`）；
+- `DB_DATA_DIR`：容器内挂载目录（PG18+ 自动适配为 `/var/lib/postgresql`，PG15 适配为 `/var/lib/postgresql/data`）；
+- `DB_CONTAINER_NAME`：独立 PG 模式专属容器名（默认 `${APP_NAME}-pg`）；
+- `SHARED_PG_CONTAINER`：共享模式目标 PG 容器名；
+- `POSTGRES_USER`：PostgreSQL 用户名（默认 `mengya`）；
+- `POSTGRES_PASSWORD`：PostgreSQL 连接密码（默认 `mengya123`）；
+- `POSTGRES_DB`：PostgreSQL 数据库/实例名（默认 `mengya`）；
+- `POSTGRES_PORT`：PostgreSQL 连接端口（默认 `5432`）；
+- `POSTGRES_HOST`：PostgreSQL 访问主机（默认 `db`，共享模式默认为共享容器名）；
+- `DATABASE_URL`：标准数据库连接串（支持在此直接显式定义，或留空由系统自动按参数标准组装）；
+- `SQLITE_PATH`：SQLite 模式数据持久化路径（默认 `./data/db.sqlite3`）。
