@@ -42,7 +42,7 @@ init_default_configs() {
     # 优先级规则：CLI 命令行参数 > .env 持久化配置 > 此处代码级默认值
     # 用户可在此一站式定义所有数据库默认参数
     # ============================================================
-    APP_NAME="${APP_NAME:-mengya}"
+    APP_NAME="${APP_NAME:-mengya_docker}"
     DB_MODE="${DB_MODE:-dedicated}"                     # 数据库模式: sqlite | shared | dedicated
     DEFAULT_PG_IMAGE="${DEFAULT_PG_IMAGE:-postgres:15-alpine}" # 内置默认 PG 镜像（本地无现存镜像时自动拉取）
     DB_IMAGE="${DB_IMAGE:-}"                           # 指定 PG 镜像（为空时智能探针优先复用本地已有镜像）
@@ -50,9 +50,9 @@ init_default_configs() {
     DB_DATA_DIR="${DB_DATA_DIR:-/var/lib/postgresql/data}" # 容器内数据挂载目录
     DB_CONTAINER_NAME="${DB_CONTAINER_NAME:-${APP_NAME}-pg}" # 独立 PG 模式下的容器名
     SHARED_PG_CONTAINER="${SHARED_PG_CONTAINER:-}"     # 共享 PG 模式下的目标容器名（为空时探针自适应发现）
-    POSTGRES_USER="${POSTGRES_USER:-mengya}"           # PostgreSQL 用户名
-    POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-mengya123}" # PostgreSQL 密码
-    POSTGRES_DB="${POSTGRES_DB:-mengya}"               # PostgreSQL 数据库名/实例名
+    POSTGRES_USER="${POSTGRES_USER:-mengya_docker}"           # PostgreSQL 用户名
+    POSTGRES_PASSWORD="${POSTGRES_PASSWORD:-mengya_docker123}" # PostgreSQL 密码
+    POSTGRES_DB="${POSTGRES_DB:-mengya_docker}"               # PostgreSQL 数据库名/实例名
     POSTGRES_PORT="${POSTGRES_PORT:-5432}"             # PostgreSQL 连接端口
     POSTGRES_HOST="${POSTGRES_HOST:-db}"               # PostgreSQL 主机地址（独立容器为 db，共享模式默认为共享容器名）
     DATABASE_URL="${DATABASE_URL:-}"                   # 完整数据库连接串（支持在此直接定义或留空由脚本自动拼装）

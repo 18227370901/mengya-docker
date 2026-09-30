@@ -22,7 +22,7 @@ detect_running_pg_containers() {
     local my_db="$DB_CONTAINER_NAME"
     docker ps --format '{{.Names}}\t{{.Image}}' 2>/dev/null | while read -r c_name c_img; do
         [ -z "$c_name" ] && continue
-        if [ "$c_name" = "$my_db" ] || [ "$c_name" = "mengya_db" ] || [ "$c_name" = "${APP_NAME}_db" ]; then
+        if [ "$c_name" = "$my_db" ] || [ "$c_name" = "mengya_db" ] || [ "$c_name" = "mengya_docker_db" ] || [ "$c_name" = "mengya-pg" ] || [ "$c_name" = "mengya_docker-pg" ] || [ "$c_name" = "mengya-docker-pg" ] || [ "$c_name" = "${APP_NAME}_db" ] || [ "$c_name" = "${APP_NAME}-pg" ]; then
             continue
         fi
         if echo "$c_img" | grep -qiE "postgres|pgvector"; then
@@ -123,19 +123,10 @@ choose_db_image() {
         fi
     fi
 
-    # 4. 智能匹配数据卷挂载点：PostgreSQL 18+ 挂载父目录 /var/lib/postgresql；15 及更早版本兼容 /var/lib/postgresql/data
-    if [ -z "$DB_DATA_DIR" ]; then
-        case "$DB_IMAGE" in
-            *18*|*pg18*)
-                DB_DATA_DIR="/var/lib/postgresql"
-                ;;
-            *15*|*16*|*14*|*alpine*)
-                DB_DATA_DIR="/var/lib/postgresql/data"
-                ;;
-            *)
-                DB_DATA_DIR="/var/lib/postgresql/data"
-                ;;
-        esac
+    # 4. 数据卷挂载点标准化：PostgreSQL 官方及 pgvector 镜像数据目录统一规范为 /var/lib/postgresql/data
+    DB_DATA_DIR="${DB_DATA_DIR:-/var/lib/postgresql/data}"
+    if [ "$DB_DATA_DIR" = "/var/lib/postgresql" ]; then
+        DB_DATA_DIR="/var/lib/postgresql/data"
     fi
 
     export DB_IMAGE DB_PULL_POLICY DB_DATA_DIR
@@ -331,13 +322,31 @@ setup_db_for_mode() {
 
             if command -v docker >/dev/null 2>&1 && docker ps --format '{{.Names}}' 2>/dev/null | grep -qx "$SHARED_PG_CONTAINER"; then
                 echo "  [自动建库] 正在已有容器 $SHARED_PG_CONTAINER 中初始化专属用户与数据库..."
+                # 动态探测目标容器内置管理员用户与可用数据库（自适应兼容 postgres / mengya_local / mengya_docker 等各类实例）
+                local c_env_user c_env_db
+                c_env_user=$(docker inspect --format='{{range .Config.Env}}{{println .}}{{end}}' "$SHARED_PG_CONTAINER" 2>/dev/null | grep "^POSTGRES_USER=" | head -n 1 | cut -d= -f2)
+                c_env_db=$(docker inspect --format='{{range .Config.Env}}{{println .}}{{end}}' "$SHARED_PG_CONTAINER" 2>/dev/null | grep "^POSTGRES_DB=" | head -n 1 | cut -d= -f2)
+
                 local superuser="postgres"
-                if ! docker exec "$SHARED_PG_CONTAINER" psql -U "$superuser" -d postgres -c "SELECT 1;" >/dev/null 2>&1; then
-                    if docker exec "$SHARED_PG_CONTAINER" psql -U "$pg_user" -d postgres -c "SELECT 1;" >/dev/null 2>&1; then
-                        superuser="$pg_user"
-                    fi
-                fi
-                docker exec "$SHARED_PG_CONTAINER" psql -U "$superuser" -c "
+                local superdb="template1"
+                local cand_users=()
+                [ -n "$c_env_user" ] && cand_users+=("$c_env_user")
+                cand_users+=("postgres" "mengya_local" "mengya_docker" "mengya")
+                local cand_dbs=("template1")
+                [ -n "$c_env_db" ] && cand_dbs+=("$c_env_db")
+                cand_dbs+=("postgres")
+
+                for u in "${cand_users[@]}"; do
+                    for d in "${cand_dbs[@]}"; do
+                        if docker exec "$SHARED_PG_CONTAINER" psql -U "$u" -d "$d" -c "SELECT 1;" >/dev/null 2>&1; then
+                            superuser="$u"
+                            superdb="$d"
+                            break 2
+                        fi
+                    done
+                done
+
+                docker exec "$SHARED_PG_CONTAINER" psql -U "$superuser" -d "$superdb" -c "
 DO \$\$
 BEGIN
   IF NOT EXISTS (SELECT FROM pg_catalog.pg_roles WHERE rolname = '$pg_user') THEN
@@ -347,17 +356,18 @@ END
 \$\$;
 " 2>/dev/null || true
 
-                docker exec "$SHARED_PG_CONTAINER" psql -U "$superuser" -tc "SELECT 1 FROM pg_database WHERE datname = '$pg_db'" 2>/dev/null | grep -q 1 || \
-                docker exec "$SHARED_PG_CONTAINER" psql -U "$superuser" -c "CREATE DATABASE $pg_db OWNER $pg_user;" 2>/dev/null || true
+                docker exec "$SHARED_PG_CONTAINER" psql -U "$superuser" -d "$superdb" -tc "SELECT 1 FROM pg_database WHERE datname = '$pg_db'" 2>/dev/null | grep -q 1 || \
+                docker exec "$SHARED_PG_CONTAINER" psql -U "$superuser" -d "$superdb" -c "CREATE DATABASE $pg_db OWNER $pg_user;" 2>/dev/null || true
 
-                docker exec "$SHARED_PG_CONTAINER" psql -U "$superuser" -c "GRANT ALL PRIVILEGES ON DATABASE $pg_db TO $pg_user;" 2>/dev/null || true
-                echo "  ✅ 已在容器 $SHARED_PG_CONTAINER 中就绪专属库 [$pg_db] 与用户 [$pg_user]！"
+                docker exec "$SHARED_PG_CONTAINER" psql -U "$superuser" -d "$superdb" -c "GRANT ALL PRIVILEGES ON DATABASE $pg_db TO $pg_user;" 2>/dev/null || true
+                echo "  ✔ 已在容器 $SHARED_PG_CONTAINER 中就绪专属库 [$pg_db] 与用户 [$pg_user]！"
 
                 # 将已有容器动态接入 compose 网络以支持 DNS 寻址
                 local net_name="${COMPOSE_PROJECT_NAME:-mengya-docker}_net"
-                if docker network ls --format '{{.Name}}' 2>/dev/null | grep -qx "$net_name"; then
-                    docker network connect "$net_name" "$SHARED_PG_CONTAINER" 2>/dev/null || true
+                if ! docker network ls --format '{{.Name}}' 2>/dev/null | grep -qx "$net_name"; then
+                    docker network create "$net_name" >/dev/null 2>&1 || true
                 fi
+                docker network connect "$net_name" "$SHARED_PG_CONTAINER" 2>/dev/null || true
             else
                 echo -e "\033[1;33m  [提示] 目标容器 $SHARED_PG_CONTAINER 当前未在运行中，请确保该容器可正常访问。\033[0m"
             fi
@@ -447,14 +457,16 @@ db_restore() {
     case "$infile" in
         *.json)
             echo "  检测到 JSON 数据结构文件，使用 Django loaddata 执行结构化跨版本导入..."
-            docker cp "$infile" mengya_backend:/tmp/restore.json 2>/dev/null || true
+            local backend_target="${APP_NAME:-mengya_docker}_backend"
+            docker cp "$infile" "$backend_target:/tmp/restore.json" 2>/dev/null || true
             $compose exec -T backend python manage.py loaddata /tmp/restore.json
             $compose exec -T backend rm -f /tmp/restore.json 2>/dev/null || true
             echo -e "\033[0;32m✅ 数据恢复成功！\033[0m"
             ;;
         *.sql)
             echo "  检测到 SQL 数据文件，使用 psql 执行原生导入..."
-            docker cp "$infile" mengya_db:/tmp/restore.sql 2>/dev/null || true
+            local db_target="${DB_CONTAINER_NAME:-${APP_NAME:-mengya_docker}-pg}"
+            docker cp "$infile" "$db_target:/tmp/restore.sql" 2>/dev/null || true
             $compose exec -T db psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -f /tmp/restore.sql
             $compose exec -T db rm -f /tmp/restore.sql 2>/dev/null || true
             echo -e "\033[0;32m✅ 原生 SQL 数据恢复成功！\033[0m"

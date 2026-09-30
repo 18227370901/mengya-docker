@@ -66,7 +66,7 @@ flowchart TB
     end
 
     subgraph DockerEnv["容器化一体化编排网格 (Docker Bridge: mengya_default)"]
-        subgraph BackendContainer["mengya_backend 容器 (:8000 -> Host:5174)"]
+        subgraph BackendContainer["mengya_docker_backend 容器 (:8000 -> Host:5174)"]
             DjangoEntry["WSGI / Django 核心入口"]
             StaticServe["静态资源/SPA 前端路由托管<br/>(/templates/index.html & /static/)"]
             APIRouter["DRF API 路由网关 (/api/v1/)"]
@@ -96,9 +96,9 @@ flowchart TB
         end
 
         subgraph StorageLayer["内部数据持久化层 (屏蔽外网端口)"]
-            PGDB[("mengya_db (PostgreSQL 18 + pgvector)<br/>数据卷: pgdata:/var/lib/postgresql")]
-            RedisQueue[("mengya_redis (Redis 7-alpine)<br/>[可选: profile celery]")]
-            CeleryWorker["mengya_worker (Celery 5.3+)<br/>[可选: profile celery]"]
+            PGDB[("mengya_docker-pg (PostgreSQL 15/18)<br/>数据卷: pgdata:/var/lib/postgresql/data")]
+            RedisQueue[("mengya_docker_redis (Redis 7-alpine)<br/>[可选: profile celery]")]
+            CeleryWorker["mengya_docker_worker (Celery 5.3+)<br/>[可选: profile celery]"]
         end
     end
 
@@ -515,7 +515,7 @@ erDiagram
 | **`DJANGO_SECRET_KEY`** | `change-me-in-production` | **极高** | Django 底层加密密钥，生产部署必须由随机安全字符替换 (`.env.example:2`)。 |
 | **`JWT_SECRET_KEY`** | `change-me-in-production` | **极高** | SimpleJWT 签名独立密钥，杜绝与 Django 密钥共享泄露风险 (`.env.example:11`)。 |
 | **`DJANGO_ALLOWED_HOSTS`** | `localhost,127.0.0.1,backend,*` | 基础网络 | 允许的 HTTP Host 白名单，支持反代容器内网与 SNI 域名自适应 (`.env.example:4`)。 |
-| **`DATABASE_URL`** | `postgresql://mengya:mengya123@db:5432/mengya` | **极高** | 生产环境容器内网直连（`db:5432`），宿主机外网完全屏蔽。 |
+| **`DATABASE_URL`** | `postgresql://mengya_docker:mengya_docker123@db:5432/mengya_docker` | **极高** | 生产环境容器内网直连（`db:5432`），宿主机外网完全屏蔽。 |
 | **`REDIS_URL`** | `redis://redis:6379/0` | 内部网络 | Redis 缓存与 Celery Broker 连接地址，容器内网互联 (`.env.example:8`)。 |
 | **`OPENAI_API_KEY`** | `sk-...` (或留空) | **机密** | 全局 AI 兜底 Key（留空时自动降级回退至内置本地专业母婴知识引擎）。 |
 | **`OPENAI_MODEL`** | `gpt-4o-mini` | 运行时配置 | 默认全局调用的大模型代号，支持灵活替换 (`.env.example:15`)。 |
@@ -687,7 +687,7 @@ flowchart TD
     subgraph HostEnv["宿主机环境 (自适应物理内存，如 1.922GiB)"]
         subgraph DockerCompose["Docker Compose 编排 (无静态硬编码 mem_limit)"]
             
-            subgraph BackendContainer["mengya_backend 容器 (常驻 ~60-88MB, CPU 0.00%~0.04%)"]
+            subgraph BackendContainer["mengya_docker_backend 容器 (常驻 ~60-88MB, CPU 0.00%~0.04%)"]
                 Gunicorn["Gunicorn WSGI<br/>1 Worker + 4 gthreads<br/>--max-requests 1000"]
                 WhiteNoise["WhiteNoise 6.6+<br/>零拷贝静态资源分发"]
                 LazyAI["AI Service 惰性加载<br/>按需引入 openai SDK (-44.6MB)"]
@@ -697,7 +697,7 @@ flowchart TD
                 Gunicorn --> Allocator
             end
 
-            subgraph DBContainer["mengya_db 容器 (常驻 25~35MB)"]
+            subgraph DBContainer["mengya_docker-pg 容器 (常驻 25~35MB)"]
                 PG["PostgreSQL (pgvector)<br/>shared_buffers=24MB<br/>work_mem=1MB<br/>max_connections=20"]
             end
 
@@ -814,10 +814,10 @@ flowchart TD
    - **架构设计**：基于 `docker-compose.sqlite.yml`，将宿主机目录 `./data` 映射进 `backend` 容器内，`DATABASE_URL=""`。
    - **资源收益**：**零额外数据库容器**，省去全部 PostgreSQL 进程与内核常驻，整站常驻总内存仅约 **50~60MB**，彻底消除超低配服务器 OOM 风险。
 2. **模式 2：共享已有 PostgreSQL 实例 (`shared`)**
-   - **架构设计**：复用宿主机已在运行的 PG 容器（如 `pgvector-18`），启动时通过容器内管理接口幂等执行 `CREATE DATABASE mengya` 与 `CREATE USER mengya`。
-   - **资源收益**：实现应用与共用基础设施解耦，宿主机无需额外启动 `mengya_db`，零新增常驻进程，节约 **80MB+** 冗余内存开销。
+   - **架构设计**：复用宿主机已在运行的 PG 容器（如 `pgvector-18`），启动时通过容器内管理接口幂等执行 `CREATE DATABASE mengya_docker` 与 `CREATE USER mengya_docker`。
+   - **资源收益**：实现应用与共用基础设施解耦，宿主机无需额外启动 `mengya_docker-pg`，零新增常驻进程，节约 **80MB+** 冗余内存开销。
 3. **模式 3：独立专属 PostgreSQL 容器 (`dedicated`)**
-   - **架构设计**：基于 `docker-compose.db.yml`，启动命名为 `${APP_NAME:-mengya}-pg` 的独立专属容器，应用 80MB 内核微服务精简调优，容器内部端口隔离（不对宿主机开放 5432）。
+   - **架构设计**：基于 `docker-compose.db.yml`，启动命名为 `${APP_NAME:-mengya_docker}-pg` 的独立专属容器，应用 80MB 内核微服务精简调优，容器内部端口隔离（不对宿主机开放 5432）。
    - **镜像策略**：严格就地复用本地已有 PG 镜像，设定 `pull_policy: never`。
 
 #### 10.3.2 严苛的本地镜像就地复用策略
@@ -953,7 +953,7 @@ done
 #### 10.8.2 全参数连接信息自定义与持久化规范
 为满足各类复杂部署场景下对数据库账号权限、自定义实例、指定端口与远程主机的高级需求，系统在 `run.sh` 与 `bin/db.sh` 中全面支持以下命令行选项与自动持久化配置：
 - `--db-user <USER>`: 自定义 PostgreSQL 用户名（默认: `mengya` / `mengya_local`）；
-- `--db-pass <PASS>`: 自定义 PostgreSQL 连接密码（默认: `mengya123`）；
+- `--db-pass <PASS>`: 自定义 PostgreSQL 连接密码（默认: `mengya_docker123`）；
 - `--db-name <DB>`: 自定义 PostgreSQL 数据库名/实例名（默认: `mengya` / `mengya_local`）；
 - `--db-port <PORT>`: 自定义 PostgreSQL 端口（默认: `5432` / `5433`）；
 - `--db-host <HOST>`: 自定义 PostgreSQL 主机地址（默认: `db` / 共享容器名 / `127.0.0.1`）；
@@ -989,7 +989,7 @@ done
 
 #### 10.10.2 一站式归集变量矩阵清单
 在 `mengya-docker/bin/config.sh` 中统一声明并维护的核心数据库变量如下：
-- `APP_NAME`：应用命名空间（默认 `mengya`）；
+- `APP_NAME`：应用命名空间（默认 `mengya_docker`）；
 - `DB_MODE`：数据库部署模式（Docker 版默认 `dedicated`，可选 `shared` / `sqlite`）；
 - `DEFAULT_PG_IMAGE`：内置默认 PG 镜像版本（默认 `postgres:15-alpine`）；
 - `DB_IMAGE`：用户指定或探针自适应复用的目标 PG 镜像；
@@ -997,9 +997,9 @@ done
 - `DB_DATA_DIR`：容器内挂载目录（PG18+ 自动适配为 `/var/lib/postgresql`，PG15 适配为 `/var/lib/postgresql/data`）；
 - `DB_CONTAINER_NAME`：独立 PG 模式专属容器名（默认 `${APP_NAME}-pg`）；
 - `SHARED_PG_CONTAINER`：共享模式目标 PG 容器名；
-- `POSTGRES_USER`：PostgreSQL 用户名（默认 `mengya`）；
-- `POSTGRES_PASSWORD`：PostgreSQL 连接密码（默认 `mengya123`）；
-- `POSTGRES_DB`：PostgreSQL 数据库/实例名（默认 `mengya`）；
+- `POSTGRES_USER`：PostgreSQL 用户名（默认 `mengya_docker`）；
+- `POSTGRES_PASSWORD`：PostgreSQL 连接密码（默认 `mengya_docker123`）；
+- `POSTGRES_DB`：PostgreSQL 数据库/实例名（默认 `mengya_docker`）；
 - `POSTGRES_PORT`：PostgreSQL 连接端口（默认 `5432`）；
 - `POSTGRES_HOST`：PostgreSQL 访问主机（默认 `db`，共享模式默认为共享容器名）；
 - `DATABASE_URL`：标准数据库连接串（支持在此直接显式定义，或留空由系统自动按参数标准组装）；
@@ -1013,3 +1013,43 @@ done
 - **全域采用 `unless-stopped` 策略**：
   $$\text{容器故障/机器崩溃自动重启} \quad \text{且} \quad \text{主动执行 stop 后机器重启保持停止}$$
   在 `docker-compose.yml`（`backend`, `redis`, `worker`）、`docker-compose.db.yml`（`db` 独立数据库容器）以及 `docker-compose.sqlite.yml` 中，全量显式锁定 `restart: unless-stopped`。
+
+### 10.12 Docker 版本与传统版本全维度数据隔离规范 (v1.49)
+
+#### 10.12.1 隔离设计背景与问题根因
+当宿主机环境曾部署传统版本（`mengya-local`）且选用 PG 存储模式时，再部署 Docker 容器版可能会因为容器名冲突、内置凭据同名（如 `mengya`）、宿主机已有残留容器未排除、以及数据卷挂载点偏差（挂载至父目录 `/var/lib/postgresql` 而非 `/var/lib/postgresql/data`）导致数据库容器异常退出（`container exited (1)`）。
+
+为此，系统确立了**双版本全链路数据与环境隔离架构**：
+1. **容器与应用标识全隔离**：
+   - Docker 版统一将 `APP_NAME` 默认置为 `mengya_docker`；
+   - 独立专属 PG 容器命名为 `${APP_NAME}-pg`（即 `mengya_docker-pg`，与传统版 `mengya_local-pg` 隔离）；
+   - 后端容器与队列容器规范命名为 `mengya_docker_backend`、`mengya_docker_redis`、`mengya_docker_worker`。
+2. **数据库凭据与实例深度隔离**：
+   - 默认数据库名 / 实例名：`mengya_docker`；
+   - 默认数据库连接用户：`mengya_docker`；
+   - 默认数据库连接密码：`mengya_docker123`；
+   - 完整数据库连接串：`postgresql://mengya_docker:mengya_docker123@db:5432/mengya_docker`。
+3. **数据挂载路径自愈与内核参数轻量化稳态**：
+   - 规范化挂载路径为 `${DB_DATA_DIR:-/var/lib/postgresql/data}`，消除非标准路径引发的启动崩溃；
+   - 裁剪 PG 启动参数，避免多余的并行工作进程约束造成初始化失败。
+
+#### 10.12.2 同机共存 6 种数据库部署组合矩阵与隔离保障机制
+系统全面支持在同一台服务器上同时部署传统版本（mengya-local）与 Docker 容器版本（mengya-docker）。针对两版本各自的 3 种数据库模式（SQLite / 独立PG / 共享PG）相互组合而成的 **6 种核心并存场景**，建立了全方位的端口防冲突、数据硬隔离与自适应协同矩阵：
+
+| 组合序号 | 传统版本 (mengya-local) 模式 | Docker版本 (mengya-docker) 模式 | 传统版存储形态与物理路径 | Docker版存储形态与物理路径 | 端口与网络协同 | 数据隔离与防冲突保障机制 |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **组合 1** | **SQLite** | **SQLite** | 宿主机文件：mengya-local/db.sqlite3 | 容器挂载目录：mengya-docker/data/db.sqlite3 | 传统版 Web: 5173<br/>Docker Web: 5174 | 两个完全独立的 SQLite 单文件，物理路径彻底隔离，零网络与端口争抢。 |
+| **组合 2** | **SQLite** | **独立 PG (dedicated)** | 宿主机文件：mengya-local/db.sqlite3 | 独立容器 mengya_docker-pg，数据卷 mengya_docker_pgdata | Docker 版内部 expose 5432（不绑定宿主机端口） | 传统版本运行在本地 SQLite，Docker 版自建专属 PG 容器，存储介质异构隔离。 |
+| **组合 3** | **SQLite** | **共享 PG (shared)** | 宿主机文件：mengya-local/db.sqlite3 | 共享宿主机现有 PG 容器（如 pgvector-18），自建库 mengya_docker | 宿主机现有 PG 端口开放，Docker 后端加入网络直连 | 传统版本使用独立文件，Docker 版在已有共享 PG 实例中拥有专属数据库与账号，互不干扰。 |
+| **组合 4** | **独立 PG (dedicated)** | **SQLite** | 宿主机专有容器 mengya_local-pg，数据卷 mengya_local_pgdata | 容器挂载目录：mengya-docker/data/db.sqlite3 | 传统版独占宿主机 5432 端口，Docker 版 SQLite 零端口依赖 | 传统版独占专属 PG 容器，Docker 版完全跑在内嵌 SQLite 文件中，数据与连接完全解耦。 |
+| **组合 5** | **独立 PG (dedicated)** | **独立 PG (dedicated)** | 宿主机专有容器 mengya_local-pg（用户 mengya_local，宿主机端口 5432） | Docker 专属容器 mengya_docker-pg（用户 mengya_docker，内部 expose 5432） | 传统版独占宿主机 5432 端口；Docker 版仅在 Compose 内部暴露 5432，**不绑定宿主机端口**，零冲突 | 容器名隔离（mengya_local-pg vs mengya_docker-pg）、数据卷隔离（mengya_local_pgdata vs mengya_docker_pgdata）、账号/库隔离（mengya_local vs mengya_docker），容器与数据双重物理隔离。 |
+| **组合 6** | **独立 PG (dedicated)** | **共享 PG (shared)** | 宿主机专有容器 mengya_local-pg（宿主机 5432，数据库 mengya_local） | 复用传统版 mengya_local-pg 容器，但自动创建专有库 mengya_docker 与专有用户 mengya_docker | Docker 启动脚本自动将 mengya_local-pg 接入 Compose 内网（${COMPOSE_PROJECT_NAME}_net） | 数据库级（Database-level）严格隔离。Docker 版启动脚本自动在共享实例中幂等初始化专有库 mengya_docker 并授予独立权限，两套版本数据表互不可见，极大节省内存。 |
+
+*(注：若两版本均选择共享第三方宿主机 PG 容器如 pgvector-18，传统版与 Docker 版各自持有独立数据库 mengya_local 与 mengya_docker 及独立账号，天然具备数据库级完全隔离能力。)*
+
+#### 10.12.3 容器生命周期与 unless-stopped 重启策略规范
+- 全线容器服务（ackend、
+edis、worker、db）严格统一配置 
+estart: unless-stopped；
+- 禁止使用 lways 策略，避免运维主动 stop 或排查故障时无休止重启引发死锁与资源耗尽；
+- 兼顾突发宕机自愈能力与运维主动控制意图的一致性。

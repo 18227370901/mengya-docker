@@ -13,13 +13,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: ${APP_NAME:-mengya}_backend
+    container_name: ${APP_NAME:-mengya_docker}_backend
     restart: unless-stopped
     env_file:
       - path: .env
         required: false
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql://mengya:mengya123@db:5432/mengya}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://mengya_docker:mengya_docker123@db:5432/mengya_docker}
       REDIS_URL: redis://redis:6379/0
       DJANGO_DEBUG: ${DJANGO_DEBUG:-False}
       DJANGO_ALLOWED_HOSTS: "*"
@@ -46,7 +46,7 @@ services:
   redis:
     profiles: ["celery"]
     image: redis:7-alpine
-    container_name: ${APP_NAME:-mengya}_redis
+    container_name: ${APP_NAME:-mengya_docker}_redis
     restart: unless-stopped
     # 仅在内部容器网络暴露端口，不对宿主机暴露 6379
     expose:
@@ -63,13 +63,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: ${APP_NAME:-mengya}_worker
+    container_name: ${APP_NAME:-mengya_docker}_worker
     restart: unless-stopped
     env_file:
       - path: .env
         required: false
     environment:
-      DATABASE_URL: ${DATABASE_URL:-postgresql://mengya:mengya123@db:5432/mengya}
+      DATABASE_URL: ${DATABASE_URL:-postgresql://mengya_docker:mengya_docker123@db:5432/mengya_docker}
       REDIS_URL: redis://redis:6379/0
       DJANGO_DEBUG: ${DJANGO_DEBUG:-False}
     volumes:

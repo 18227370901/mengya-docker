@@ -32,9 +32,9 @@ show_cli_help() {
         echo "  --db-image <IMAGE>           指定数据库镜像（如 pgvector/pgvector:pg18 或 postgres:15-alpine）"
         echo "  -m, --mode <MODE>            显式指定数据库模式 (sqlite | shared | dedicated)"
         echo "  --reconfig, --reconfig-db    重新唤起数据库决策向导，交互式切换数据库存储模式
-  --db-user <USER>             自定义 PostgreSQL 用户名（默认 mengya）
-  --db-pass <PASS>             自定义 PostgreSQL 密码（默认 mengya123）
-  --db-name <DB>               自定义 PostgreSQL 数据库名/实例名（默认 mengya）
+  --db-user <USER>             自定义 PostgreSQL 用户名（默认 mengya_docker）
+  --db-pass <PASS>             自定义 PostgreSQL 密码（默认 mengya_docker123）
+  --db-name <DB>               自定义 PostgreSQL 数据库名/实例名（默认 mengya_docker）
   --db-port <PORT>             自定义 PostgreSQL 连接端口（默认 5432）
   --db-host <HOST>             自定义 PostgreSQL 主机地址（默认 db 或 共享容器名）
   --database-url <URL>         直接指定完整 DATABASE_URL 连接串"

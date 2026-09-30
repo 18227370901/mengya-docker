@@ -127,9 +127,10 @@ check_port_conflict() {
     fi
 
     if [ "$occupied" = "1" ]; then
-        # 检查占用是否正是当前 mengya_backend 容器
+        # 检查占用是否正是当前 backend 容器
+        local backend_container="${APP_NAME:-mengya_docker}_backend"
         local container_has_port
-        container_has_port=$(docker ps --filter "name=mengya_backend" --format "{{.Ports}}" 2>/dev/null || true)
+        container_has_port=$(docker ps --filter "name=$backend_container" --format "{{.Ports}}" 2>/dev/null || true)
         if [[ "$container_has_port" != *":$port->"* ]]; then
             echo -e "\033[1;31m[错误] 宿主机端口 $port 已被其他服务占用（如传统版本或其他进程）！\033[0m"
             echo -e "\033[1;33m[排查建议]："

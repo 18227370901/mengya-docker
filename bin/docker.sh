@@ -181,16 +181,22 @@ start_docker() {
         cleanup_docker_build_cache
     fi
 
+    # 在共享 PG 模式下，二次确保目标容器已接入 Compose 专属网络以支持 DNS 寻址
+    if [ "$DB_MODE" = "shared" ] && [ -n "$SHARED_PG_CONTAINER" ]; then
+        local net_name="${COMPOSE_PROJECT_NAME:-mengya-docker}_net"
+        docker network connect "$net_name" "$SHARED_PG_CONTAINER" 2>/dev/null || true
+    fi
+
     # 探活检查数据库容器（仅在 dedicated 独立专属容器模式下执行）
     if [ "$DB_MODE" = "dedicated" ]; then
         sleep 2
-        local db_target_container="${DB_CONTAINER_NAME:-${APP_NAME:-mengya}-pg}"
+        local db_target_container="${DB_CONTAINER_NAME:-${APP_NAME:-mengya_docker}-pg}"
         local db_status
         db_status=$(docker inspect --format='{{.State.Status}}' "$db_target_container" 2>/dev/null || echo "")
         if [ "$db_status" = "exited" ] || [ "$db_status" = "dead" ]; then
         echo ""
         echo -e "\033[1;31m============================================================\033[0m"
-        echo -e "\033[1;31m[错误] 数据库容器 mengya_db 启动后异常退出！\033[0m"
+        echo -e "\033[1;31m[错误] 数据库容器 $db_target_container 启动后异常退出！\033[0m"
         echo "--- 数据库最近日志 ---"
         $compose logs --tail=25 db 2>/dev/null || true
         echo "---------------------"
@@ -205,13 +211,14 @@ start_docker() {
         fi
     fi
 
-    # 探活检查后端一体化容器 mengya_backend 运行状态与初始化进度
-    echo "  正在检测后端容器 mengya_backend 启动状态..."
+    # 探活检查后端一体化容器运行状态与初始化进度
+    local backend_container="${APP_NAME:-mengya_docker}_backend"
+    echo "  正在检测后端容器 $backend_container 启动状态..."
     local backend_ready=0
     for _ in $(seq 1 12); do
         sleep 1
         local b_status
-        b_status=$(docker inspect --format='{{.State.Status}}' mengya_backend 2>/dev/null || echo "")
+        b_status=$(docker inspect --format='{{.State.Status}}' "$backend_container" 2>/dev/null || echo "")
         if [ "$b_status" = "running" ]; then
             backend_ready=1
             break
@@ -222,11 +229,11 @@ start_docker() {
     done
 
     local final_b_status
-    final_b_status=$(docker inspect --format='{{.State.Status}}' mengya_backend 2>/dev/null || echo "")
+    final_b_status=$(docker inspect --format='{{.State.Status}}' "$backend_container" 2>/dev/null || echo "")
     if [ "$final_b_status" = "exited" ] || [ "$final_b_status" = "dead" ]; then
         echo ""
         echo -e "\033[1;31m============================================================\033[0m"
-        echo -e "\033[1;31m[错误] 后端一体化容器 mengya_backend 启动后异常退出！\033[0m"
+        echo -e "\033[1;31m[错误] 后端一体化容器 $backend_container 启动后异常退出！\033[0m"
         echo "--- 后端容器最近日志 ---"
         $compose logs --tail=40 backend 2>/dev/null || true
         echo "------------------------"
@@ -245,7 +252,7 @@ start_docker() {
     elif [ "$DB_MODE" = "shared" ]; then
         echo "  数据库模式:   [2] 共享 PostgreSQL 实例 (容器: $SHARED_PG_CONTAINER, 专属库: $POSTGRES_DB)"
     else
-        echo "  数据库模式:   [3] 独立专属 PostgreSQL 容器 (${DB_CONTAINER_NAME:-${APP_NAME:-mengya}-pg})"
+        echo "  数据库模式:   [3] 独立专属 PostgreSQL 容器 (${DB_CONTAINER_NAME:-${APP_NAME:-mengya_docker}-pg})"
         echo "  数据库镜像:   $DB_IMAGE (拉取策略: $DB_PULL_POLICY, 挂载目录: $DB_DATA_DIR)"
     fi
     local MAIN_DOMAIN
@@ -314,7 +321,7 @@ status_docker() {
     elif [ "$DB_MODE" = "shared" ]; then
         echo "  共享 PG 容器: $SHARED_PG_CONTAINER (专属库: $POSTGRES_DB, 用户: $POSTGRES_USER)"
     else
-        echo "  独立 PG 容器: ${DB_CONTAINER_NAME:-${APP_NAME:-mengya}-pg}"
+        echo "  独立 PG 容器: ${DB_CONTAINER_NAME:-${APP_NAME:-mengya_docker}-pg}"
         echo "  数据库镜像  : $DB_IMAGE (拉取策略: $DB_PULL_POLICY, 挂载目录: $DB_DATA_DIR)"
     fi
     echo "  Nginx 配置文件: $([ -f "$NGINX_CONF" ] && echo "已就绪 ($NGINX_CONF)" || echo "未生成 (可执行 ./run.sh add_nginx)")"

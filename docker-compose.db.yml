@@ -1,6 +1,6 @@
 # ============================================================
 # 萌芽平台 - 独立 PostgreSQL 容器扩展编排 (Dedicated PG)
-# 容器名称: ${DB_CONTAINER_NAME:-${APP_NAME:-mengya}-pg}
+# 容器名称: ${DB_CONTAINER_NAME:-${APP_NAME:-mengya_docker}-pg}
 # 资源控制: 内核轻量化裁剪至 25~35MB，内部端口隔离不对宿主机暴露
 # ============================================================
 
@@ -8,14 +8,14 @@ services:
   db:
     image: ${DB_IMAGE:-postgres:15-alpine}
     pull_policy: ${DB_PULL_POLICY:-if_not_present}
-    container_name: ${DB_CONTAINER_NAME:-${APP_NAME:-mengya}-pg}
+    container_name: ${DB_CONTAINER_NAME:-${APP_NAME:-mengya_docker}-pg}
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-mengya}
-      POSTGRES_USER: ${POSTGRES_USER:-mengya}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mengya123}
+      POSTGRES_DB: ${POSTGRES_DB:-mengya_docker}
+      POSTGRES_USER: ${POSTGRES_USER:-mengya_docker}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mengya_docker123}
     volumes:
-      - pgdata:${DB_DATA_DIR:-/var/lib/postgresql}
+      - pgdata:${DB_DATA_DIR:-/var/lib/postgresql/data}
     expose:
       - "5432"
     command: >
@@ -24,12 +24,8 @@ services:
       -c work_mem=1MB
       -c maintenance_work_mem=16MB
       -c max_connections=20
-      -c max_worker_processes=2
-      -c max_parallel_workers=2
-      -c max_parallel_workers_per_gather=1
-      -c max_parallel_maintenance_workers=1
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mengya} -d ${POSTGRES_DB:-mengya}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mengya_docker} -d ${POSTGRES_DB:-mengya_docker}"]
       interval: 15s
       timeout: 5s
       retries: 10
@@ -42,3 +38,4 @@ services:
 
 volumes:
   pgdata:
+    name: ${APP_NAME:-mengya_docker}_pgdata

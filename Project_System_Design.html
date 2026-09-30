@@ -412,7 +412,8 @@
   </div>
 
   <!-- 原始 Markdown 存储 (供客户端无损解析) -->
-  <script type="text/plain" id="markdown-raw"># 萌芽（mengya-docker）系统架构设计与重构决策文档 (PSD)
+  <script type="text/plain" id="markdown-raw">
+# 萌芽（mengya-docker）系统架构设计与重构决策文档 (PSD)
 
 > **文档代号**：PSD (Project System Design)  
 > **文档版本**：v2.2 (Ultra-Low Resource Optimization & Self-Adaptive Host Memory Edition)  
@@ -480,7 +481,7 @@ flowchart TB
     end
 
     subgraph DockerEnv["容器化一体化编排网格 (Docker Bridge: mengya_default)"]
-        subgraph BackendContainer["mengya_backend 容器 (:8000 -> Host:5174)"]
+        subgraph BackendContainer["mengya_docker_backend 容器 (:8000 -> Host:5174)"]
             DjangoEntry["WSGI / Django 核心入口"]
             StaticServe["静态资源/SPA 前端路由托管<br/>(/templates/index.html & /static/)"]
             APIRouter["DRF API 路由网关 (/api/v1/)"]
@@ -510,9 +511,9 @@ flowchart TB
         end
 
         subgraph StorageLayer["内部数据持久化层 (屏蔽外网端口)"]
-            PGDB[("mengya_db (PostgreSQL 18 + pgvector)<br/>数据卷: pgdata:/var/lib/postgresql")]
-            RedisQueue[("mengya_redis (Redis 7-alpine)<br/>[可选: profile celery]")]
-            CeleryWorker["mengya_worker (Celery 5.3+)<br/>[可选: profile celery]"]
+            PGDB[("mengya_docker-pg (PostgreSQL 15/18)<br/>数据卷: pgdata:/var/lib/postgresql/data")]
+            RedisQueue[("mengya_docker_redis (Redis 7-alpine)<br/>[可选: profile celery]")]
+            CeleryWorker["mengya_docker_worker (Celery 5.3+)<br/>[可选: profile celery]"]
         end
     end
 
@@ -929,7 +930,7 @@ erDiagram
 | **`DJANGO_SECRET_KEY`** | `change-me-in-production` | **极高** | Django 底层加密密钥，生产部署必须由随机安全字符替换 (`.env.example:2`)。 |
 | **`JWT_SECRET_KEY`** | `change-me-in-production` | **极高** | SimpleJWT 签名独立密钥，杜绝与 Django 密钥共享泄露风险 (`.env.example:11`)。 |
 | **`DJANGO_ALLOWED_HOSTS`** | `localhost,127.0.0.1,backend,*` | 基础网络 | 允许的 HTTP Host 白名单，支持反代容器内网与 SNI 域名自适应 (`.env.example:4`)。 |
-| **`DATABASE_URL`** | `postgresql://mengya:mengya123@db:5432/mengya` | **极高** | 生产环境容器内网直连（`db:5432`），宿主机外网完全屏蔽。 |
+| **`DATABASE_URL`** | `postgresql://mengya_docker:mengya_docker123@db:5432/mengya_docker` | **极高** | 生产环境容器内网直连（`db:5432`），宿主机外网完全屏蔽。 |
 | **`REDIS_URL`** | `redis://redis:6379/0` | 内部网络 | Redis 缓存与 Celery Broker 连接地址，容器内网互联 (`.env.example:8`)。 |
 | **`OPENAI_API_KEY`** | `sk-...` (或留空) | **机密** | 全局 AI 兜底 Key（留空时自动降级回退至内置本地专业母婴知识引擎）。 |
 | **`OPENAI_MODEL`** | `gpt-4o-mini` | 运行时配置 | 默认全局调用的大模型代号，支持灵活替换 (`.env.example:15`)。 |
@@ -1101,7 +1102,7 @@ flowchart TD
     subgraph HostEnv["宿主机环境 (自适应物理内存，如 1.922GiB)"]
         subgraph DockerCompose["Docker Compose 编排 (无静态硬编码 mem_limit)"]
             
-            subgraph BackendContainer["mengya_backend 容器 (常驻 ~60-88MB, CPU 0.00%~0.04%)"]
+            subgraph BackendContainer["mengya_docker_backend 容器 (常驻 ~60-88MB, CPU 0.00%~0.04%)"]
                 Gunicorn["Gunicorn WSGI<br/>1 Worker + 4 gthreads<br/>--max-requests 1000"]
                 WhiteNoise["WhiteNoise 6.6+<br/>零拷贝静态资源分发"]
                 LazyAI["AI Service 惰性加载<br/>按需引入 openai SDK (-44.6MB)"]
@@ -1111,7 +1112,7 @@ flowchart TD
                 Gunicorn --> Allocator
             end
 
-            subgraph DBContainer["mengya_db 容器 (常驻 25~35MB)"]
+            subgraph DBContainer["mengya_docker-pg 容器 (常驻 25~35MB)"]
                 PG["PostgreSQL (pgvector)<br/>shared_buffers=24MB<br/>work_mem=1MB<br/>max_connections=20"]
             end
 
@@ -1228,10 +1229,10 @@ flowchart TD
    - **架构设计**：基于 `docker-compose.sqlite.yml`，将宿主机目录 `./data` 映射进 `backend` 容器内，`DATABASE_URL=""`。
    - **资源收益**：**零额外数据库容器**，省去全部 PostgreSQL 进程与内核常驻，整站常驻总内存仅约 **50~60MB**，彻底消除超低配服务器 OOM 风险。
 2. **模式 2：共享已有 PostgreSQL 实例 (`shared`)**
-   - **架构设计**：复用宿主机已在运行的 PG 容器（如 `pgvector-18`），启动时通过容器内管理接口幂等执行 `CREATE DATABASE mengya` 与 `CREATE USER mengya`。
-   - **资源收益**：实现应用与共用基础设施解耦，宿主机无需额外启动 `mengya_db`，零新增常驻进程，节约 **80MB+** 冗余内存开销。
+   - **架构设计**：复用宿主机已在运行的 PG 容器（如 `pgvector-18`），启动时通过容器内管理接口幂等执行 `CREATE DATABASE mengya_docker` 与 `CREATE USER mengya_docker`。
+   - **资源收益**：实现应用与共用基础设施解耦，宿主机无需额外启动 `mengya_docker-pg`，零新增常驻进程，节约 **80MB+** 冗余内存开销。
 3. **模式 3：独立专属 PostgreSQL 容器 (`dedicated`)**
-   - **架构设计**：基于 `docker-compose.db.yml`，启动命名为 `${APP_NAME:-mengya}-pg` 的独立专属容器，应用 80MB 内核微服务精简调优，容器内部端口隔离（不对宿主机开放 5432）。
+   - **架构设计**：基于 `docker-compose.db.yml`，启动命名为 `${APP_NAME:-mengya_docker}-pg` 的独立专属容器，应用 80MB 内核微服务精简调优，容器内部端口隔离（不对宿主机开放 5432）。
    - **镜像策略**：严格就地复用本地已有 PG 镜像，设定 `pull_policy: never`。
 
 #### 10.3.2 严苛的本地镜像就地复用策略
@@ -1288,6 +1289,185 @@ for mod in env docker db nginx data; do
 done
 ```
 该设计从根本上规避了部分依赖丢失导致的静默异常，同时 100% 保持了既有功能、命令行参数与自动化运维行为的一致性。
+
+### 10.5 孕育阶段全域自适应协同规范：胎教故事周数智能跳转与交互体验对齐 (v1.42)
+
+#### 10.5.1 业务诉求与体验对齐现状
+在平台的母婴孕育周期中，用户在个人档案中配置了孕周或预产期后，系统通过 `useAuthStore` 全局分发 `stage` 状态（包含 `is_pregnant` 判定及当前孕周 `value`）。此前孕期周历（`PregnancyWeeklyPage`）与孕期食谱（`PregnancyRecipePage`）均已实现基于用户真实孕周的自动化进入定位，而胎教故事（`FetalStoryPage`）此前未订阅阶段信息，硬编码默认定位于孕 17 周，造成用户在不同功能间跳转时的体验割裂。
+
+#### 10.5.2 核心自适应协同逻辑架构
+1. **智能边界截断（Clamp）与医学特性对齐**：
+   - 胎儿听觉系统通常在孕 17 周（孕 5 月初）左右开始建立外界感知，系统胎教故事库的数据定义亦覆盖孕 17~40 周（共 24 周）。
+   - **孕中晚期（17 ≤ `stage.value` ≤ 40）**：进入页面直接自适应定位到用户当前真实孕周，故事列表联动刷新。
+   - **孕早期（1 ≤ `stage.value` < 17）**：智能吸附到最早胎教周（第 17 周），并弹出温情科普提示框：“您当前处于孕 X 周，胎儿听觉一般于孕17周左右开始发育，胎教故事从孕17周开启，已为您定位至第17周故事”。
+   - **超期孕周（`stage.value` > 40）**：智能截断至第 40 周（足月故事）。
+   - **非孕期或未配置阶段**：保持向后兼容的第 17 周默认推荐。
+2. **多态视觉反馈与一键跳回交互**：
+   - **周选择器按钮高亮**：
+     - 当前正在浏览的周：采用主题色全填充 `bg-brand-500 font-medium text-white shadow-sm`；
+     - 用户当前的真实孕周（当浏览其他周时）：采用浅色高对比度外环 `bg-brand-100 text-brand-700 font-medium ring-2 ring-brand-400 dark:bg-brand-950 dark:text-brand-300` 显著标记，便于快速识别与跳回；
+     - 浏览当前孕周时：在周摘要旁附带「当前孕周」主题徽章。
+   - **动态提示胶囊条**：在按周模式顶部展示阶段自适应提示横幅，并在用户切换至其他周时提供「返回我的孕周 (第X周)」一键直达操作。
+3. **黑夜/白天模式全面协调**：
+   - 提示条、月份快捷键、周数指示器、故事卡片与详情弹窗全面覆盖 Tailwind `dark:` 语义化类，保障双主题模式下良好的对比度与视觉体验。
+
+### 10.6 .env 环境变量持久化与数据库存储模式动态重配机制规范 (v1.43)
+
+#### 10.6.1 架构设计背景
+系统在首次执行 `run.sh` 初始化后，会将用户的决策结果（硬件探针推荐或交互选择）以及系统密钥持久化写入 `.env` 文件。为了满足用户在后续运维过程中随时重新调整数据库存储架构（如从 SQLite 平滑升级至共享 PG，或从独立 PG 降级为 SQLite）的需求，同时避免用户因盲目删除 `.env` 导致 `SECRET_KEY`、端口等核心配置丢失，系统建立了规范化的重新配置标准流程与帮助内嵌机制。
+
+#### 10.6.2 核心机制与实现逻辑
+1. **显式重配子命令与参数解析**：
+   - 增加 `./run.sh reconfig` 原生子命令；
+   - 支持 `--reconfig` / `--reconfig-db` 命令行开关；
+   - 支持 `-m, --mode <sqlite|shared|dedicated>` 参数直接切模；
+   - 支持 `-y, --yes` 非交互兜底，保障 Cron/自动化运维流水线零阻塞。
+2. **说明函数封装与帮助模块内嵌**：
+   - 在组件模块 `bin/db.sh` 中抽象出 `show_db_reconfig_guide()` 专用展示函数；
+   - 在 `run.sh` 的 `help` 模块末尾统一挂载调用，确保终端用户执行 `./run.sh help` 或直接输入 `./run.sh` 即可一览无余。
+3. **配置文件容错与自愈策略**：
+   - 推荐优先采用 `./run.sh reconfig` 或修改 `.env` 中的 `DB_MODE`；
+   - 严正声明直接删除整个 `.env` 文件对 `SECRET_KEY` 与自定义参数的破坏性副作用，引导规范化运维。
+
+### 10.7 PostgreSQL 镜像动态探针感知与零硬编码复用规范 (v1.44)
+
+#### 10.7.1 架构设计背景与治理痛点
+此前版本在容器化数据库部署中存在部分写死隐患：
+1. `.env.example` 模板硬编码了 `DB_IMAGE=pgvector/pgvector:pg18` 与 `SHARED_PG_CONTAINER=pgvector-18`，导致新节点部署复制 `.env` 时提前赋死值，绕过了镜像探测；
+2. 用户显式指定自定义版本时，若本地尚未下载，底层探针曾错误地强制回退至本地已有旧镜像，破坏了用户的自定义预期；
+3. 宿主机无任何 PG 镜像时，硬编码拉取体积庞大的 `pgvector/pgvector:pg18`（约 500MB~1GB），未能选用更通用成熟轻量的官方版本；
+4. 共享模式下硬编码兜底容器名 `pgvector-18`，在无该容器的异构节点上引发连接断开。
+
+#### 10.7.2 核心机制与治理规范
+1. **用户自定义优先原则（100% 遵从，决不篡改）**：
+   - 用户通过命令行 `-i / --db-image <IMAGE>` 或在 `.env` 中配置 `DB_IMAGE` 时，系统将其视为绝对不可覆盖的决策输入；
+   - 若本地已存在该镜像：标记 `DB_PULL_POLICY="never"`，就地复用，零网络开销；
+   - 若本地尚无该镜像：标记 `DB_PULL_POLICY="if_not_present"`，启动时从 Registry 精准拉取用户指定版本，严禁回退到本地其他旧镜像。
+2. **服务器本地已有镜像优先复用策略**：
+   - 当用户未指定自定义镜像时，探针依次检索：
+     - ① 宿主机正在运行的 PG 容器所使用的镜像；
+     - ② 本地已存在的官方 Alpine / PostgreSQL 轻量镜像；
+     - ③ 本地任何现存的可用 PG 镜像。
+     命中任意本地镜像即就地复用并设为 `never`，彻底消除重复拉取。
+3. **内置默认轻量镜像与按需拉取**：
+   - 全新空服务器（本地无任何 PG 镜像）且选用 PG 存储模式时，自动采用内置轻量成熟镜像（`postgres:15-alpine`，支持 `DEFAULT_PG_IMAGE` 覆盖），仅在此场景下触发自动下载（`if_not_present`）。
+4. **共享 PG 模式（shared）零硬编码与智能自愈**：
+   - 彻底移除 `pgvector-18` 硬编码；
+   - 动态嗅探宿主机运行中 PG 容器；若未运行但存在已停止容器则尝试拉起自愈；
+   - 宿主机完全无 PG 容器时，给出明确诊断并智能平滑降级（Docker版降级为独立PG，传统版降级为SQLite），保障服务可用性。
+
+### 10.8 数据库交互式重配链路修复与全参连接自定义规范 (v1.45)
+
+#### 10.8.1 架构设计背景与根因治理
+针对执行 `./run.sh` 配合 `--reconfig` / `--reconfig-db` 时未弹出数据库选择向导的问题，经端到端全链路审计，治理了以下 4 项连锁缺陷：
+1. **参数解析缺省回退缺陷**：当仅输入 `./run.sh --reconfig` 时，因未指定子命令触发 `[ -z "$CMD" ] && CMD="help"`，导致误入帮助输出而跳过向导。修复后自动识别 `--reconfig` 并赋予 `CMD="reconfig"`；
+2. **restart 免交互过早拦截**：`choose_db_mode()` 的第 1 步免交互判定中 `if [ "$CMD" = "restart" ]` 优先于 `RECONFIG_DB` 判定，导致 `./run.sh restart --reconfig` 直接静默退出。修复为仅在 `[ "$RECONFIG_DB" != "1" ]` 时生效；
+3. **无 TTY 环境检测误杀**：原 `if [ "$NON_INTERACTIVE" = "1" ] || [ ! -t 0 ]` 将子 shell、IDE 终端与管道误判为非交互定时任务。修复后将后台自愈与用户显式指令解耦，显式传入 `--reconfig` 时强制呈现交互式决策菜单；
+4. **传统版端口占用提早退出**：`setup_db_for_mode` 调用时机前置到 `start)` 与 `restart)` 入口，杜绝因服务已占用端口导致的提早 return。
+
+#### 10.8.2 全参数连接信息自定义与持久化规范
+为满足各类复杂部署场景下对数据库账号权限、自定义实例、指定端口与远程主机的高级需求，系统在 `run.sh` 与 `bin/db.sh` 中全面支持以下命令行选项与自动持久化配置：
+- `--db-user <USER>`: 自定义 PostgreSQL 用户名（默认: `mengya` / `mengya_local`）；
+- `--db-pass <PASS>`: 自定义 PostgreSQL 连接密码（默认: `mengya_docker123`）；
+- `--db-name <DB>`: 自定义 PostgreSQL 数据库名/实例名（默认: `mengya` / `mengya_local`）；
+- `--db-port <PORT>`: 自定义 PostgreSQL 端口（默认: `5432` / `5433`）；
+- `--db-host <HOST>`: 自定义 PostgreSQL 主机地址（默认: `db` / 共享容器名 / `127.0.0.1`）；
+- `--database-url <URL>`: 直接覆盖指定完整的标准连接串（如 `postgresql://user:pass@host:port/dbname`）。
+
+所有参数均自动幂等写入当前目录 `.env`，并在容器启动或本地启动时组装为标准 `DATABASE_URL` 注入 Django 与 Docker Compose。
+
+### 10.9 run.sh 脚本模块化拆分与自定义变量独立解耦规范 (v1.46)
+
+#### 10.9.1 微内核启动器重构
+为解决主运行脚本 `run.sh` 随着功能演进而代码膨胀、逻辑过长及维护成本高的问题，系统将 `run.sh` 全面重构为**轻量级微内核调度器**：
+1. **体积与行数极致瘦身**：`run.sh` 脚本由原来的 640+ 行缩减至 130 行左右，只负责环境引导、模块动态遍历载入（`for mod in env config db nginx data docker help; do ...`）以及最终子命令的极简调度分发；
+2. **生命周期高内聚下沉**：将 `start_docker()`, `stop_docker()`, `restart_docker()`, `status_docker()`, `clean_docker()` 全部下沉归集至 `bin/docker.sh`，使 `docker.sh` 成为完整的 Docker 生命周期与编排引擎管家；
+3. **帮助系统独立收口**：将冗长的帮助说明文档、参数说明与典型启动示例迁移至独立模块 `bin/help.sh`（`show_cli_help()` 函数），彻底净化主脚本结构。
+
+#### 10.9.2 自定义变量与配置解析独立模块 (`bin/config.sh`)
+将系统所有自定义变量、参数解析与持久化逻辑独立抽离并封装至 `bin/config.sh`：
+- **`init_default_configs()`**：声明并统一初始化端口（`PORT`, `FRONTEND_PORT`）、超级管理员账密（`ADMIN_USERNAME`, `ADMIN_PASSWORD` 等）、SNI 匹配域名、Nginx 路径以及全套数据库连接参数；
+- **`parse_cli_args "$@"`**：专职承接所有命令行参数循环解析（包括 `-p`, `-u`, `-P`, `-d`, `-m`, `--db-*`, `--reconfig`, `-y` 等）；
+- **`apply_and_save_configs()`**：对用户显式传入的自定义参数进行校验，并自动调用 `update_env_var` 持久化同步写入 `.env` 文件；
+- **`export_runtime_vars()`**：统一向后置运行环境导出 Docker Compose 所需的核心环境变量。
+
+### 10.10 数据库全量变量集中归集于 config.sh 治理规范 (v1.47)
+
+#### 10.10.1 治理背景与单点收拢设计
+此前数据库相关变量分散在 `bin/config.sh`、`bin/db.sh` 以及 `bin/docker.sh` 等多个脚本中，并在多处存在冗余后备默认值（如 `${POSTGRES_USER:-mengya}`、`${POSTGRES_DB:-mengya}`）。用户若希望一次性自定义修改所有数据库默认配置，需要跨多个文件逐一排查，存在维护心智负担与遗漏风险。
+
+为此，系统在 v1.47 版本确立了**数据库全量变量统一集中归集规范**：
+1. **单一事实来源（Single Source of Truth）**：所有与数据库、存储引擎相关的可自定义变量，全部一站式归集至 `bin/config.sh` 的 `init_default_configs()` 与 `export_runtime_vars()` 中声明与导出；
+2. **严格三级配置优先级**：
+   $$\text{CLI 命令行显式参数 (--db-*, -m, --db-image)} > \text{.env 本地持久化配置} > \text{config.sh 代码级默认定义}$$
+3. **消除跨模块硬编码后备**：`bin/db.sh` 与 `bin/docker.sh` 彻底移除多余的 `:-mengya`、`:-5432` 等内联 fallback，统一直接消费 `config.sh` 预先计算并导出的规范变量。
+
+#### 10.10.2 一站式归集变量矩阵清单
+在 `mengya-docker/bin/config.sh` 中统一声明并维护的核心数据库变量如下：
+- `APP_NAME`：应用命名空间（默认 `mengya_docker`）；
+- `DB_MODE`：数据库部署模式（Docker 版默认 `dedicated`，可选 `shared` / `sqlite`）；
+- `DEFAULT_PG_IMAGE`：内置默认 PG 镜像版本（默认 `postgres:15-alpine`）；
+- `DB_IMAGE`：用户指定或探针自适应复用的目标 PG 镜像；
+- `DB_PULL_POLICY`：镜像拉取策略（就地复用为 `never`，按需下载为 `if_not_present`）；
+- `DB_DATA_DIR`：容器内挂载目录（PG18+ 自动适配为 `/var/lib/postgresql`，PG15 适配为 `/var/lib/postgresql/data`）；
+- `DB_CONTAINER_NAME`：独立 PG 模式专属容器名（默认 `${APP_NAME}-pg`）；
+- `SHARED_PG_CONTAINER`：共享模式目标 PG 容器名；
+- `POSTGRES_USER`：PostgreSQL 用户名（默认 `mengya_docker`）；
+- `POSTGRES_PASSWORD`：PostgreSQL 连接密码（默认 `mengya_docker123`）；
+- `POSTGRES_DB`：PostgreSQL 数据库/实例名（默认 `mengya_docker`）；
+- `POSTGRES_PORT`：PostgreSQL 连接端口（默认 `5432`）；
+- `POSTGRES_HOST`：PostgreSQL 访问主机（默认 `db`，共享模式默认为共享容器名）；
+- `DATABASE_URL`：标准数据库连接串（支持在此直接显式定义，或留空由系统自动按参数标准组装）；
+- `SQLITE_PATH`：SQLite 模式数据持久化路径（默认 `./data/db.sqlite3`）。
+
+### 10.11 容器生命周期与全域 unless-stopped 重启策略规范 (v1.48)
+
+#### 10.11.1 禁用 always 与锁定 unless-stopped 规范
+在 Docker 体系中，容器重启策略直接决定了宿主机故障自愈与运维生命周期的可控性：
+- **禁用 `always` 策略**：当容器配置为 `always` 时，只要 Docker 守护进程启动或宿主机重启，无论此前容器是被用户显式执行 `./run.sh stop` 还是异常退出，都会被无条件拉起。这会导致被主动下线的容器在机器重启后“幽灵复活”，造成端口冲突与资源盗用；
+- **全域采用 `unless-stopped` 策略**：
+  $$\text{容器故障/机器崩溃自动重启} \quad \text{且} \quad \text{主动执行 stop 后机器重启保持停止}$$
+  在 `docker-compose.yml`（`backend`, `redis`, `worker`）、`docker-compose.db.yml`（`db` 独立数据库容器）以及 `docker-compose.sqlite.yml` 中，全量显式锁定 `restart: unless-stopped`。
+
+### 10.12 Docker 版本与传统版本全维度数据隔离规范 (v1.49)
+
+#### 10.12.1 隔离设计背景与问题根因
+当宿主机环境曾部署传统版本（`mengya-local`）且选用 PG 存储模式时，再部署 Docker 容器版可能会因为容器名冲突、内置凭据同名（如 `mengya`）、宿主机已有残留容器未排除、以及数据卷挂载点偏差（挂载至父目录 `/var/lib/postgresql` 而非 `/var/lib/postgresql/data`）导致数据库容器异常退出（`container exited (1)`）。
+
+为此，系统确立了**双版本全链路数据与环境隔离架构**：
+1. **容器与应用标识全隔离**：
+   - Docker 版统一将 `APP_NAME` 默认置为 `mengya_docker`；
+   - 独立专属 PG 容器命名为 `${APP_NAME}-pg`（即 `mengya_docker-pg`，与传统版 `mengya_local-pg` 隔离）；
+   - 后端容器与队列容器规范命名为 `mengya_docker_backend`、`mengya_docker_redis`、`mengya_docker_worker`。
+2. **数据库凭据与实例深度隔离**：
+   - 默认数据库名 / 实例名：`mengya_docker`；
+   - 默认数据库连接用户：`mengya_docker`；
+   - 默认数据库连接密码：`mengya_docker123`；
+   - 完整数据库连接串：`postgresql://mengya_docker:mengya_docker123@db:5432/mengya_docker`。
+3. **数据挂载路径自愈与内核参数轻量化稳态**：
+   - 规范化挂载路径为 `${DB_DATA_DIR:-/var/lib/postgresql/data}`，消除非标准路径引发的启动崩溃；
+   - 裁剪 PG 启动参数，避免多余的并行工作进程约束造成初始化失败。
+
+#### 10.12.2 同机共存 6 种数据库部署组合矩阵与隔离保障机制
+系统全面支持在同一台服务器上同时部署传统版本（mengya-local）与 Docker 容器版本（mengya-docker）。针对两版本各自的 3 种数据库模式（SQLite / 独立PG / 共享PG）相互组合而成的 **6 种核心并存场景**，建立了全方位的端口防冲突、数据硬隔离与自适应协同矩阵：
+
+| 组合序号 | 传统版本 (mengya-local) 模式 | Docker版本 (mengya-docker) 模式 | 传统版存储形态与物理路径 | Docker版存储形态与物理路径 | 端口与网络协同 | 数据隔离与防冲突保障机制 |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| **组合 1** | **SQLite** | **SQLite** | 宿主机文件：mengya-local/db.sqlite3 | 容器挂载目录：mengya-docker/data/db.sqlite3 | 传统版 Web: 5173<br/>Docker Web: 5174 | 两个完全独立的 SQLite 单文件，物理路径彻底隔离，零网络与端口争抢。 |
+| **组合 2** | **SQLite** | **独立 PG (dedicated)** | 宿主机文件：mengya-local/db.sqlite3 | 独立容器 mengya_docker-pg，数据卷 mengya_docker_pgdata | Docker 版内部 expose 5432（不绑定宿主机端口） | 传统版本运行在本地 SQLite，Docker 版自建专属 PG 容器，存储介质异构隔离。 |
+| **组合 3** | **SQLite** | **共享 PG (shared)** | 宿主机文件：mengya-local/db.sqlite3 | 共享宿主机现有 PG 容器（如 pgvector-18），自建库 mengya_docker | 宿主机现有 PG 端口开放，Docker 后端加入网络直连 | 传统版本使用独立文件，Docker 版在已有共享 PG 实例中拥有专属数据库与账号，互不干扰。 |
+| **组合 4** | **独立 PG (dedicated)** | **SQLite** | 宿主机专有容器 mengya_local-pg，数据卷 mengya_local_pgdata | 容器挂载目录：mengya-docker/data/db.sqlite3 | 传统版独占宿主机 5432 端口，Docker 版 SQLite 零端口依赖 | 传统版独占专属 PG 容器，Docker 版完全跑在内嵌 SQLite 文件中，数据与连接完全解耦。 |
+| **组合 5** | **独立 PG (dedicated)** | **独立 PG (dedicated)** | 宿主机专有容器 mengya_local-pg（用户 mengya_local，宿主机端口 5432） | Docker 专属容器 mengya_docker-pg（用户 mengya_docker，内部 expose 5432） | 传统版独占宿主机 5432 端口；Docker 版仅在 Compose 内部暴露 5432，**不绑定宿主机端口**，零冲突 | 容器名隔离（mengya_local-pg vs mengya_docker-pg）、数据卷隔离（mengya_local_pgdata vs mengya_docker_pgdata）、账号/库隔离（mengya_local vs mengya_docker），容器与数据双重物理隔离。 |
+| **组合 6** | **独立 PG (dedicated)** | **共享 PG (shared)** | 宿主机专有容器 mengya_local-pg（宿主机 5432，数据库 mengya_local） | 复用传统版 mengya_local-pg 容器，但自动创建专有库 mengya_docker 与专有用户 mengya_docker | Docker 启动脚本自动将 mengya_local-pg 接入 Compose 内网（${COMPOSE_PROJECT_NAME}_net） | 数据库级（Database-level）严格隔离。Docker 版启动脚本自动在共享实例中幂等初始化专有库 mengya_docker 并授予独立权限，两套版本数据表互不可见，极大节省内存。 |
+
+*(注：若两版本均选择共享第三方宿主机 PG 容器如 pgvector-18，传统版与 Docker 版各自持有独立数据库 mengya_local 与 mengya_docker 及独立账号，天然具备数据库级完全隔离能力。)*
+
+#### 10.12.3 容器生命周期与 unless-stopped 重启策略规范
+- 全线容器服务（ackend、
+edis、worker、db）严格统一配置 
+estart: unless-stopped；
+- 禁止使用 lways 策略，避免运维主动 stop 或排查故障时无休止重启引发死锁与资源耗尽；
+- 兼顾突发宕机自愈能力与运维主动控制意图的一致性。
 
 </script>
 
@@ -1419,6 +1599,90 @@ done
     <li><strong>内置默认轻量镜像兜底</strong>：本地彻底无现存镜像时，自动下载内置成熟轻量镜像 <code>postgres:15-alpine</code>；</li>
     <li><strong>共享模式去除硬编码</strong>：彻底剔除 <code>pgvector-18</code> 写死值，支持动态容器感知、停止容器拉起自愈与无可用容器智能平滑降级。</li>
   </ul>
+</div>
+
+
+<div style="background:#f8fafc;border-left:4px solid #3b82f6;padding:20px 24px;margin-top:24px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+  <h3 style="margin-top:0;color:#2563eb;font-size:18px;">Docker 版本与传统版本全维度数据隔离规范 (v1.49)</h3>
+  <p style="color:#475569;margin-bottom:12px;">彻底解决传统版本部署后再次部署 Docker 版本可能发生的数据库容器退出故障（<code>container mengya-pg exited (1)</code>），确立双版本物理与逻辑数据全链路隔离与 6 种部署组合防冲突矩阵：</p>
+  <ul style="color:#334155;line-height:1.8;margin-bottom:16px;">
+    <li><strong>命名空间与容器名隔离</strong>：Docker 版 <code>APP_NAME</code> 默认为 <code>mengya_docker</code>，数据库专属容器名为 <code>mengya_docker-pg</code>，后端容器名为 <code>mengya_docker_backend</code>，与传统版 <code>mengya_local</code> 全面隔离；</li>
+    <li><strong>数据库凭据与实例名隔离</strong>：默认数据库用户 <code>mengya_docker</code>、密码 <code>mengya_docker123</code>、库名 <code>mengya_docker</code>，无论是独立容器还是共享容器模式均具备完全专有的库和账号；</li>
+    <li><strong>挂载路径标准化修复</strong>：数据挂载目录标准化为 <code>/var/lib/postgresql/data</code>，修复原先挂载至 <code>/var/lib/postgresql</code> 导致容器退出启动失败的缺陷；</li>
+    <li><strong>容器生命周期重启策略</strong>：所有容器（<code>backend</code>、<code>redis</code>、<code>worker</code>、<code>db</code>）统一使用 <code>restart: unless-stopped</code>，禁止使用 <code>always</code>。</li>
+  </ul>
+  <h4 style="color:#1e293b;margin:14px 0 8px 0;font-size:15px;">同机共存 6 种数据库部署组合矩阵</h4>
+  <div style="overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:13px;text-align:left;background:#ffffff;border:1px solid #cbd5e1;border-radius:6px;">
+      <thead>
+        <tr style="background:#f1f5f9;color:#1e293b;border-bottom:2px solid #cbd5e1;">
+          <th style="padding:8px 10px;border:1px solid #cbd5e1;">组合序号</th>
+          <th style="padding:8px 10px;border:1px solid #cbd5e1;">传统版 (mengya-local) 模式</th>
+          <th style="padding:8px 10px;border:1px solid #cbd5e1;">Docker版 (mengya-docker) 模式</th>
+          <th style="padding:8px 10px;border:1px solid #cbd5e1;">传统版存储与路径</th>
+          <th style="padding:8px 10px;border:1px solid #cbd5e1;">Docker版存储与路径</th>
+          <th style="padding:8px 10px;border:1px solid #cbd5e1;">端口协同</th>
+          <th style="padding:8px 10px;border:1px solid #cbd5e1;">隔离保障机制</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;font-weight:bold;">组合 1</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">SQLite</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">SQLite</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">宿主机文件: mengya-local/db.sqlite3</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">容器挂载: mengya-docker/data/db.sqlite3</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">5173 vs 5174</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">单文件存储物理隔离，零端口冲突</td>
+        </tr>
+        <tr style="background:#f8fafc;">
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;font-weight:bold;">组合 2</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">SQLite</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">独立 PG (dedicated)</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">宿主机文件: mengya-local/db.sqlite3</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">专属容器 mengya_docker-pg (数据卷 mengya_docker_pgdata)</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">Docker expose 5432 不占宿主端口</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">本地文件 vs 容器化 PG，介质完全异构隔离</td>
+        </tr>
+        <tr>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;font-weight:bold;">组合 3</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">SQLite</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">共享 PG (shared)</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">宿主机文件: mengya-local/db.sqlite3</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">共享 PG 容器 (库名 mengya_docker)</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">Docker 加入网络直连</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">本地文件 vs 共享 PG 专有库，互不干扰</td>
+        </tr>
+        <tr style="background:#f8fafc;">
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;font-weight:bold;">组合 4</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">独立 PG (dedicated)</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">SQLite</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">专属容器 mengya_local-pg (数据卷 mengya_local_pgdata)</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">容器挂载: mengya-docker/data/db.sqlite3</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">传统版占 5432，Docker 零端口依赖</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">传统专属 PG vs Docker 独立 SQLite，介质解耦</td>
+        </tr>
+        <tr>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;font-weight:bold;">组合 5</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">独立 PG (dedicated)</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">独立 PG (dedicated)</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">专属容器 mengya_local-pg (用户 mengya_local)</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">专属容器 mengya_docker-pg (用户 mengya_docker)</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">传统版占 5432，Docker expose 5432 零冲突</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">容器名、数据卷、账号、库名全面隔离</td>
+        </tr>
+        <tr style="background:#f8fafc;">
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;font-weight:bold;">组合 6</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">独立 PG (dedicated)</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">共享 PG (shared)</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">专属容器 mengya_local-pg (数据库 mengya_local)</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">复用 mengya_local-pg，独占数据库 mengya_docker</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">自动 connect 接入 Compose 内网</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">数据库级严格隔离，专有用户与权限，表互不可见</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
 </div>
 
 </body>
