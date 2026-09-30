@@ -1409,5 +1409,17 @@ done
   </ul>
 </div>
 
+
+<div style="margin-top:24px;padding:18px 24px;border-radius:8px;border-left:4px solid #8b5cf6;background:var(--bg-card, #fff);">
+  <h3 style="margin-top:0;color:#8b5cf6;">PostgreSQL 镜像动态探针感知与零硬编码复用规范 (v1.44)</h3>
+  <p>为满足异构服务器环境下的弹性兼容与零重复下载，系统全面重构镜像探针与共享容器决策链路：</p>
+  <ul>
+    <li><strong>用户自定义镜像绝对遵从</strong>：支持通过 <code>--db-image &lt;IMAGE&gt;</code> 指定具体版本，本地不存在时精准拉取指定版本，严禁被本地旧镜像强制覆盖；</li>
+    <li><strong>本地已有镜像优先自动复用</strong>：未指定时优先复用宿主机运行中容器镜像及本地已有 PG/Alpine 镜像（<code>pull_policy: never</code>），杜绝网络带宽浪费；</li>
+    <li><strong>内置默认轻量镜像兜底</strong>：本地彻底无现存镜像时，自动下载内置成熟轻量镜像 <code>postgres:15-alpine</code>；</li>
+    <li><strong>共享模式去除硬编码</strong>：彻底剔除 <code>pgvector-18</code> 写死值，支持动态容器感知、停止容器拉起自愈与无可用容器智能平滑降级。</li>
+  </ul>
+</div>
+
 </body>
 </html>
