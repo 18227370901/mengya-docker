@@ -1004,3 +1004,12 @@ done
 - `POSTGRES_HOST`：PostgreSQL 访问主机（默认 `db`，共享模式默认为共享容器名）；
 - `DATABASE_URL`：标准数据库连接串（支持在此直接显式定义，或留空由系统自动按参数标准组装）；
 - `SQLITE_PATH`：SQLite 模式数据持久化路径（默认 `./data/db.sqlite3`）。
+
+### 10.11 容器生命周期与全域 unless-stopped 重启策略规范 (v1.48)
+
+#### 10.11.1 禁用 always 与锁定 unless-stopped 规范
+在 Docker 体系中，容器重启策略直接决定了宿主机故障自愈与运维生命周期的可控性：
+- **禁用 `always` 策略**：当容器配置为 `always` 时，只要 Docker 守护进程启动或宿主机重启，无论此前容器是被用户显式执行 `./run.sh stop` 还是异常退出，都会被无条件拉起。这会导致被主动下线的容器在机器重启后“幽灵复活”，造成端口冲突与资源盗用；
+- **全域采用 `unless-stopped` 策略**：
+  $$\text{容器故障/机器崩溃自动重启} \quad \text{且} \quad \text{主动执行 stop 后机器重启保持停止}$$
+  在 `docker-compose.yml`（`backend`, `redis`, `worker`）、`docker-compose.db.yml`（`db` 独立数据库容器）以及 `docker-compose.sqlite.yml` 中，全量显式锁定 `restart: unless-stopped`。

@@ -9,6 +9,7 @@ services:
     image: ${DB_IMAGE:-postgres:15-alpine}
     pull_policy: ${DB_PULL_POLICY:-if_not_present}
     container_name: ${DB_CONTAINER_NAME:-${APP_NAME:-mengya}-pg}
+    restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-mengya}
       POSTGRES_USER: ${POSTGRES_USER:-mengya}

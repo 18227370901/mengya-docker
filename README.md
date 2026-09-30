@@ -628,3 +628,11 @@ Docker 版现已与传统版最新功能（v1.13 ~ v1.17）实现 100% 深度同
 | `POSTGRES_HOST` | `db` | 数据库访问主机（共享模式自动切换为共享容器名） |
 | `DATABASE_URL` | `""` | 完整数据库连接串（支持直接指定或由脚本自动拼装） |
 | `SQLITE_PATH` | `./data/db.sqlite3` | SQLite 单文件存储路径 |
+
+### 11. 容器全域 unless-stopped 重启策略规范 (v1.48)
+- **拒绝 `always` 策略**：杜绝执行 `./run.sh stop` 后因 Docker 守护进程或宿主机重启而意外自动复活；
+- **显式锁定 `unless-stopped`**：
+  - `docker-compose.yml`：`backend`、`redis`、`worker` 全量显式声明 `restart: unless-stopped`；
+  - `docker-compose.db.yml`：独立数据库服务 `db` 显式声明 `restart: unless-stopped`；
+  - `docker-compose.sqlite.yml`：SQLite 容器化托管服务显式声明 `restart: unless-stopped`；
+- **效果**：保障服务在突发异常时具备自愈重启能力，同时严格尊重用户主动停止意图。

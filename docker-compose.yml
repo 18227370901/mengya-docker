@@ -14,6 +14,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: ${APP_NAME:-mengya}_backend
+    restart: unless-stopped
     env_file:
       - path: .env
         required: false
@@ -46,6 +47,7 @@ services:
     profiles: ["celery"]
     image: redis:7-alpine
     container_name: ${APP_NAME:-mengya}_redis
+    restart: unless-stopped
     # 仅在内部容器网络暴露端口，不对宿主机暴露 6379
     expose:
       - "6379"
@@ -62,6 +64,7 @@ services:
       context: .
       dockerfile: Dockerfile
     container_name: ${APP_NAME:-mengya}_worker
+    restart: unless-stopped
     env_file:
       - path: .env
         required: false
