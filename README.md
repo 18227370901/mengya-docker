@@ -580,3 +580,24 @@ Docker 版现已与传统版最新功能（v1.13 ~ v1.17）实现 100% 深度同
 ./run.sh start --database-url "postgresql://mengya:mengya123@db:5432/mengya"
 ```
 
+### 9. run.sh 脚本模块化拆分与自定义变量独立模块规范 (v1.46)
+
+#### 9.1 微内核调度器架构
+- **极致精简**：`run.sh` 彻底剥离业务实现细节，行数缩减 80%，专注作为微内核加载 `bin/` 下各个独立组件；
+- **模块清晰解耦**：
+  - `bin/env.sh`：基础环境检测、路径解析与安全写入；
+  - `bin/config.sh`：**自定义变量模块**，收拢端口、管理员账密、域名、数据库全参等默认值声明、命令行解析、校验与 `.env` 持久化；
+  - `bin/db.sh`：数据库多模式智能决策、探针感知、无感镜像复用与备份恢复；
+  - `bin/docker.sh`：Docker 完整生命周期管理（start, stop, restart, status, logs, build, clean, exec）；
+  - `bin/nginx.sh`：SSL 证书与宿主机 SNI 反代配置生成；
+  - `bin/data.sh`：种子数据校验与补齐全量初始化；
+  - `bin/help.sh`：命令行帮助文档与实用示例输出。
+
+#### 9.2 常用自定义变量配置示例（自动持久化到 .env）
+```bash
+# 自定义访问端口与管理员账密
+./run.sh start -p 5174 -u myadmin -P AdminPass123
+
+# 自定义数据库连接与实例名
+./run.sh start -m dedicated --db-user custom_user --db-pass CustomPass456 --db-name mengya_prod
+```

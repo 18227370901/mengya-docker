@@ -961,3 +961,17 @@ done
 
 所有参数均自动幂等写入当前目录 `.env`，并在容器启动或本地启动时组装为标准 `DATABASE_URL` 注入 Django 与 Docker Compose。
 
+### 10.9 run.sh 脚本模块化拆分与自定义变量独立解耦规范 (v1.46)
+
+#### 10.9.1 微内核启动器重构
+为解决主运行脚本 `run.sh` 随着功能演进而代码膨胀、逻辑过长及维护成本高的问题，系统将 `run.sh` 全面重构为**轻量级微内核调度器**：
+1. **体积与行数极致瘦身**：`run.sh` 脚本由原来的 640+ 行缩减至 130 行左右，只负责环境引导、模块动态遍历载入（`for mod in env config db nginx data docker help; do ...`）以及最终子命令的极简调度分发；
+2. **生命周期高内聚下沉**：将 `start_docker()`, `stop_docker()`, `restart_docker()`, `status_docker()`, `clean_docker()` 全部下沉归集至 `bin/docker.sh`，使 `docker.sh` 成为完整的 Docker 生命周期与编排引擎管家；
+3. **帮助系统独立收口**：将冗长的帮助说明文档、参数说明与典型启动示例迁移至独立模块 `bin/help.sh`（`show_cli_help()` 函数），彻底净化主脚本结构。
+
+#### 10.9.2 自定义变量与配置解析独立模块 (`bin/config.sh`)
+将系统所有自定义变量、参数解析与持久化逻辑独立抽离并封装至 `bin/config.sh`：
+- **`init_default_configs()`**：声明并统一初始化端口（`PORT`, `FRONTEND_PORT`）、超级管理员账密（`ADMIN_USERNAME`, `ADMIN_PASSWORD` 等）、SNI 匹配域名、Nginx 路径以及全套数据库连接参数；
+- **`parse_cli_args "$@"`**：专职承接所有命令行参数循环解析（包括 `-p`, `-u`, `-P`, `-d`, `-m`, `--db-*`, `--reconfig`, `-y` 等）；
+- **`apply_and_save_configs()`**：对用户显式传入的自定义参数进行校验，并自动调用 `update_env_var` 持久化同步写入 `.env` 文件；
+- **`export_runtime_vars()`**：统一向后置运行环境导出 Docker Compose 所需的核心环境变量。
