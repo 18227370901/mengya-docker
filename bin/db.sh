@@ -187,10 +187,12 @@ choose_db_mode() {
     fi
 
     # ===== 定时任务 / 免交互判定逻辑 =====
-    # 1. restart 命令：100% 天然免交互，绝对不打扰定时任务
-    if [ "$CMD" = "restart" ] || [ "$CMD" = "stop" ] || [ "$CMD" = "status" ] || [ "$CMD" = "logs" ] || [ "$CMD" = "down" ]; then
-        DB_MODE="${DB_MODE:-$rec_mode}"
-        return 0
+    # 1. restart / stop / status / logs / down 等管理维护命令：若未显式指定 --reconfig，则天然免交互，绝不打扰定时任务
+    if [ "$RECONFIG_DB" != "1" ]; then
+        if [ "$CMD" = "restart" ] || [ "$CMD" = "stop" ] || [ "$CMD" = "status" ] || [ "$CMD" = "logs" ] || [ "$CMD" = "down" ]; then
+            DB_MODE="${DB_MODE:-$rec_mode}"
+            return 0
+        fi
     fi
 
     # 2. 已有配置且未显式指定 --reconfig：静默沿用已保存配置
@@ -198,8 +200,16 @@ choose_db_mode() {
         return 0
     fi
 
-    # 3. 非交互式终端环境 (如 Cron、Systemd、CI/CD、无 TTY)：自动采用推荐模式，绝不挂起进程
-    if [ "$NON_INTERACTIVE" = "1" ] || [ ! -t 0 ]; then
+    # 3. 显式指定 -y / --yes / --non-interactive：直接采用推荐模式并同步
+    if [ "$NON_INTERACTIVE" = "1" ]; then
+        DB_MODE="${DB_MODE:-$rec_mode}"
+        update_env_var "DB_MODE" "$DB_MODE"
+        echo -e "\033[0;36m[免交互自愈] 显式指定 -y/--non-interactive，已自动采用智能推荐模式: $DB_MODE ($rec_reason)\033[0m"
+        return 0
+    fi
+
+    # 4. 定时任务 / 无TTY 环境（且未显式指定 --reconfig）：自动采用推荐模式，绝不挂起进程
+    if [ "$RECONFIG_DB" != "1" ] && [ ! -t 0 ]; then
         DB_MODE="${DB_MODE:-$rec_mode}"
         update_env_var "DB_MODE" "$DB_MODE"
         echo -e "\033[0;36m[免交互自愈] 检测到处于非交互环境/定时任务，已自动采用智能推荐模式: $DB_MODE ($rec_reason)\033[0m"
@@ -212,6 +222,7 @@ choose_db_mode() {
     echo "  萌芽（mengya-docker）环境与数据库部署模式检测"
     echo "========================================================================"
     echo "  [硬件检测] 宿主机总内存: ${ram_mb:-未知} MB"
+    echo "  [连接配置] 当前参数 -> 用户: ${POSTGRES_USER:-mengya} | 库名: ${POSTGRES_DB:-mengya} | 端口: ${POSTGRES_PORT:-5432} | 密码: ${POSTGRES_PASSWORD:+******}"
     if [ -n "$running_pg_list" ]; then
         echo -e "  [运行实例] \033[0;32m检测到正在运行的 PostgreSQL 容器: [$running_pg_list]\033[0m"
     else
@@ -256,6 +267,8 @@ choose_db_mode() {
     esac
 
     update_env_var "DB_MODE" "$DB_MODE"
+    RECONFIG_DB=0
+    export RECONFIG_DB
     echo -e "\033[0;32m[配置已保存] 数据库模式已设置为: $DB_MODE (已同步写入 .env)\033[0m"
 }
 
@@ -351,7 +364,13 @@ END
                 echo -e "\033[1;33m  [提示] 目标容器 $SHARED_PG_CONTAINER 当前未在运行中，请确保该容器可正常访问。\033[0m"
             fi
 
-            DATABASE_URL="postgresql://${pg_user}:${pg_pass}@${SHARED_PG_CONTAINER}:5432/${pg_db}"
+            local pg_port="${POSTGRES_PORT:-5432}"
+            local pg_host="${POSTGRES_HOST:-$SHARED_PG_CONTAINER}"
+            if [ -n "$CUSTOM_DATABASE_URL" ]; then
+                DATABASE_URL="$CUSTOM_DATABASE_URL"
+            else
+                DATABASE_URL="postgresql://${pg_user}:${pg_pass}@${pg_host}:${pg_port}/${pg_db}"
+            fi
             export DATABASE_URL
             update_env_var "DATABASE_URL" "$DATABASE_URL"
             update_env_var "COMPOSE_FILE" "docker-compose.yml"
@@ -360,7 +379,16 @@ END
             echo "==> 数据库部署模式: [3] 独立专属 PostgreSQL 容器 (${DB_CONTAINER_NAME})"
             choose_db_image
             check_db_volume_compatibility
-            DATABASE_URL="postgresql://${POSTGRES_USER:-mengya}:${POSTGRES_PASSWORD:-mengya123}@db:5432/${POSTGRES_DB:-mengya}"
+            local pg_user="${POSTGRES_USER:-mengya}"
+            local pg_pass="${POSTGRES_PASSWORD:-mengya123}"
+            local pg_db="${POSTGRES_DB:-mengya}"
+            local pg_port="${POSTGRES_PORT:-5432}"
+            local pg_host="${POSTGRES_HOST:-db}"
+            if [ -n "$CUSTOM_DATABASE_URL" ]; then
+                DATABASE_URL="$CUSTOM_DATABASE_URL"
+            else
+                DATABASE_URL="postgresql://${pg_user}:${pg_pass}@${pg_host}:${pg_port}/${pg_db}"
+            fi
             export DATABASE_URL
             update_env_var "DATABASE_URL" "$DATABASE_URL"
             update_env_var "COMPOSE_FILE" "docker-compose.yml:docker-compose.db.yml"
@@ -455,7 +483,13 @@ show_db_reconfig_guide() {
     echo "     --reconfig | --reconfig-db           强制唤醒硬件感知探针与交互决策菜单（保留其他已有配置）"
     echo "     -m, --mode <sqlite|shared|dedicated> 命令行显式指定数据库模式并自动同步持久化至 .env"
     echo "     --shared-pg <容器名>                 指定共享的宿主机 PostgreSQL 容器名（shared 模式使用）"
-    echo "     -y, --yes | --non-interactive        非交互/定时任务模式（若未配置自动采用智能推荐，绝不阻塞）"
+    echo "     -y, --yes | --non-interactive        非交互/定时任务模式（若未配置自动采用智能推荐，绝不阻塞）
+     --db-user <用户名>                   自定义 PostgreSQL 用户名（默认: mengya）
+     --db-pass <密码>                     自定义 PostgreSQL 密码（默认: mengya123）
+     --db-name <库名/实例名>              自定义 PostgreSQL 数据库名（默认: mengya）
+     --db-port <端口>                     自定义 PostgreSQL 连接端口（默认: 5432）
+     --db-host <主机地址>                 自定义 PostgreSQL 主机地址（默认: db 或 共享容器名）
+     --database-url <完整URL>             直接指定完整 DATABASE_URL 连接串"
     echo ""
     echo "  3. 首次使用与再次重新选择方式："
     echo "     [方式一] 命令行显式重配（强烈推荐，最安全便捷）："

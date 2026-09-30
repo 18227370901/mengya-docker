@@ -302,6 +302,12 @@ CUSTOM_DOMAIN=""
 CUSTOM_DB_IMAGE=""
 CUSTOM_DB_MODE=""
 CUSTOM_SHARED_PG=""
+CUSTOM_DB_USER=""
+CUSTOM_DB_PASS=""
+CUSTOM_DB_NAME=""
+CUSTOM_DB_PORT=""
+CUSTOM_DB_HOST=""
+CUSTOM_DATABASE_URL=""
 RECONFIG_DB=0
 NON_INTERACTIVE=0
 DO_BUILD=0
@@ -337,6 +343,30 @@ while [ $# -gt 0 ]; do
             ;;
         --shared-pg|--shared-container)
             CUSTOM_SHARED_PG="$2"
+            shift 2
+            ;;
+        --db-user|--db-username)
+            CUSTOM_DB_USER="$2"
+            shift 2
+            ;;
+        --db-pass|--db-password)
+            CUSTOM_DB_PASS="$2"
+            shift 2
+            ;;
+        --db-name|--db-database)
+            CUSTOM_DB_NAME="$2"
+            shift 2
+            ;;
+        --db-port)
+            CUSTOM_DB_PORT="$2"
+            shift 2
+            ;;
+        --db-host)
+            CUSTOM_DB_HOST="$2"
+            shift 2
+            ;;
+        --database-url)
+            CUSTOM_DATABASE_URL="$2"
             shift 2
             ;;
         --reconfig|--reconfig-db)
@@ -387,7 +417,13 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-[ -z "$CMD" ] && CMD="help"
+if [ -z "$CMD" ]; then
+    if [ "$RECONFIG_DB" = "1" ]; then
+        CMD="reconfig"
+    else
+        CMD="help"
+    fi
+fi
 
 # 应用自定义参数并持久化至 .env
 if [ -n "$CUSTOM_PORT" ]; then
@@ -439,6 +475,42 @@ if [ -n "$CUSTOM_SHARED_PG" ]; then
     echo -e "\033[0;32m[配置] 共享 PostgreSQL 容器已指定为: $CUSTOM_SHARED_PG (已同步至 .env)\033[0m"
 fi
 
+if [ -n "$CUSTOM_DB_USER" ]; then
+    POSTGRES_USER="$CUSTOM_DB_USER"
+    update_env_var "POSTGRES_USER" "$CUSTOM_DB_USER"
+    echo -e "\033[0;32m[配置] 数据库用户名已设置为: $CUSTOM_DB_USER (已同步至 .env)\033[0m"
+fi
+
+if [ -n "$CUSTOM_DB_PASS" ]; then
+    POSTGRES_PASSWORD="$CUSTOM_DB_PASS"
+    update_env_var "POSTGRES_PASSWORD" "$CUSTOM_DB_PASS"
+    echo -e "\033[0;32m[配置] 数据库连接密码已更新 (已同步至 .env)\033[0m"
+fi
+
+if [ -n "$CUSTOM_DB_NAME" ]; then
+    POSTGRES_DB="$CUSTOM_DB_NAME"
+    update_env_var "POSTGRES_DB" "$CUSTOM_DB_NAME"
+    echo -e "\033[0;32m[配置] 数据库名/实例名已设置为: $CUSTOM_DB_NAME (已同步至 .env)\033[0m"
+fi
+
+if [ -n "$CUSTOM_DB_PORT" ]; then
+    POSTGRES_PORT="$CUSTOM_DB_PORT"
+    update_env_var "POSTGRES_PORT" "$CUSTOM_DB_PORT"
+    echo -e "\033[0;32m[配置] 数据库连接端口已设置为: $CUSTOM_DB_PORT (已同步至 .env)\033[0m"
+fi
+
+if [ -n "$CUSTOM_DB_HOST" ]; then
+    POSTGRES_HOST="$CUSTOM_DB_HOST"
+    update_env_var "POSTGRES_HOST" "$CUSTOM_DB_HOST"
+    echo -e "\033[0;32m[配置] 数据库主机地址已设置为: $CUSTOM_DB_HOST (已同步至 .env)\033[0m"
+fi
+
+if [ -n "$CUSTOM_DATABASE_URL" ]; then
+    DATABASE_URL="$CUSTOM_DATABASE_URL"
+    update_env_var "DATABASE_URL" "$CUSTOM_DATABASE_URL"
+    echo -e "\033[0;32m[配置] 数据库连接串 DATABASE_URL 已直接指定 (已同步至 .env)\033[0m"
+fi
+
 # 导出供 docker compose 插值
 export FRONTEND_PORT
 export ADMIN_USERNAME
@@ -453,6 +525,18 @@ export DB_CONTAINER_NAME
 export SHARED_PG_CONTAINER
 export RECONFIG_DB
 export NON_INTERACTIVE
+export POSTGRES_USER
+export POSTGRES_PASSWORD
+export POSTGRES_DB
+export POSTGRES_PORT
+export POSTGRES_HOST
+export DATABASE_URL
+export CUSTOM_DB_USER
+export CUSTOM_DB_PASS
+export CUSTOM_DB_NAME
+export CUSTOM_DB_PORT
+export CUSTOM_DB_HOST
+export CUSTOM_DATABASE_URL
 
 case "$CMD" in
     start)
@@ -530,14 +614,22 @@ case "$CMD" in
         echo "  --no-cache                   构建时禁用缓存并彻底重新编译镜像"
         echo "  --db-image <IMAGE>           指定数据库镜像（如 pgvector/pgvector:pg18 或 postgres:15-alpine）"
         echo "  -m, --mode <MODE>            显式指定数据库模式 (sqlite | shared | dedicated)"
-        echo "  --reconfig, --reconfig-db    重新唤起数据库决策向导，交互式切换数据库存储模式"
+        echo "  --reconfig, --reconfig-db    重新唤起数据库决策向导，交互式切换数据库存储模式
+  --db-user <USER>             自定义 PostgreSQL 用户名（默认 mengya）
+  --db-pass <PASS>             自定义 PostgreSQL 密码（默认 mengya123）
+  --db-name <DB>               自定义 PostgreSQL 数据库名/实例名（默认 mengya）
+  --db-port <PORT>             自定义 PostgreSQL 连接端口（默认 5432）
+  --db-host <HOST>             自定义 PostgreSQL 主机地址（默认 db 或 共享容器名）
+  --database-url <URL>         直接指定完整 DATABASE_URL 连接串"
         echo "  --shared-pg <CONTAINER>      指定共享模式下的宿主机 PostgreSQL 容器名称"
         echo "  -y, --yes                    非交互式模式，免去任何等待（Cron / 重启自动采用推荐值）"
         echo ""
         echo "实用启动示例："
         echo "  ./run.sh start                                 # 默认启动（端口 5174，管理员 admin / admin123）"
         echo "  ./run.sh start -p 8080                         # 自定义以 8080 端口启动"
-        echo "  ./run.sh start --reconfig                      # 重新选择数据库模式（独立PG / 共享PG / SQLite）"
+        echo "  ./run.sh --reconfig                            # 直接唤醒交互式数据库模式选择向导
+  ./run.sh start --reconfig                      # 重新选择数据库模式（独立PG / 共享PG / SQLite）
+  ./run.sh start --db-user myuser --db-pass mypass # 自定义数据库连接账号与密码启动"
         echo "  ./run.sh start -m dedicated                    # 直接以独立专属 PG 模式启动并保存至 .env"
         echo "  ./run.sh start -m shared                       # 直接以共享宿主机已有 PG 模式启动并保存至 .env"
         echo "  ./run.sh start -p 5200 -u superadmin -P Pass123 # 自定义端口与管理员账密启动"

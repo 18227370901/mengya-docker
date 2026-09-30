@@ -940,3 +940,24 @@ done
    - 彻底移除 `pgvector-18` 硬编码；
    - 动态嗅探宿主机运行中 PG 容器；若未运行但存在已停止容器则尝试拉起自愈；
    - 宿主机完全无 PG 容器时，给出明确诊断并智能平滑降级（Docker版降级为独立PG，传统版降级为SQLite），保障服务可用性。
+
+### 10.8 数据库交互式重配链路修复与全参连接自定义规范 (v1.45)
+
+#### 10.8.1 架构设计背景与根因治理
+针对执行 `./run.sh` 配合 `--reconfig` / `--reconfig-db` 时未弹出数据库选择向导的问题，经端到端全链路审计，治理了以下 4 项连锁缺陷：
+1. **参数解析缺省回退缺陷**：当仅输入 `./run.sh --reconfig` 时，因未指定子命令触发 `[ -z "$CMD" ] && CMD="help"`，导致误入帮助输出而跳过向导。修复后自动识别 `--reconfig` 并赋予 `CMD="reconfig"`；
+2. **restart 免交互过早拦截**：`choose_db_mode()` 的第 1 步免交互判定中 `if [ "$CMD" = "restart" ]` 优先于 `RECONFIG_DB` 判定，导致 `./run.sh restart --reconfig` 直接静默退出。修复为仅在 `[ "$RECONFIG_DB" != "1" ]` 时生效；
+3. **无 TTY 环境检测误杀**：原 `if [ "$NON_INTERACTIVE" = "1" ] || [ ! -t 0 ]` 将子 shell、IDE 终端与管道误判为非交互定时任务。修复后将后台自愈与用户显式指令解耦，显式传入 `--reconfig` 时强制呈现交互式决策菜单；
+4. **传统版端口占用提早退出**：`setup_db_for_mode` 调用时机前置到 `start)` 与 `restart)` 入口，杜绝因服务已占用端口导致的提早 return。
+
+#### 10.8.2 全参数连接信息自定义与持久化规范
+为满足各类复杂部署场景下对数据库账号权限、自定义实例、指定端口与远程主机的高级需求，系统在 `run.sh` 与 `bin/db.sh` 中全面支持以下命令行选项与自动持久化配置：
+- `--db-user <USER>`: 自定义 PostgreSQL 用户名（默认: `mengya` / `mengya_local`）；
+- `--db-pass <PASS>`: 自定义 PostgreSQL 连接密码（默认: `mengya123`）；
+- `--db-name <DB>`: 自定义 PostgreSQL 数据库名/实例名（默认: `mengya` / `mengya_local`）；
+- `--db-port <PORT>`: 自定义 PostgreSQL 端口（默认: `5432` / `5433`）；
+- `--db-host <HOST>`: 自定义 PostgreSQL 主机地址（默认: `db` / 共享容器名 / `127.0.0.1`）；
+- `--database-url <URL>`: 直接覆盖指定完整的标准连接串（如 `postgresql://user:pass@host:port/dbname`）。
+
+所有参数均自动幂等写入当前目录 `.env`，并在容器启动或本地启动时组装为标准 `DATABASE_URL` 注入 Django 与 Docker Compose。
+
