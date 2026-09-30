@@ -77,42 +77,44 @@ WSGI_APPLICATION = "config.wsgi.application"
 
 # ===== 数据库 =====
 DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
-use_pg = False
-if DATABASE_URL:
+
+# 判断是否显式使用 PostgreSQL（基于协议头 postgresql:// 或 postgres://）
+is_pg_scheme = DATABASE_URL.startswith("postgresql://") or DATABASE_URL.startswith("postgres://")
+
+if is_pg_scheme:
     p = urlparse(DATABASE_URL)
     db_host = p.hostname or "localhost"
     db_port = p.port or 5432
-    # 探测 PostgreSQL 目标地址与端口是否可连通（超时 1.5 秒）
-    # 若在非容器宿主机环境且配置了 db 主机名，或配置的 PostgreSQL 服务未启动，自动安全回退 SQLite
-    try:
-        ip = socket.gethostbyname(db_host)
-        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.settimeout(1.5)
-        res = s.connect_ex((ip, int(db_port)))
-        s.close()
-        if res == 0:
-            use_pg = True
-    except Exception:
-        use_pg = False
-
-    if use_pg:
-        DATABASES = {
-            "default": {
-                "ENGINE": "django.db.backends.postgresql",
-                "NAME": p.path.lstrip("/"),
-                "USER": p.username,
-                "PASSWORD": p.password,
-                "HOST": db_host,
-                "PORT": db_port,
-                "CONN_MAX_AGE": int(os.getenv("DB_CONN_MAX_AGE", "60")),
-            }
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": p.path.lstrip("/"),
+            "USER": p.username,
+            "PASSWORD": p.password,
+            "HOST": db_host,
+            "PORT": db_port,
+            "CONN_MAX_AGE": int(os.getenv("DB_CONN_MAX_AGE", "60")),
         }
-
-if not use_pg:
+    }
+else:
+    # 动态获取当前项目的绝对路径，不假设任何外部固定路径
+    # 在当前项目根路径下动态新建/获取 data 目录，规范存储 SQLite 数据
+    sqlite_env = os.getenv("SQLITE_PATH", "").strip()
+    if sqlite_env:
+        p_obj = Path(sqlite_env)
+        if not p_obj.is_absolute():
+            sqlite_file = (BASE_DIR / p_obj).resolve()
+        else:
+            sqlite_file = p_obj.resolve()
+        sqlite_file.parent.mkdir(parents=True, exist_ok=True)
+    else:
+        data_dir = BASE_DIR / "data"
+        data_dir.mkdir(parents=True, exist_ok=True)
+        sqlite_file = data_dir / "db.sqlite3"
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / "db.sqlite3",
+            "NAME": sqlite_file,
         }
     }
 # ===== 认证 / JWT =====

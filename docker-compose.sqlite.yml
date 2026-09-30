@@ -1,7 +1,7 @@
 # ============================================================
 # 萌芽平台 - SQLite 本地化单文件存储扩展编排 (SQLite Local DB)
-# 内存极简: 零额外数据库容器，整站常驻内存约 50~60MB
-# 持久化: 挂载宿主机本地 ./data 目录至容器内部
+# 内存收益: 零额外数据库容器，整站常驻内存约 50~60MB
+# 持久化: 宿主机当前项目 ./data 目录挂载进容器内部
 # ============================================================
 
 services:
@@ -11,4 +11,10 @@ services:
       DATABASE_URL: ""
     volumes:
       - ./data:/app/data
-      - ./data/db.sqlite3:/app/db.sqlite3
+
+  worker:
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: ""
+    volumes:
+      - ./data:/app/data

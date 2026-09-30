@@ -306,6 +306,7 @@ export_runtime_vars() {
     export POSTGRES_HOST
     export DATABASE_URL
     export SQLITE_PATH
+    export COMPOSE_FILE
     export RECONFIG_DB
     export NON_INTERACTIVE
 

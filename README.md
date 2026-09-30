@@ -675,3 +675,33 @@ edis、worker、db）严格统一配置
 estart: unless-stopped；
 - 禁止使用 lways 策略，避免运维主动 stop 或排查故障时无休止重启引发死锁与资源耗尽；
 - 兼顾突发故障自愈与运维主动停机控制。
+
+### 13. 根除静默降级SQLite缺陷、项目级动态data存储与DB就绪等待机制 (v1.51)
+
+#### 13.1 故障现象与根本原因深度剖析
+在 Docker 版本启动与数据库切换过程中，曾出现报错：
+`
+File ".../django/db/backends/sqlite3/base.py", line 180, in get_new_connection
+    conn = Database.connect(**conn_params)
+django.db.utils.OperationalError: unable to open database file
+`
+经深度链路排查，确定根本原因如下：
+1. **静默回退（Silent Degradation）隐患**：原 config/settings.py 内置了 1.5 秒 Socket 连通性探测及静默回退逻辑。当数据库容器尚未完成内部初始化或网络出现瞬态抖动时，Django 探测超时直接静默将数据库后端降级为 SQLite；
+2. **共享 PG 模式下主机名解析未对齐**：在 shared 模式下，POSTGRES_HOST 曾默认继承 "db" 而非实际运行中的共享容器名（如 mengya_local-pg），导致在容器内解析主机名失败并触发静默降级；
+3. **Docker 卷挂载单文件目录误建陷阱**：在 docker-compose.sqlite.yml 中原挂载 - ./data/db.sqlite3:/app/db.sqlite3，当宿主机本地尚不存在 db.sqlite3 实体文件时，Docker 引擎会自动在宿主机将 data/db.sqlite3 创建为一个**目录**，导致 SQLite 引擎无法以文件方式打开并抛出异常；
+4. **路径硬编码缺陷**：不应假设外部存在固定 /app 路径，必须自适应动态获取当前工程根目录并规范管理。
+
+#### 13.2 根治改造与架构规范
+1. **彻底废除静默降级，确立协议头强类型驱动**：
+   - 在 config/settings.py 中彻底移除 1.5 秒 Socket 探测与静默回退逻辑；
+   - 凡 DATABASE_URL 以 postgresql:// 或 postgres:// 开头，严格且唯一使用 django.db.backends.postgresql，连接失败立即暴露明确的数据库异常日志，杜绝暗中降级；
+2. **前置健康等待探针 (wait_for_db.py)**：
+   - 引入独立的 wait_for_db.py 探针脚本，在执行 manage.py migrate 之前探测目标 PostgreSQL 服务端口连通状态（默认最大等待 30 秒）；
+   - 平滑渡过 PostgreSQL 容器冷启动与 Docker 内网 DNS 注册的时序抖动，杜绝闪退；
+3. **项目级动态 data 目录规范化存储**：
+   - 在 config/settings.py 中动态获取当前工程绝对路径（BASE_DIR），自动检测并创建工程根目录下的 data 目录（BASE_DIR / "data"）；
+   - SQLite 数据库文件统一指向 BASE_DIR / "data" / "db.sqlite3"；
+   - docker-compose.sqlite.yml 调整为目录级映射 - ./data:/app/data，彻底根除 Docker 误建目录陷阱，并同步挂载至 worker 容器保障数据完全一致；
+4. **启动脚本自愈与网络环境强化**：
+   - 在 in/db.sh 中增加自愈逻辑：若检测到 data/db.sqlite3 被误建为目录，自动执行安全清理与恢复；
+   - 完善 in/config.sh 与 in/docker.sh 对 COMPOSE_FILE 变量的统一生命周期管理与导出。

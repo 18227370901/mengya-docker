@@ -265,15 +265,22 @@ setup_db_for_mode() {
     case "$DB_MODE" in
         sqlite)
             echo "==> 数据库部署模式: [1] SQLite 本地化单文件存储"
-            echo "  [模式特性] 零额外 PG 容器，整站常驻约 50MB 内存，数据持久化于 $SQLITE_PATH"
-            mkdir -p "$(dirname "$SQLITE_PATH")"
-            if [ -f "$SCRIPT_DIR/db.sqlite3" ] && [ ! -f "$SQLITE_PATH" ]; then
-                cp "$SCRIPT_DIR/db.sqlite3" "$SQLITE_PATH" 2>/dev/null || true
+            local data_dir="$SCRIPT_DIR/data"
+            mkdir -p "$data_dir"
+            if [ -d "$data_dir/db.sqlite3" ]; then
+                echo -e "\033[1;33m  [自愈修复] 检测到 $data_dir/db.sqlite3 被误建为目录，正在安全清理恢复...\033[0m"
+                rm -rf "$data_dir/db.sqlite3"
             fi
+            SQLITE_PATH="$data_dir/db.sqlite3"
+            export SQLITE_PATH
+            update_env_var "SQLITE_PATH" "./data/db.sqlite3"
+            echo "  [模式特性] 零额外 PG 容器，整站常驻约 50MB 内存，数据持久化于当前项目 data/db.sqlite3"
             DATABASE_URL=""
             export DATABASE_URL
             update_env_var "DATABASE_URL" ""
-            update_env_var "COMPOSE_FILE" "docker-compose.yml:docker-compose.sqlite.yml"
+            COMPOSE_FILE="docker-compose.yml:docker-compose.sqlite.yml"
+            export COMPOSE_FILE
+            update_env_var "COMPOSE_FILE" "$COMPOSE_FILE"
             ;;
         shared)
             echo "==> 数据库部署模式: [2] 共享已有 PostgreSQL 实例"
@@ -365,15 +372,26 @@ END
             fi
 
             local pg_port="$POSTGRES_PORT"
-            local pg_host="${POSTGRES_HOST:-$SHARED_PG_CONTAINER}"
+            local pg_host="$SHARED_PG_CONTAINER"
+            if [ -n "$CUSTOM_DB_HOST" ]; then
+                pg_host="$CUSTOM_DB_HOST"
+            elif [ -n "$POSTGRES_HOST" ] && [ "$POSTGRES_HOST" != "db" ]; then
+                pg_host="$POSTGRES_HOST"
+            fi
+            POSTGRES_HOST="$pg_host"
+            export POSTGRES_HOST
+            update_env_var "POSTGRES_HOST" "$pg_host"
+
             if [ -n "$CUSTOM_DATABASE_URL" ]; then
                 DATABASE_URL="$CUSTOM_DATABASE_URL"
-            elif [ -z "$DATABASE_URL" ]; then
+            else
                 DATABASE_URL="postgresql://${pg_user}:${pg_pass}@${pg_host}:${pg_port}/${pg_db}"
             fi
             export DATABASE_URL
             update_env_var "DATABASE_URL" "$DATABASE_URL"
-            update_env_var "COMPOSE_FILE" "docker-compose.yml"
+            COMPOSE_FILE="docker-compose.yml"
+            export COMPOSE_FILE
+            update_env_var "COMPOSE_FILE" "$COMPOSE_FILE"
             ;;
         dedicated|*)
             echo "==> 数据库部署模式: [3] 独立专属 PostgreSQL 容器 (${DB_CONTAINER_NAME})"
@@ -383,15 +401,24 @@ END
             local pg_pass="$POSTGRES_PASSWORD"
             local pg_db="$POSTGRES_DB"
             local pg_port="$POSTGRES_PORT"
-            local pg_host="${POSTGRES_HOST:-db}"
+            local pg_host="db"
+            if [ -n "$CUSTOM_DB_HOST" ]; then
+                pg_host="$CUSTOM_DB_HOST"
+            fi
+            POSTGRES_HOST="$pg_host"
+            export POSTGRES_HOST
+            update_env_var "POSTGRES_HOST" "$pg_host"
+
             if [ -n "$CUSTOM_DATABASE_URL" ]; then
                 DATABASE_URL="$CUSTOM_DATABASE_URL"
-            elif [ -z "$DATABASE_URL" ]; then
+            else
                 DATABASE_URL="postgresql://${pg_user}:${pg_pass}@${pg_host}:${pg_port}/${pg_db}"
             fi
             export DATABASE_URL
             update_env_var "DATABASE_URL" "$DATABASE_URL"
-            update_env_var "COMPOSE_FILE" "docker-compose.yml:docker-compose.db.yml"
+            COMPOSE_FILE="docker-compose.yml:docker-compose.db.yml"
+            export COMPOSE_FILE
+            update_env_var "COMPOSE_FILE" "$COMPOSE_FILE"
             ;;
     esac
 }

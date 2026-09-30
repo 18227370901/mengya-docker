@@ -1683,6 +1683,25 @@ estart: unless-stopped；
       </tbody>
     </table>
   </div>
+
+  <div style="background:#fff;border-radius:8px;padding:24px;margin-bottom:24px;box-shadow:0 1px 3px rgba(0,0,0,0.05);border:1px solid #e2e8f0;">
+    <h3 style="color:#0f172a;font-size:18px;margin-top:0;border-bottom:2px solid #3b82f6;padding-bottom:8px;">10.13 根除静默降级SQLite缺陷、项目级动态data存储与DB就绪等待机制 (v1.51)</h3>
+    <h4 style="color:#1e293b;font-size:15px;margin-top:16px;">10.13.1 故障现象与根本原因深度剖析</h4>
+    <p style="color:#334155;line-height:1.6;">在 Docker 版本启动与数据库切换过程中，曾出现报错 <code>django.db.utils.OperationalError: unable to open database file</code>。核心原因包括：</p>
+    <ul style="color:#334155;line-height:1.6;">
+      <li><strong>静默回退隐患</strong>：原 <code>settings.py</code> 包含 1.5 秒 Socket 探测与静默降级逻辑，当 PG 容器在初始化或 DNS 尚未解析完成时，静默退化为 SQLite；</li>
+      <li><strong>共享 PG 主机名解析未对齐</strong>：<code>shared</code> 模式下 <code>POSTGRES_HOST</code> 曾继承 <code>db</code> 导致解析失败；</li>
+      <li><strong>Docker 挂载单文件目录误建陷阱</strong>：在 <code>docker-compose.sqlite.yml</code> 中挂载文件导致 Docker 将其误建为目录；</li>
+      <li><strong>路径硬编码缺陷</strong>：不应依赖服务器固定 <code>/app</code> 路径，必须动态获取工程路径。</li>
+    </ul>
+    <h4 style="color:#1e293b;font-size:15px;margin-top:16px;">10.13.2 根治改造与架构规范</h4>
+    <ul style="color:#334155;line-height:1.6;">
+      <li><strong>协议头强类型驱动</strong>：移除静默降级，凡 <code>postgresql://</code> 或 <code>postgres://</code> 协议头一律严格使用 PostgreSQL 引擎，报错直接暴露；</li>
+      <li><strong>前置就绪等待探针</strong>：新增 <code>wait_for_db.py</code>，在 <code>migrate</code> 执行前等待数据库端口就绪（最大 30 秒），消除冷启动时序抖动；</li>
+      <li><strong>项目级动态 data 存储</strong>：在 <code>settings.py</code> 中动态获取 <code>BASE_DIR</code> 并自动创建 <code>BASE_DIR / "data"</code>，SQLite 统一存放在 <code>data/db.sqlite3</code>；</li>
+      <li><strong>目录级安全挂载与自愈</strong>：<code>docker-compose.sqlite.yml</code> 改用目录挂载 <code>./data:/app/data</code>（backend 与 worker 均挂载），且 <code>bin/db.sh</code> 自动检测清理误建目录。</li>
+    </ul>
+  </div>
 </div>
 
 </body>

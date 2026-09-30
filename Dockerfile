@@ -26,4 +26,4 @@ COPY . .
 EXPOSE 8000
 
 # 生产级 WSGI 运行规范：单 Worker + 4 轻量线程 (gthread)，彻底废除 runserver 磁盘轮询，待机 CPU 直降至 0%
-CMD ["sh", "-c", "python manage.py migrate && python manage.py init_data --skip-if-exists && python manage.py ensure_admin && python manage.py invalidate_tokens && gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 1 --threads 4 --worker-class gthread --max-requests 1000 --max-requests-jitter 100 --timeout 60"]
+CMD ["sh", "-c", "python wait_for_db.py; python manage.py migrate && python manage.py init_data --skip-if-exists && python manage.py ensure_admin && python manage.py invalidate_tokens && gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 1 --threads 4 --worker-class gthread --max-requests 1000 --max-requests-jitter 100 --timeout 60"]
