@@ -43,7 +43,7 @@ init_default_configs() {
     # 用户可在此一站式定义所有数据库默认参数
     # ============================================================
     APP_NAME="${APP_NAME:-mengya_docker}"
-    DB_MODE="${DB_MODE:-dedicated}"                     # 数据库模式: sqlite | shared | dedicated
+    DB_MODE="${DB_MODE:-shared}"                        # 数据库模式: sqlite | shared | dedicated (Docker版默认推荐 shared)
     DEFAULT_PG_IMAGE="${DEFAULT_PG_IMAGE:-postgres:15-alpine}" # 内置默认 PG 镜像（本地无现存镜像时自动拉取）
     DB_IMAGE="${DB_IMAGE:-}"                           # 指定 PG 镜像（为空时智能探针优先复用本地已有镜像）
     DB_PULL_POLICY="${DB_PULL_POLICY:-if_not_present}" # 镜像拉取策略: never | if_not_present

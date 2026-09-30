@@ -614,7 +614,7 @@ Docker 版现已与传统版最新功能（v1.13 ~ v1.17）实现 100% 深度同
 | 变量名 | 默认值 | 作用与说明 |
 | :--- | :--- | :--- |
 | `APP_NAME` | `mengya_docker` | 应用与容器标识命名空间 |
-| `DB_MODE` | `dedicated` | 数据库部署模式 (`dedicated` / `shared` / `sqlite`) |
+| `DB_MODE` | `shared` | 数据库部署模式 (`shared` / `dedicated` / `sqlite`，默认首次推荐 `shared`) |
 | `DEFAULT_PG_IMAGE` | `postgres:15-alpine` | 内置默认 PG 镜像（本地无现存镜像时自动拉取） |
 | `DB_IMAGE` | `""` | 显式指定的 PG 镜像（为空时探针优先零下载复用本地已有镜像） |
 | `DB_PULL_POLICY` | `if_not_present` | 镜像拉取策略 (`never` / `if_not_present`) |

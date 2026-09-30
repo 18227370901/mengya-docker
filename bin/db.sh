@@ -158,23 +158,15 @@ choose_db_mode() {
         img_local_exists=1
     fi
 
-    # 智能推荐算法
-    local rec_mode="dedicated"
-    local rec_num=3
-    local rec_reason=""
+    # 智能推荐算法：Docker 版默认首次推荐共享已有 PostgreSQL 实例模式（shared）
+    local rec_mode="shared"
+    local rec_num=2
+    local rec_reason="Docker 版默认首次推荐共享已有 PostgreSQL 实例模式（复用宿主机已有 PG 容器并自动创建专属库与账号，零重复容器，立省 80MB+ 内存且数据严格隔离）"
 
     if [ -n "$running_pg_list" ]; then
         rec_mode="shared"
         rec_num=2
-        rec_reason="检测到宿主机已存在运行中的 PostgreSQL 容器 [$running_pg_list]，推荐共用该实例，自动创建专属库与账号，立省 80MB+ 内存且零多余容器！"
-    elif [ "$ram_mb" -gt 0 ] && [ "$ram_mb" -le 1536 ]; then
-        rec_mode="sqlite"
-        rec_num=1
-        rec_reason="服务器物理内存较紧凑 (${ram_mb} MB <= 1.5GB)，推荐本地 SQLite 单文件模式，整站常驻约 50MB 内存，彻底杜绝 OOM 风险！"
-    else
-        rec_mode="dedicated"
-        rec_num=3
-        rec_reason="服务器硬件资源充足 (${ram_mb} MB)，推荐独立专属 PostgreSQL 容器 (${DB_CONTAINER_NAME})，数据独占且已应用 80MB 轻量化微服务调优！"
+        rec_reason="Docker 版默认推荐共享模式：检测到宿主机已存在运行中的 PostgreSQL 容器 [$running_pg_list]，推荐共用该实例，自动创建专属库与账号，立省 80MB+ 内存且零多余容器！"
     fi
 
     # ===== 定时任务 / 免交互判定逻辑 =====
@@ -484,9 +476,9 @@ show_db_reconfig_guide() {
     echo -e "\033[1;36m========================================================================\033[0m"
     echo "  1. 支持的 3 大数据库模式（通过 .env 中 DB_MODE 变量记录）："
     echo "     - sqlite    : 容器挂载本地 SQLite 单文件，完全零额外 DB 容器，与传统版独立物理隔离。"
-    echo "     - shared    : [宿主机已运行 PG 容器时推荐] 共享宿主机已有的 PostgreSQL 容器，"
+    echo "     - shared    : [Docker版默认推荐] 共享宿主机已有的 PostgreSQL 容器，"
     echo "                   自动幂等创建当前应用专属数据库（$POSTGRES_DB）与账号，零多余容器，节约 80MB+ 内存。"
-    echo "     - dedicated : [Docker版默认推荐] 独立专属 PostgreSQL 容器（$DB_CONTAINER_NAME），内部网络互联，"
+    echo "     - dedicated : 独立专属 PostgreSQL 容器（$DB_CONTAINER_NAME），内部网络互联，"
     echo "                   严格就地复用本地已有镜像，严禁网络拉取。"
     echo ""
     echo "  2. 数据库配置相关命令行参数："

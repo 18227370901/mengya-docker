@@ -990,7 +990,7 @@ done
 #### 10.10.2 一站式归集变量矩阵清单
 在 `mengya-docker/bin/config.sh` 中统一声明并维护的核心数据库变量如下：
 - `APP_NAME`：应用命名空间（默认 `mengya_docker`）；
-- `DB_MODE`：数据库部署模式（Docker 版默认 `dedicated`，可选 `shared` / `sqlite`）；
+- `DB_MODE`：数据库部署模式（Docker 版默认首次推荐 `shared`，可选 `dedicated` / `sqlite`）；
 - `DEFAULT_PG_IMAGE`：内置默认 PG 镜像版本（默认 `postgres:15-alpine`）；
 - `DB_IMAGE`：用户指定或探针自适应复用的目标 PG 镜像；
 - `DB_PULL_POLICY`：镜像拉取策略（就地复用为 `never`，按需下载为 `if_not_present`）；
