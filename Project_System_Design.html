@@ -1704,5 +1704,20 @@ estart: unless-stopped；
   </div>
 </div>
 
+
+<div class="card" style="margin-top:20px;border-left:4px solid #4f46e5;padding:16px;background:var(--bg-card, #fff);">
+  <h3 style="margin-top:0;color:#4f46e5;">10.14 独立专属 PG 默认镜像锁定 (PG15) 与宿主机越界探测解耦自愈规范 (v1.52)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.14.1 架构缺陷与根因剖析</h4>
+  <p style="color:#334155;line-height:1.6;">治理了 <code>detect_best_pg_image()</code> 越界偷取宿主机其他运行容器镜像、扫描规则优先匹配 pgvector、默认 PG15 优先权被架空以及 <code>.env</code> 误写死 <code>DB_IMAGE=pgvector/pgvector:pg18</code> 导致的永久锁死缺陷。</p>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.14.2 治理改造与技术规范</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>探针越界解耦</strong>：彻底移除从宿主机运行容器中偷取镜像逻辑，保障专属容器镜像纯洁性；</li>
+    <li><strong>优先级阶梯重构</strong>：本地 <code>postgres:15-alpine</code> &gt; 兼容官方 PG15 &gt; 官方轻量 alpine &gt; 兜底自动下载 <code>postgres:15-alpine</code>；</li>
+    <li><strong>配置纠偏机制</strong>：默认模式不污染 <code>.env</code>，自动纠偏清空历史残留的 <code>pg18/pgvector</code> 配置；</li>
+    <li><strong>容器与数据卷自愈</strong>：启动前校验已有容器镜像，不匹配则自动重建；跨大版本自动重置旧存储卷以防初始化崩溃；</li>
+    <li><strong>存储路径统一</strong>：PostgreSQL 数据目录统一规范为 <code>/var/lib/postgresql/data</code>。</li>
+  </ul>
+</div>
+
 </body>
 </html>

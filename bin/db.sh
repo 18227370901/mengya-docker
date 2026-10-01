@@ -40,61 +40,73 @@ detect_best_pg_image() {
     local local_imgs
     local_imgs=$(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null || true)
 
-    # 1. 优先复用宿主机正在运行的 PG 容器所使用的镜像
-    local running_c
-    running_c=$(detect_running_pg_containers | head -n 1)
-    if [ -n "$running_c" ]; then
-        local c_img
-        c_img=$(docker inspect --format='{{.Config.Image}}' "$running_c" 2>/dev/null || true)
-        if [ -n "$c_img" ]; then
-            echo "$c_img"
-            return 0
-        fi
-    fi
-
-    # 2. 优先扫描服务器本地已存在的任何可用 PG 镜像（杜绝不必要的网络下载）
-    local any_pg=""
-    # 优先复用本地已有的 postgres alpine 或 postgres 官方轻量镜像
-    any_pg=$(echo "$local_imgs" | grep -E "^postgres:.*alpine" | head -n 1)
-    if [ -z "$any_pg" ]; then
-        any_pg=$(echo "$local_imgs" | grep -E "^pgvector/pgvector:" | head -n 1)
-    fi
-    if [ -z "$any_pg" ]; then
-        any_pg=$(echo "$local_imgs" | grep -E "^postgres:" | grep -v "<none>" | head -n 1)
-    fi
-    if [ -z "$any_pg" ]; then
-        any_pg=$(echo "$local_imgs" | grep -E "(postgres|pgvector)" | grep -v "<none>" | head -n 1)
-    fi
-
-    if [ -n "$any_pg" ]; then
-        echo "$any_pg"
+    # 1. 优先检查本地是否存在内置默认镜像 (postgres:15-alpine)
+    if echo "$local_imgs" | grep -qx "$default_img"; then
+        echo "$default_img"
         return 0
     fi
 
-    # 3. 本地实在没有现存 PG 镜像时，才返回内置默认版本
+    # 2. 检查本地是否有兼容的官方 PG15 镜像 (postgres:15*)
+    local pg15_img
+    pg15_img=$(echo "$local_imgs" | grep -E "^postgres:15" | grep -v "<none>" | head -n 1)
+    if [ -n "$pg15_img" ]; then
+        echo "$pg15_img"
+        return 0
+    fi
+
+    # 3. 检查本地是否有官方轻量 alpine 镜像 (postgres:*alpine)
+    local alpine_img
+    alpine_img=$(echo "$local_imgs" | grep -E "^postgres:.*alpine" | grep -v "<none>" | head -n 1)
+    if [ -n "$alpine_img" ]; then
+        echo "$alpine_img"
+        return 0
+    fi
+
+    # 4. 兜底返回内置默认镜像 (postgres:15-alpine)
     echo "$default_img"
+}
+
+image_exists() {
+    local img="$1"
+    if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
+        return 1
+    fi
+    docker image inspect "$img" >/dev/null 2>&1
 }
 
 choose_db_image() {
     local default_img="$DEFAULT_PG_IMAGE"
     if ! docker info >/dev/null 2>&1; then
-        DB_IMAGE="${DB_IMAGE:-$default_img}"
+        DB_IMAGE="${CUSTOM_DB_IMAGE:-$default_img}"
         DB_PULL_POLICY="${DB_PULL_POLICY:-if_not_present}"
-        DB_DATA_DIR="${DB_DATA_DIR:-/var/lib/postgresql/data}"
+        DB_DATA_DIR="/var/lib/postgresql/data"
         export DB_IMAGE DB_PULL_POLICY DB_DATA_DIR
-        update_env_var "DB_IMAGE" "$DB_IMAGE"
+        if [ -n "$CUSTOM_DB_IMAGE" ]; then
+            update_env_var "DB_IMAGE" "$DB_IMAGE"
+        else
+            update_env_var "DB_IMAGE" ""
+        fi
         update_env_var "DB_PULL_POLICY" "$DB_PULL_POLICY"
         update_env_var "DB_DATA_DIR" "$DB_DATA_DIR"
         return 0
     fi
 
-    # 1. 判断是否属于用户显式自定义镜像（命令行 -i / --db-image 传入，或在 config.sh/.env 中显式指定）
+    # 1. 判断是否属于用户显式命令行自定义镜像 (--db-image / -i)
     local is_user_custom=0
     if [ -n "$CUSTOM_DB_IMAGE" ]; then
         DB_IMAGE="$CUSTOM_DB_IMAGE"
         is_user_custom=1
-    elif [ -n "$DB_IMAGE" ]; then
-        is_user_custom=1
+    else
+        # 自动纠偏：若 .env 残留历史误判的 pg18 / pgvector 镜像且用户未显式指定，自动重置清除
+        if [ -n "$DB_IMAGE" ] && echo "$DB_IMAGE" | grep -qiE "18|pgvector"; then
+            echo -e "\033[1;33m[配置纠偏] 检测到历史残留误判镜像 [$DB_IMAGE]，自动重置为内置默认 [$default_img]\033[0m"
+            DB_IMAGE=""
+            update_env_var "DB_IMAGE" ""
+        fi
+        # 若非历史误判且环境变量/配置文件显式定义了非默认镜像（用户手动在 .env 指定）
+        if [ -n "$DB_IMAGE" ] && [ "$DB_IMAGE" != "$default_img" ]; then
+            is_user_custom=1
+        fi
     fi
 
     # 2. 用户显式自定义分支：100% 尊崇用户自定义版本，绝对禁止被其他本地旧镜像篡改覆盖
@@ -106,31 +118,29 @@ choose_db_image() {
             echo -e "\033[1;33m[镜像下载] 本地未检测到用户指定的自定义镜像 [$DB_IMAGE]，启动时将自动下载该版本（pull_policy: if_not_present）\033[0m"
             DB_PULL_POLICY="if_not_present"
         fi
+        update_env_var "DB_IMAGE" "$DB_IMAGE"
     else
-        # 3. 用户未显式指定：优先检测复用服务器上已存在的 PG 镜像；实在没有才自动拉取内置默认镜像
+        # 3. 默认分支：优先检测本地兼容的官方 PG15 / alpine 镜像，无则自动拉取内置默认镜像
         local detected_img
         detected_img=$(detect_best_pg_image)
 
         if image_exists "$detected_img"; then
             DB_IMAGE="$detected_img"
             DB_PULL_POLICY="never"
-            echo -e "\033[0;32m[镜像复用] 优先复用服务器已存在的 PG 镜像 [$DB_IMAGE]，零网络下载（pull_policy: never）\033[0m"
+            echo -e "\033[0;32m[镜像复用] 本地已存在兼容的 PG 镜像 [$DB_IMAGE]，直接就地复用（pull_policy: never）\033[0m"
         else
-            # 实在没有现存镜像：选用内置默认镜像并下载
             DB_IMAGE="$default_img"
             DB_PULL_POLICY="if_not_present"
-            echo -e "\033[1;33m[镜像下载] 服务器本地未检测到现存 PG 镜像，选用内置默认版本 [$DB_IMAGE] 并自动下载（pull_policy: if_not_present）\033[0m"
+            echo -e "\033[1;33m[镜像下载] 本地未检测到兼容 PG 镜像，选用内置默认版本 [$DB_IMAGE] 并自动下载（pull_policy: if_not_present）\033[0m"
         fi
+        # 默认模式下保持 .env 中 DB_IMAGE 为空，确保始终跟随系统内置默认
+        update_env_var "DB_IMAGE" ""
     fi
 
     # 4. 数据卷挂载点标准化：PostgreSQL 官方及 pgvector 镜像数据目录统一规范为 /var/lib/postgresql/data
-    DB_DATA_DIR="${DB_DATA_DIR:-/var/lib/postgresql/data}"
-    if [ "$DB_DATA_DIR" = "/var/lib/postgresql" ]; then
-        DB_DATA_DIR="/var/lib/postgresql/data"
-    fi
+    DB_DATA_DIR="/var/lib/postgresql/data"
 
     export DB_IMAGE DB_PULL_POLICY DB_DATA_DIR
-    update_env_var "DB_IMAGE" "$DB_IMAGE"
     update_env_var "DB_PULL_POLICY" "$DB_PULL_POLICY"
     update_env_var "DB_DATA_DIR" "$DB_DATA_DIR"
 }
@@ -427,6 +437,16 @@ check_db_volume_compatibility() {
     local compose
     compose=$(compose_cmd)
     [ -z "$compose" ] && return 0
+
+    if [ -n "$DB_CONTAINER_NAME" ]; then
+        local existing_img
+        existing_img=$(docker inspect --format='{{.Config.Image}}' "$DB_CONTAINER_NAME" 2>/dev/null || true)
+        if [ -n "$existing_img" ] && echo "$existing_img" | grep -qiE "18|pgvector" && echo "$DB_IMAGE" | grep -qv "18"; then
+            echo -e "\033[1;33m  [存储卷自愈] 检测到已有专属容器 $DB_CONTAINER_NAME 此前使用了 PG18，其数据文件无法被 PG15 加载，重置存储卷 ${APP_NAME:-mengya_docker}_pgdata 以确保全新初始化...\033[0m"
+            docker rm -f "$DB_CONTAINER_NAME" >/dev/null 2>&1 || true
+            docker volume rm "${APP_NAME:-mengya_docker}_pgdata" >/dev/null 2>&1 || true
+        fi
+    fi
 
     local vol_name
     vol_name=$(docker volume ls -q 2>/dev/null | grep -E "(^|_)pgdata$" | head -n 1 || true)

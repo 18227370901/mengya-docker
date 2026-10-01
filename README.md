@@ -187,17 +187,19 @@ mengya-docker/
 
 ### 数据库镜像自动探测复用与跨版本数据平滑迁移同步
 
-**1. 镜像就地复用与拉取策略优化**：
-- **服务器已有镜像优先复用**：`run.sh` 启动前自动执行 `choose_db_image` 探测本地镜像。若服务器已存在 `pgvector/pgvector:pg18`，自动将其设置为目标镜像，并将 Compose 拉取策略锁定为 `DB_PULL_POLICY="never"`，从底层彻底杜绝 Docker 连网请求 Docker Hub 导致重复拉取或产生虚悬层。
-- **历史镜像向下兼容**：若本地仅有 `postgres:15-alpine`，系统自动优先复用并适配旧版数据卷。
+**1. 默认镜像锁定 (PG15) 与就地复用优化**：
+- **内置标准轻量镜像**：默认采用官方成熟的 `postgres:15-alpine`（整站镜像约 80MB，常驻内存仅 ~25MB），具备极致稳定性与超低资源开销；
+- **探针解耦与扫描优先级**：彻底移除对宿主机其他无关运行容器的越界探测，扫描链严格按优先级检索：① 本地已存在的 `postgres:15-alpine`；② 本地兼容的官方 PG15 镜像 (`postgres:15*`)；③ 本地官方轻量 alpine 镜像 (`postgres:*alpine`)；④ 兜底返回 `postgres:15-alpine`（本地无镜像时精准按需下载，`DB_PULL_POLICY="if_not_present"`）；
+- **配置自动纠偏**：默认模式下不向 `.env` 强行写入 `DB_IMAGE`，保持空值以始终跟随系统默认；若检测到 `.env` 残留历史误判的 `pg18` 或 `pgvector` 镜像，启动时自动纠偏清空并重置为 `postgres:15-alpine`；
+- **容器与数据卷自愈重建**：启动前校验专属 PG 容器与数据卷兼容性，若检测到历史遗留的 PG18 容器或不兼容旧数据卷，自动执行安全清理并重置存储卷 `${APP_NAME:-mengya_docker}_pgdata`，确保全新 PG15 实例平滑初始化。
 
 **2. 跨大版本（如 PG15 ↔ PG18）数据迁移与同步方案**：
-PostgreSQL 跨大版本时，磁盘底层物理文件格式互不兼容；且 PostgreSQL 18+ 镜像强制要求将数据卷挂载至父目录 `/var/lib/postgresql`（PG15 为 `/var/lib/postgresql/data`）。系统通过 `DB_DATA_DIR` 环境变量实现挂载目录自动适配。
+PostgreSQL 跨大版本时，磁盘底层物理文件格式互不兼容。系统数据卷统一标准化挂载至 `/var/lib/postgresql/data`。
 
 若需要在不同 PostgreSQL 大版本之间切换并**保留历史业务数据**，请遵循以下平滑迁移流程：
 ```bash
 # 第一步：启动原数据库镜像（以 PG15 为例）
-DB_IMAGE=postgres:15-alpine ./run.sh start
+./run.sh start
 
 # 第二步：导出业务数据备份（基于 Django ORM 逻辑结构导出，跨大版本与跨数据库引擎完全通用）
 ./run.sh db_backup migration_data.json
