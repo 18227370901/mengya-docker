@@ -6,6 +6,7 @@ import { useThemeStore } from "@/store/themeStore";
 import { authApi } from "@/api/auth";
 import { useAuthStore } from "@/store/authStore";
 import type { BabyProfile } from "@/types";
+import { calculateBabyAge, calculatePregnancyProgress } from "@/utils/stage";
 
 const roleLabel = (role?: string) => {
   const map: Record<string, string> = { mother: "妈妈", father: "爸爸", grandma: "奶奶/外婆", caregiver: "家庭照料者", admin: "管理员" };
@@ -38,7 +39,7 @@ const roleGreeting = (role?: string) => {
 };
 
 export default function ProfilePage() {
-  const { user, stage, logout, fetchMe } = useAuthStore();
+  const { user, stage, logout, fetchMe, hasPermission } = useAuthStore();
   const { theme, isDark, setTheme } = useThemeStore();
   const navigate = useNavigate();
   const [babies, setBabies] = useState<BabyProfile[]>([]);
@@ -397,13 +398,8 @@ export default function ProfilePage() {
               const isUnborn = b.is_born === false || (b.is_born == null && new Date(b.birthday) > new Date());
               let unbornDetail = "";
               if (isUnborn) {
-                const today = new Date();
-                today.setHours(0, 0, 0, 0);
-                const target = new Date(b.birthday);
-                target.setHours(0, 0, 0, 0);
-                const diffDays = Math.ceil((target.getTime() - today.getTime()) / 86400000);
-                const weeks = Math.max(1, Math.min(40, 40 - Math.floor(diffDays / 7)));
-                unbornDetail = diffDays >= 0 ? `预产期：${b.birthday} · 孕 ${weeks} 周 (距预产期还有 ${diffDays} 天)` : `预产期：${b.birthday} · 已过预产期`;
+                const prog = calculatePregnancyProgress(b.birthday);
+                unbornDetail = `预产期：${b.birthday} · ${prog.weekDaysText}${prog.diffDays >= 0 ? ` (距预产期还有 ${prog.diffDays} 天)` : ` (已过预产期 ${Math.abs(prog.diffDays)} 天)`}`;
               }
 
               return (
@@ -423,7 +419,7 @@ export default function ProfilePage() {
                       ) : (
                         <>
                           出生日期：{b.birthday}
-                          {b.age_display ? ` · ${b.age_display}` : (b.age_months != null && ` · ${b.age_months >= 36 ? `${Math.floor(b.age_months / 12)}岁${b.age_months % 12 > 0 ? `${b.age_months % 12}个月` : ""}` : `${b.age_months}个月`}`)}
+                          {b.age_display ? ` · ${b.age_display}` : (b.birthday && ` · ${calculateBabyAge(b.birthday).ageDisplay}`)}
                           {b.birth_weight != null && ` · ${b.birth_weight}kg`}
                         </>
                       )}
@@ -576,42 +572,50 @@ export default function ProfilePage() {
 
       {/* 常用入口 */}
       <section className="grid grid-cols-2 gap-3">
-        <button className="card flex items-center gap-3 hover:shadow-md transition" onClick={() => navigate("/shopping-list")}>
-          <div className="rounded-xl bg-brand-50 p-2.5">
-            <Package className="h-5 w-5 text-brand-500" />
-          </div>
-          <div className="text-left">
-            <p className="font-medium text-gray-700">我的待产包</p>
-            <p className="text-xs text-gray-400">进度追踪</p>
-          </div>
-        </button>
-        <button className="card flex items-center gap-3 hover:shadow-md transition" onClick={() => navigate("/health")}>
-          <div className="rounded-xl bg-brand-50 p-2.5">
-            <Heart className="h-5 w-5 text-brand-500" />
-          </div>
-          <div className="text-left">
-            <p className="font-medium text-gray-700">健康中心</p>
-            <p className="text-xs text-gray-400">产检/疫苗</p>
-          </div>
-        </button>
-        <button className="card flex items-center gap-3 hover:shadow-md transition" onClick={() => navigate("/notifications")}>
-          <div className="rounded-xl bg-brand-50 p-2.5">
-            <Bell className="h-5 w-5 text-brand-500" />
-          </div>
-          <div className="text-left">
-            <p className="font-medium text-gray-700">通知中心</p>
-            <p className="text-xs text-gray-400">消息提醒</p>
-          </div>
-        </button>
-        <button className="card flex items-center gap-3 hover:shadow-md transition" onClick={() => navigate("/favorites")}>
-          <div className="rounded-xl bg-brand-50 p-2.5">
-            <HeartOff className="h-5 w-5 text-brand-500" />
-          </div>
-          <div className="text-left">
-            <p className="font-medium text-gray-700">我的收藏</p>
-            <p className="text-xs text-gray-400">商品/内容/清单</p>
-          </div>
-        </button>
+        {(user?.is_staff || hasPermission("menu_shopping_list")) && (
+          <button className="card flex items-center gap-3 hover:shadow-md transition cursor-pointer" onClick={() => navigate("/shopping-list")}>
+            <div className="rounded-xl bg-brand-50 p-2.5">
+              <Package className="h-5 w-5 text-brand-500" />
+            </div>
+            <div className="text-left">
+              <p className="font-medium text-gray-700">我的待产包</p>
+              <p className="text-xs text-gray-400">进度追踪</p>
+            </div>
+          </button>
+        )}
+        {(user?.is_staff || hasPermission("menu_health")) && (
+          <button className="card flex items-center gap-3 hover:shadow-md transition cursor-pointer" onClick={() => navigate("/health")}>
+            <div className="rounded-xl bg-brand-50 p-2.5">
+              <Heart className="h-5 w-5 text-brand-500" />
+            </div>
+            <div className="text-left">
+              <p className="font-medium text-gray-700">健康中心</p>
+              <p className="text-xs text-gray-400">产检/疫苗</p>
+            </div>
+          </button>
+        )}
+        {(user?.is_staff || hasPermission("menu_notifications")) && (
+          <button className="card flex items-center gap-3 hover:shadow-md transition cursor-pointer" onClick={() => navigate("/notifications")}>
+            <div className="rounded-xl bg-brand-50 p-2.5">
+              <Bell className="h-5 w-5 text-brand-500" />
+            </div>
+            <div className="text-left">
+              <p className="font-medium text-gray-700">通知中心</p>
+              <p className="text-xs text-gray-400">消息提醒</p>
+            </div>
+          </button>
+        )}
+        {(user?.is_staff || hasPermission("menu_favorites")) && (
+          <button className="card flex items-center gap-3 hover:shadow-md transition cursor-pointer" onClick={() => navigate("/favorites")}>
+            <div className="rounded-xl bg-brand-50 p-2.5">
+              <HeartOff className="h-5 w-5 text-brand-500" />
+            </div>
+            <div className="text-left">
+              <p className="font-medium text-gray-700">我的收藏</p>
+              <p className="text-xs text-gray-400">商品/内容/清单</p>
+            </div>
+          </button>
+        )}
       </section>
 
       {/* AI 配置入口 - 仅管理员可见 */}

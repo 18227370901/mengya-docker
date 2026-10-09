@@ -1,12 +1,14 @@
 import { useEffect, useRef } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/store/authStore";
 
-/** 需要登录的页面包装：初始化 auth 状态，未登录重定向 /login，管理员无操作超时防护 */
+/** 需要登录的页面包装：初始化 auth 状态，未登录重定向 /login，管理员无操作超时防护，权限实时静默同步 */
 export default function RequireAuth({ children }: { children: React.ReactNode }) {
-  const { user, loading, init, logout } = useAuthStore();
+  const { user, loading, init, logout, fetchMe } = useAuthStore();
   const navigate = useNavigate();
+  const location = useLocation();
   const called = useRef(false);
+  const lastSyncTimeRef = useRef(0);
 
   // 挂载时触发初始化（只一次）
   useEffect(() => {
@@ -22,6 +24,48 @@ export default function RequireAuth({ children }: { children: React.ReactNode })
       navigate("/login", { replace: true });
     }
   }, [loading, user, navigate]);
+
+  // 路由变化时静默同步最新用户信息与权限（3秒节流防抖，避免频繁切路由时重复刷接口）
+  useEffect(() => {
+    if (!user) return;
+    const now = Date.now();
+    if (now - lastSyncTimeRef.current > 3000) {
+      lastSyncTimeRef.current = now;
+      fetchMe();
+    }
+  }, [location.pathname, user, fetchMe]);
+
+  // 窗口聚焦与页面可见性恢复时静默同步权限（管理员在后台修改权限后，切回普通用户窗口立即生效）
+  useEffect(() => {
+    if (!user) return;
+    const handleFocus = () => {
+      const now = Date.now();
+      if (now - lastSyncTimeRef.current > 3000) {
+        lastSyncTimeRef.current = now;
+        fetchMe();
+      }
+    };
+    window.addEventListener("focus", handleFocus);
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") {
+        handleFocus();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [user, fetchMe]);
+
+  // 定时每15秒静默同步一次权限，确保管理员在其他窗口操作后普通用户页面无缝实时生效
+  useEffect(() => {
+    if (!user) return;
+    const timer = setInterval(() => {
+      fetchMe();
+    }, 15000);
+    return () => clearInterval(timer);
+  }, [user, fetchMe]);
 
   // ===== 管理员登录无操作超时检测引擎 =====
   useEffect(() => {

@@ -222,15 +222,15 @@ export default function FetalStoryPage() {
             <Sparkles className="h-3.5 w-3.5 text-brand-500 shrink-0" />
             {stage.value < 17 ? (
               <span>
-                您当前处于孕 <strong>{stage.value}</strong> 周（胎教故事自孕17周胎儿听觉发育起推荐，已为您定位至第17周故事）
+                您当前处于 <strong>{stage.week_days_text || `孕${stage.value}周`}</strong>（胎教故事自孕17周胎儿听觉发育起推荐，已为您定位至第17周故事）
               </span>
             ) : stage.value > 40 ? (
               <span>
-                您当前处于孕 <strong>{stage.value}</strong> 周，已为您定位至第40周足月故事
+                您当前处于 <strong>{stage.week_days_text || `孕${stage.value}周`}</strong>，已为您定位至第40周足月故事
               </span>
             ) : (
               <span>
-                根据您当前的孕周（第 <strong>{stage.value}</strong> 周），已为您自动定位到本周胎教故事
+                根据您当前的孕周（<strong>{stage.week_days_text || `第${stage.value}周`}</strong>），已为您自动定位到本周胎教故事
               </span>
             )}
           </div>

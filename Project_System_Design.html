@@ -1719,5 +1719,19 @@ estart: unless-stopped；
   </ul>
 </div>
 
+
+<div class="card" style="margin-top:20px;border-left:4px solid #4f46e5;padding:16px;background:var(--bg-card, #fff);">
+  <h3 style="margin-top:0;color:#4f46e5;">10.15 孕育生命周期精准阶段计算、菜单权限阶段自适应识别与管理员定制分层防御体系 (v1.53)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.15.1 业务诉求与历史缺陷根因剖析</h4>
+  <p style="color:#334155;line-height:1.6;">治理了宝宝年龄粗糙显示为总月龄/天数、孕周四舍五入失真、菜单权限缺乏阶段感知以及管理员在后台配置菜单权限后用户端不生效的核心安全与体验缺陷。</p>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.15.2 治理改造与技术规范</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>宝宝年龄与孕周高人性化展示</strong>：宝宝年龄规范为 <code>X岁X个月X天（总月龄）</code>（如 <code>2岁8个月5天（32个月）</code>），支持整岁整月自适应；孕周基于 280 天医学标准规范为 <code>孕X周X天</code>；</li>
+    <li><strong>菜单权限阶段精准自适应</strong>：新注册或切换阶段时自动推导菜单权限，已出生宝宝自动禁用孕期专属页面（周历/食谱/胎教故事）并启用幼儿百科；怀孕中反之；</li>
+    <li><strong>管理员定制最高优先级机制</strong>：管理员后台显式调整打上 <code>_admin_customized</code> 保护标记，用户切换阶段不冲掉管理员配置；提供重置回阶段默认入口；</li>
+    <li><strong>权限生效多层纵深防御</strong>：修复 <code>authStore.ts</code> 权限空值穿透判真缺陷；首页快捷入口与核心模块全面过滤；<code>RequireAuth.tsx</code> 部署路由防抖、前台获焦与 15s 定时静默拉取；后端 ViewSet 强化 403 越权拦截。</li>
+  </ul>
+</div>
+
 </body>
 </html>

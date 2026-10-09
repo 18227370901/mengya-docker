@@ -29,11 +29,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     if (!user) return false;
     // 管理员拥有全部权限
     if (user.is_staff) return true;
-    const userPerms = user.permissions || permissions;
-    if (key in userPerms) {
+    const userPerms =
+      user.permissions && Object.keys(user.permissions).length > 0
+        ? user.permissions
+        : permissions && Object.keys(permissions).length > 0
+        ? permissions
+        : null;
+    if (userPerms && typeof userPerms === "object" && key in userPerms) {
       return Boolean(userPerms[key]);
     }
-    return true;
+    return false;
   },
 
   setPermissions: (permissions: Record<string, boolean>) => {
@@ -43,14 +48,15 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   setAuth: async (user, access, refresh) => {
     localStorage.setItem("mengya_access", access);
     localStorage.setItem("mengya_refresh", refresh);
-    set({ user, token: access, permissions: user.permissions || {}, loading: true });
+    const initialPerms = user && user.permissions && Object.keys(user.permissions).length > 0 ? user.permissions : {};
+    set({ user: { ...user, permissions: initialPerms }, token: access, permissions: initialPerms, loading: true });
     try {
       const data = await authApi.me();
       const perms = (data as any).permissions || data.user.permissions || {};
       if ((data as any).admin_session_timeout_minutes !== undefined) {
         localStorage.setItem("mengya_admin_timeout", String((data as any).admin_session_timeout_minutes));
       }
-      set({ user: data.user, stage: data.stage, permissions: perms, loading: false });
+      set({ user: { ...data.user, permissions: perms }, stage: data.stage, permissions: perms, loading: false });
     } catch {
       set({ loading: false });
     }
@@ -70,7 +76,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if ((data as any).admin_session_timeout_minutes !== undefined) {
         localStorage.setItem("mengya_admin_timeout", String((data as any).admin_session_timeout_minutes));
       }
-      set({ user: data.user, stage: data.stage, permissions: perms, loading: false });
+      set({ user: { ...data.user, permissions: perms }, stage: data.stage, permissions: perms, loading: false });
     } catch {
       const refreshToken = localStorage.getItem("mengya_refresh");
       if (refreshToken) {
@@ -82,7 +88,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             set({ token: newAccess });
             const data = await authApi.me();
             const perms = (data as any).permissions || data.user.permissions || {};
-            set({ user: data.user, stage: data.stage, permissions: perms, loading: false });
+            set({ user: { ...data.user, permissions: perms }, stage: data.stage, permissions: perms, loading: false });
             return;
           }
         } catch {

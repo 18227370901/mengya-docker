@@ -205,14 +205,56 @@ PERMISSION_DEFINITIONS = [
 ]
 
 
+def get_default_permissions_for_stage(
+    due_date=None,
+    baby_birthday=None,
+    is_pregnant=None,
+) -> dict:
+    """根据宝宝年龄阶段动态推导初始默认菜单与功能权限。
+    1. 宝宝已出生 (is_pregnant=False 或 有 baby_birthday 且无 due_date)：
+       - 禁用孕期专属：孕期周历 (menu_timeline)、孕期食谱 (menu_recipes)、胎教故事 (menu_fetal_stories)
+       - 启用育儿专属：幼儿百科 (menu_encyclopedia)
+    2. 宝宝未出生/孕期中 (is_pregnant=True 或 有 due_date)：
+       - 启用孕期专属：孕期周历 (menu_timeline)、孕期食谱 (menu_recipes)、胎教故事 (menu_fetal_stories)
+       - 禁用育儿专属：幼儿百科 (menu_encyclopedia)
+    3. 未设置：保持基础系统默认 (DEFAULT_USER_PERMISSIONS)
+    """
+    base = dict(DEFAULT_USER_PERMISSIONS)
+
+    is_born = False
+    if is_pregnant is False:
+        is_born = True
+    elif is_pregnant is True:
+        is_born = False
+    else:
+        if baby_birthday and not due_date:
+            is_born = True
+        elif due_date:
+            is_born = False
+
+    if is_born:
+        base["menu_timeline"] = False
+        base["menu_recipes"] = False
+        base["menu_fetal_stories"] = False
+        base["menu_encyclopedia"] = True
+    elif is_pregnant is True or due_date:
+        base["menu_timeline"] = True
+        base["menu_recipes"] = True
+        base["menu_fetal_stories"] = True
+        base["menu_encyclopedia"] = False
+
+    return normalize_permissions(base)
+
+
 def get_user_permissions(user) -> dict:
     """获取指定用户的最终生效权限字典。
     管理员(is_staff/is_superuser)拥有全部 True 权限，任何时候不可禁用菜单与功能。
     普通用户：
       1. 基础系统默认配置 (DEFAULT_USER_PERMISSIONS)
       2. 系统全局设置默认模板 (SystemSetting.default_user_permissions)
-      3. 用户个性化权限配置单独覆盖 (user.custom_permissions)
-      4. 严格执行递归父子联动规范化
+      3. 若无单独 custom_permissions，自动应用宝宝阶段自适应菜单过滤规则；
+      4. 用户个性化权限覆盖 (user.custom_permissions，管理员配置拥有最高优先级)
+      5. 严格执行递归父子联动规范化
     """
     if not user:
         return normalize_permissions(DEFAULT_USER_PERMISSIONS)
@@ -235,17 +277,29 @@ def get_user_permissions(user) -> dict:
     except Exception:
         pass
 
-    # 2. 读取用户个性化权限覆盖 (custom_permissions)
-    try:
-        custom = getattr(user, "custom_permissions", {}) or {}
-        if isinstance(custom, dict) and custom:
+    custom = getattr(user, "custom_permissions", {}) or {}
+    if not custom:
+        # 用户未配置独立个性化权限：自动依据宝宝年龄阶段精准初始化默认菜单权限
+        is_pregnant = getattr(user, "is_pregnant", None)
+        baby_birthday = getattr(user, "baby_birthday", None)
+        due_date = getattr(user, "due_date", None)
+        stage_defaults = get_default_permissions_for_stage(
+            due_date=due_date,
+            baby_birthday=baby_birthday,
+            is_pregnant=is_pregnant,
+        )
+        stage_keys = ["menu_timeline", "menu_recipes", "menu_fetal_stories", "menu_encyclopedia"]
+        for sk in stage_keys:
+            merged[sk] = stage_defaults[sk]
+    else:
+        # 用户已有独立个性化权限（管理员随时定制）：管理员配置优先级最高
+        if isinstance(custom, dict):
             for k, v in custom.items():
                 if k in merged:
                     merged[k] = bool(v)
-    except Exception:
-        pass
 
-    return normalize_permissions(merged)
+    norm = normalize_permissions(merged)
+    return {k: v for k, v in norm.items() if not k.startswith("_")}
 
 
 def has_permission(user, perm_key: str) -> bool:
@@ -257,7 +311,7 @@ def has_permission(user, perm_key: str) -> bool:
     if not getattr(user, "is_authenticated", False):
         return False
     perms = get_user_permissions(user)
-    return bool(perms.get(perm_key, True))
+    return bool(perms.get(perm_key, False))
 
 
 def check_permission_or_403(user, perm_key: str, message: str = "管理员已关闭该项功能权限"):

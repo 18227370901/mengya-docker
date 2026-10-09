@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { Baby, Calendar, Heart, Loader2, Sparkles, X } from "lucide-react";
 import { authApi } from "@/api/auth";
+import { calculateBabyAge, calculatePregnancyProgress } from "@/utils/stage";
 import { useAuthStore } from "@/store/authStore";
 
 interface SetStageModalProps {
@@ -40,24 +41,7 @@ export default function SetStageModal({ isOpen, onClose, onSuccess }: SetStageMo
   // 计算预产期动态提示与推算周数
   const getDueDatePreview = () => {
     if (!dueDate) return null;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const due = new Date(dueDate);
-    due.setHours(0, 0, 0, 0);
-    const diffDays = Math.round((due.getTime() - today.getTime()) / (1000 * 3600 * 24));
-    if (diffDays > 305) {
-      return { valid: false, message: "⚠️ 预产期超出正常怀孕周期（距离当前时间不应超过10个月/约300天）" };
-    }
-    if (diffDays < -30) {
-      return { valid: false, message: "⚠️ 预产期已过去较久，若宝宝已出生请切换至「宝宝已出生」" };
-    }
-    const weeks = Math.max(1, Math.min(40, 40 - Math.floor(diffDays / 7)));
-    return {
-      valid: true,
-      message: diffDays >= 0
-        ? `💡 推算当前处于：孕 ${weeks} 周（距预产期还有 ${diffDays} 天）`
-        : `💡 预产期已过 ${Math.abs(diffDays)} 天（孕 40 周+）`,
-    };
+    return calculatePregnancyProgress(dueDate);
   };
 
   // 计算出生日期动态提示与年龄
@@ -74,18 +58,11 @@ export default function SetStageModal({ isOpen, onClose, onSuccess }: SetStageMo
     if (diffDays > 365 * 18) {
       return { valid: false, message: "⚠️ 宝宝出生日期超出合理范围（不能超过18周岁）" };
     }
-    if (diffDays < 30) {
-      return { valid: true, message: `💡 宝宝当前年龄：${diffDays} 天（新生儿期）` };
-    }
-    const months = Math.floor(diffDays / 30);
-    if (months < 36) {
-      return { valid: true, message: `💡 宝宝当前月龄：${months} 个月` };
-    }
-    const years = Math.floor(months / 12);
-    const remMonths = months % 12;
+
+    const age = calculateBabyAge(birthday, today);
     return {
       valid: true,
-      message: `💡 宝宝当前年龄：${years} 岁${remMonths > 0 ? ` ${remMonths} 个月` : ""}`,
+      message: `💡 宝宝当前年龄：${age.ageDisplay}`,
     };
   };
 

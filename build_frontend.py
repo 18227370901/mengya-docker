@@ -98,7 +98,7 @@ def main():
             print(f"  [OK] 同步辅助资源: {target.relative_to(ROOT_DIR)}")
 
     print("=" * 60)
-    print("✅ 前端生产资源已全部就绪并同步完成！")
+    print("[SUCCESS] 前端生产资源已全部就绪并同步完成！")
     print("提示：请执行 git add templates static && git commit 提交至仓库，即可在云端即拉即跑。")
     print("=" * 60)
 

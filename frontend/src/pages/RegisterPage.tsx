@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { AlertCircle, CheckCircle2, Eye, EyeOff, Moon, Sprout, Sun } from "lucide-react";
 import { useThemeStore } from "@/store/themeStore";
 import { authApi } from "@/api/auth";
+import { calculateBabyAge, calculatePregnancyProgress } from "@/utils/stage";
 
 const ROLE_OPTIONS = [
   { value: "mother", label: "妈妈", icon: "👩" },
@@ -69,6 +70,9 @@ export default function RegisterPage() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [role, setRole] = useState("mother");
+  const [stageTab, setStageTab] = useState<"pregnant" | "born" | "none">("pregnant");
+  const [dueDate, setDueDate] = useState<string>("");
+  const [babyBirthday, setBabyBirthday] = useState<string>("");
   const [nickname, setNickname] = useState("");
   const [matchedNickname, setMatchedNickname] = useState("");
   const [error, setError] = useState("");
@@ -101,6 +105,34 @@ export default function RegisterPage() {
     });
   }, [inviteToken]);
 
+  // 计算预产期动态提示与推算周数
+  const getRegDueDatePreview = () => {
+    if (!dueDate) return null;
+    return calculatePregnancyProgress(dueDate);
+  };
+
+  // 计算出生日期动态提示与年龄
+  const getRegBirthdayPreview = () => {
+    if (!babyBirthday) return null;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const birth = new Date(babyBirthday);
+    birth.setHours(0, 0, 0, 0);
+    if (birth.getTime() > today.getTime()) {
+      return { valid: false, message: "⚠️ 宝宝出生日期不能晚于当前日期" };
+    }
+    const diffDays = Math.round((today.getTime() - birth.getTime()) / (1000 * 3600 * 24));
+    if (diffDays > 365 * 18) {
+      return { valid: false, message: "⚠️ 宝宝出生日期超出合理范围（不能超过18周岁）" };
+    }
+
+    const age = calculateBabyAge(babyBirthday, today);
+    return {
+      valid: true,
+      message: `💡 宝宝当前年龄：${age.ageDisplay}`,
+    };
+  };
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -114,6 +146,21 @@ export default function RegisterPage() {
       return;
     }
 
+    if (stageTab === "pregnant" && dueDate) {
+      const p = getRegDueDatePreview();
+      if (p && !p.valid) {
+        setError(p.message);
+        return;
+      }
+    }
+    if (stageTab === "born" && babyBirthday) {
+      const b = getRegBirthdayPreview();
+      if (b && !b.valid) {
+        setError(b.message);
+        return;
+      }
+    }
+
     setLoading(true);
     try {
       const finalNickname = nickname.trim() ? resolveNicknameByRole(nickname, role) : "";
@@ -123,6 +170,9 @@ export default function RegisterPage() {
         nickname: finalNickname || nickname.trim(),
         role,
         invite_token: inviteToken || undefined,
+        is_pregnant: stageTab === "pregnant" ? true : stageTab === "born" ? false : undefined,
+        due_date: stageTab === "pregnant" && dueDate ? dueDate : undefined,
+        baby_birthday: stageTab === "born" && babyBirthday ? babyBirthday : undefined,
       });
       setSuccess(true);
       setTimeout(() => navigate("/login"), 1500);
@@ -278,6 +328,76 @@ export default function RegisterPage() {
                 </div>
               )}
             </div>
+
+            {/* 孕育阶段（初始设置） */}
+            <div>
+              <label className="label">孕育阶段（初始设置）</label>
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  { value: "pregnant", label: "怀孕中 🌸" },
+                  { value: "born", label: "宝宝已出生 👶" },
+                  { value: "none", label: "稍后设置 ⏱️" },
+                ].map((item) => (
+                  <button
+                    key={item.value}
+                    type="button"
+                    className={`rounded-xl py-2 text-xs font-medium border transition cursor-pointer ${
+                      stageTab === item.value
+                        ? "border-brand-500 bg-brand-50 text-brand-700 font-semibold dark:bg-brand-950/60 dark:text-brand-300"
+                        : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                    }`}
+                    onClick={() => setStageTab(item.value as any)}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+              <p className="mt-1 text-xs text-gray-400">
+                系统将根据所选阶段精准为您初始化对应的功能菜单
+              </p>
+            </div>
+
+            {stageTab === "pregnant" && (
+              <div className="rounded-xl border border-orange-100 bg-orange-50/40 p-3 dark:border-gray-700 dark:bg-gray-800/40">
+                <label className="label text-xs">预产期</label>
+                <input
+                  type="date"
+                  className="input text-sm"
+                  value={dueDate}
+                  onChange={(e) => setDueDate(e.target.value)}
+                />
+                {(() => {
+                  const p = getRegDueDatePreview();
+                  if (!p) return null;
+                  return (
+                    <p className={`mt-1.5 text-xs font-medium ${p.valid ? "text-brand-600" : "text-amber-600"}`}>
+                      {p.message}
+                    </p>
+                  );
+                })()}
+              </div>
+            )}
+
+            {stageTab === "born" && (
+              <div className="rounded-xl border border-orange-100 bg-orange-50/40 p-3 dark:border-gray-700 dark:bg-gray-800/40">
+                <label className="label text-xs">宝宝出生日期</label>
+                <input
+                  type="date"
+                  className="input text-sm"
+                  value={babyBirthday}
+                  onChange={(e) => setBabyBirthday(e.target.value)}
+                />
+                {(() => {
+                  const p = getRegBirthdayPreview();
+                  if (!p) return null;
+                  return (
+                    <p className={`mt-1.5 text-xs font-medium ${p.valid ? "text-brand-600" : "text-amber-600"}`}>
+                      {p.message}
+                    </p>
+                  );
+                })()}
+              </div>
+            )}
 
             <div>
               <label className="label">密码（至少6位）</label>

@@ -582,6 +582,17 @@ class MeView(APIView):
             user.due_date = None
             fields_to_update.append("due_date")
 
+        # 若未被管理员单独定制权限，随阶段切换同步更新初始阶段菜单权限
+        custom_perms = getattr(user, "custom_permissions", {}) or {}
+        if not custom_perms.get("_admin_customized"):
+            from apps.core.utils.permissions import get_default_permissions_for_stage
+            user.custom_permissions = get_default_permissions_for_stage(
+                due_date=user.due_date,
+                baby_birthday=user.baby_birthday,
+                is_pregnant=user.is_pregnant,
+            )
+            fields_to_update.append("custom_permissions")
+
         if fields_to_update:
             user.save(update_fields=fields_to_update)
 
@@ -938,6 +949,15 @@ class TimelineViewSet(viewsets.ModelViewSet):
     serializer_class = TimelineSerializer
     permission_classes = [IsAuthenticated]
 
+    def list(self, request, *args, **kwargs):
+        if not request.query_params.get("essential"):
+            check_permission_or_403(request.user, "menu_timeline", "管理员已关闭您的时间轴与孕期周历访问权限")
+        return super().list(request, *args, **kwargs)
+
+    def retrieve(self, request, *args, **kwargs):
+        check_permission_or_403(request.user, "menu_timeline", "管理员已关闭您的时间轴与孕期周历访问权限")
+        return super().retrieve(request, *args, **kwargs)
+
     def get_queryset(self):
         qs = TimelineEvent.objects.prefetch_related("products").all()
         stage = self.request.query_params.get("stage")
@@ -1106,6 +1126,11 @@ class RecipeViewSet(viewsets.ModelViewSet):
     serializer_class = RecipeSerializer
     permission_classes = [IsAuthenticated]
 
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        if request.method not in ("OPTIONS",):
+            check_permission_or_403(request.user, "menu_recipes", "管理员已关闭您的孕期食谱访问权限")
+
     def get_queryset(self):
         qs = Recipe.objects.all()
         period = self.request.query_params.get("period")
@@ -1148,6 +1173,11 @@ class RecipeViewSet(viewsets.ModelViewSet):
 class KidsEncyclopediaViewSet(viewsets.ModelViewSet):
     serializer_class = KidsEncyclopediaSerializer
     permission_classes = [IsAuthenticated]
+
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        if request.method not in ("OPTIONS",):
+            check_permission_or_403(request.user, "menu_encyclopedia", "管理员已关闭您的幼儿百科访问权限")
 
     def get_queryset(self):
         qs = KidsEncyclopedia.objects.all()
@@ -1975,6 +2005,99 @@ class HealthRecordViewSet(viewsets.ModelViewSet):
         instance.delete()
 
 
+class HealthBmiAnalysisView(APIView):
+    """孕产妇体重/BMI 分析与个性化方案一键生成接口 (基于 WS/T 801-2022)"""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        check_permission_or_403(request.user, "menu_health", "您没有访问健康中心的权限")
+        from apps.core.serializers.health import BmiAnalysisInputSerializer
+        from apps.core.services.medical_calculator import MedicalCalculator
+        from apps.core.services.diet_recommendation_service import DietRecommendationService
+
+        serializer = BmiAnalysisInputSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(
+                {"code": 4001, "message": "输入参数有误", "data": serializer.errors},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        data = serializer.validated_data
+        evaluation = MedicalCalculator.evaluate_weight_gain(
+            height_cm=data["height_cm"],
+            pre_pregnancy_weight_kg=data["pre_pregnancy_weight_kg"],
+            current_weight_kg=data["current_weight_kg"],
+            gestational_week=data.get("gestational_week"),
+            is_twins=data.get("is_twins", False),
+            stage_type=data.get("stage_type", "pregnancy"),
+            postpartum_months=data.get("postpartum_months"),
+            medical_history=data.get("medical_history", []),
+        )
+
+        diet_plan = DietRecommendationService.build_personalized_diet_plan(
+            gestational_week=data.get("gestational_week"),
+            stage_type=data.get("stage_type", "pregnancy"),
+            bmi_category=evaluation.get("category", "normal"),
+            medical_history=data.get("medical_history", []),
+            actual_gain=evaluation.get("actual_gain", 0.0),
+        )
+
+        lifestyle_care = DietRecommendationService.get_lifestyle_and_care(
+            gestational_week=data.get("gestational_week"),
+            stage_type=data.get("stage_type", "pregnancy"),
+            medical_history=data.get("medical_history", []),
+            bmi_category=evaluation.get("category", "normal"),
+        )
+
+        disclaimer = (
+            "本评估与个性化方案依据国家卫生健康委《妊娠期妇女体重增长推荐值标准》(WS/T 801-2022)及中国营养学会《中国居民膳食指南》生成，"
+            "仅供孕产期自我健康监测与营养科普参考，不能替代临床医生的个体化诊疗处方。"
+            "若合并严重高血压、蛋白尿、剧烈腹痛、剧吐脱水或胎动异常，请立即前往正规医院产科就诊。"
+        )
+
+        created_record_id = None
+        if data.get("save_record"):
+            try:
+                rec_type = "growth_measurement" if data.get("stage_type") == "postpartum" else "prenatal_exam"
+                from apps.core.models.health import HealthRecord
+                new_rec = HealthRecord.objects.create(
+                    user=request.user,
+                    record_type=rec_type,
+                    record_date=timezone.now().date(),
+                    gestational_week=data.get("gestational_week"),
+                    height=data["height_cm"],
+                    weight=data["current_weight_kg"],
+                    note=f"孕前BMI {evaluation['bmi']} ({evaluation['category_label']}), 累计增重 {evaluation['actual_gain']}kg ({evaluation.get('gain_status_label', '')})",
+                )
+                created_record_id = new_rec.id
+            except Exception:
+                pass
+
+        audit(
+            request,
+            "health_bmi_analyze",
+            "孕产妇BMI与方案分析",
+            "health",
+            created_record_id or 0,
+            evaluation.get("category", ""),
+            f"BMI: {evaluation['bmi']}, 状态: {evaluation.get('gain_status_label', '')}",
+        )
+
+        return Response({
+            "code": 0,
+            "message": "分析成功",
+            "data": {
+                "evaluation": evaluation,
+                "alerts": evaluation.get("alerts", []),
+                "diet_plan": diet_plan,
+                "lifestyle_advice": lifestyle_care,
+                "disclaimer": disclaimer,
+                "created_record_id": created_record_id,
+            },
+        })
+
+
 # ============ AI ============
 
 @api_view(["POST"])
@@ -2390,9 +2513,9 @@ class UserManageView(APIView):
     def get(self, request):
         users = list(User.objects.all().order_by("-date_joined").values(
             "id", "phone", "username", "nickname", "role", "is_staff",
-            "is_active", "ai_authorized", "security_question",
+            "is_active", "ai_authorized", "custom_permissions", "security_question",
             "security_answer", "login_fail_count", "security_fail_count",
-            "locked_until", "created_at",
+            "locked_until", "created_at", "due_date", "baby_birthday", "is_pregnant",
         ))
         # 管理员账号自愈保障：管理员始终 is_active = True
         for u in users:
@@ -3077,6 +3200,11 @@ class FetalStoryViewSet(viewsets.ModelViewSet):
     queryset = FetalStory.objects.all()
     serializer_class = FetalStorySerializer
 
+    def initial(self, request, *args, **kwargs):
+        super().initial(request, *args, **kwargs)
+        if request.method not in ("OPTIONS",):
+            check_permission_or_403(request.user, "menu_fetal_stories", "管理员已关闭您的胎教故事访问权限")
+
     def get_permissions(self):
         if self.action in ["list", "retrieve"]:
             return [IsAuthenticated()]
@@ -3238,8 +3366,8 @@ class AdminPermissionsView(APIView):
                     "username": target.username,
                     "nickname": target.nickname,
                     "is_staff": False,
-                    "has_custom": bool(custom),
-                    "custom_permissions": custom,
+                    "has_custom": bool(custom.get("_admin_customized", False)),
+                    "custom_permissions": {k: v for k, v in custom.items() if not k.startswith("_")},
                     "effective_permissions": effective,
                     "definitions": PERMISSION_DEFINITIONS,
                 },
@@ -3306,15 +3434,17 @@ class AdminPermissionsView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
+            base_fallback = target.custom_permissions or get_user_permissions(target)
             cleaned = {}
             for k in DEFAULT_USER_PERMISSIONS:
                 if k in perms_input:
                     cleaned[k] = bool(perms_input[k])
                 else:
-                    cleaned[k] = DEFAULT_USER_PERMISSIONS[k]
+                    cleaned[k] = base_fallback.get(k, DEFAULT_USER_PERMISSIONS[k])
 
             # 递归规范化父子权限联动
             cleaned = normalize_permissions(cleaned, previous_perms=target.custom_permissions or {})
+            cleaned["_admin_customized"] = True
             target.custom_permissions = cleaned
             target.save(update_fields=["custom_permissions"])
 

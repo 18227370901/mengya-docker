@@ -41,6 +41,7 @@ urlpatterns = [
     # 对比相关接口需在 router 之前注册，避免被 products/{pk} 拦截
     path("products/compare/", views.ProductCompareView.as_view(), name="product-compare"),
     path("products/compare/radar/", views.CompareRadarView.as_view(), name="compare-radar"),
+    path("health/bmi-analysis/", views.HealthBmiAnalysisView.as_view(), name="health-bmi-analysis"),
     path("ai/chat/", views.ai_chat, name="ai-chat"),
     path("ai/compare/", views.ai_compare, name="ai-compare"),
     path("ai/history/", views.ai_history, name="ai-history"),

@@ -364,9 +364,19 @@ def _search_yahoo(query: str, max_results: int = 5, timeout: float = 1.2) -> lis
     return results
 
 
+def _search_searxng(query: str, max_results: int = 5) -> list:
+    """私有化 SearXNG 元搜索引擎探测"""
+    try:
+        from apps.core.services.searxng_client import SearXNGClient
+        return SearXNGClient.search(query, max_results=max_results)
+    except Exception:
+        return []
+
+
 # ==================== 多源聚合入口 ====================
 
 _ENGINE_PIPELINE = [
+    ("SearXNG", _search_searxng),
     ("DuckDuckGo", _search_duckduckgo),
     ("Google", _search_google),
     ("Bing", _search_bing),

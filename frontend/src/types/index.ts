@@ -28,6 +28,15 @@ export interface Stage {
   stage_key: string;
   is_pregnant: boolean;
   days?: number;
+  weeks?: number;
+  rem_days?: number;
+  days_pregnant?: number;
+  days_to_due?: number;
+  week_days_text?: string;
+  age_text?: string;
+  years?: number;
+  months?: number;
+  total_months?: number;
 }
 
 export interface BabyProfile {
@@ -409,3 +418,5 @@ export interface FavoriteItem {
     };
   };
 }
+
+export * from "./health";

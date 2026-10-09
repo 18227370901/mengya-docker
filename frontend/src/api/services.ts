@@ -1,6 +1,6 @@
 import api from "./client";
 import type { ApiResponse, ChatSessionDetail, ChatSessionSummary, HealthRecord, ShoppingList, ShoppingListItem, AIChatResult, BabyShoppingListResponse, BabyShoppingCategories, AIRecommendResult } from "@/types";
-
+import type { BmiAnalysisInput, BmiAnalysisResult } from "@/types/health";
 export const shoppingApi = {
   list: () => api.get<ApiResponse<ShoppingList[]>>("/shopping-lists/").then((r) => r.data.data),
 
@@ -15,6 +15,8 @@ export const shoppingApi = {
     api.post<ApiResponse<null>>(`/shopping-lists/${listId}/toggle_check/`, { item_id: itemId }).then((r) => r.data.data),
 
   remove: (id: number) => api.delete<ApiResponse<null>>(`/shopping-lists/${id}/`).then((r) => r.data.data),
+  analyzeBmi: (data: BmiAnalysisInput) =>
+    api.post<ApiResponse<BmiAnalysisResult>>("/health/bmi-analysis/", data).then((r) => r.data.data),
 
   fromTemplate: (data: { name?: string; owner?: string; categories?: string[]; item_ids?: number[]; season?: string; delivery_method?: string }) =>
     api.post<ApiResponse<ShoppingList>>("/shopping-lists/from_template/", data).then((r) => r.data.data),
@@ -48,6 +50,8 @@ export const healthApi = {
     api.patch<ApiResponse<HealthRecord>>(`/health/records/${id}/`, data).then((r) => r.data.data),
 
   remove: (id: number) => api.delete<ApiResponse<null>>(`/health/records/${id}/`).then((r) => r.data.data),
+  analyzeBmi: (data: BmiAnalysisInput) =>
+    api.post<ApiResponse<BmiAnalysisResult>>("/health/bmi-analysis/", data).then((r) => r.data.data),
 };
 
 export const aiApi = {

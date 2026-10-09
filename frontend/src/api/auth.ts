@@ -73,7 +73,7 @@ export interface UserPermissionsData {
 }
 
 export const authApi = {
-  register: (data: { phone: string; password: string; nickname?: string; role?: string; invite_token?: string }) =>
+  register: (data: { phone: string; password: string; nickname?: string; role?: string; invite_token?: string; is_pregnant?: boolean; due_date?: string; baby_birthday?: string }) =>
     api.post<ApiResponse<AuthResult>>("/auth/register/", data).then((r) => r.data.data),
 
   registrationMode: () =>

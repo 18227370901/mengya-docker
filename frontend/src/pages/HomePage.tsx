@@ -36,7 +36,7 @@ const FETUS_SIZE: Record<number, string> = {
 };
 
 export default function HomePage() {
-  const { user, stage } = useAuthStore();
+  const { user, stage, hasPermission } = useAuthStore();
   const [essentials, setEssentials] = useState<TimelineItem[]>([]);
   const [weekItems, setWeekItems] = useState<TimelineItem[]>([]);
   const [recommend, setRecommend] = useState<Product[]>([]);
@@ -110,14 +110,15 @@ export default function HomePage() {
   }, [stage]);
 
   const quickEntries = [
-    { to: "/weekly", label: "孕期周历", icon: CalendarDays, desc: "40周全程知识导航" },
-    { to: "/fetal-stories", label: "胎教故事", icon: Heart, desc: "每天一个温馨故事" },
-    { to: "/recipes", label: "孕期食谱", icon: ChefHat, desc: "288道专属怀孕餐" },
-    { to: "/kids-encyclopedia", label: "幼儿百科", icon: BookOpen, desc: "57个趣味人体问答" },
-    { to: "/shopping-list/generate", label: "智能待产包", icon: PackageSearch, desc: "季节+分娩方式自适应" },
-    { to: "/health", label: "健康中心", icon: Activity, desc: "产检/生长曲线/疫苗" },
-    { to: "/ai-assistant", label: "AI小助手", icon: Bot, desc: "7×24小时问答比价" },
+    { to: "/weekly", label: "孕期周历", icon: CalendarDays, desc: "40周全程知识导航", perm: "menu_timeline" },
+    { to: "/fetal-stories", label: "胎教故事", icon: Heart, desc: "每天一个温馨故事", perm: "menu_fetal_stories" },
+    { to: "/recipes", label: "孕期食谱", icon: ChefHat, desc: "288道专属怀孕餐", perm: "menu_recipes" },
+    { to: "/kids-encyclopedia", label: "幼儿百科", icon: BookOpen, desc: "57个趣味人体问答", perm: "menu_encyclopedia" },
+    { to: "/shopping-list/generate", label: "智能待产包", icon: PackageSearch, desc: "季节+分娩方式自适应", perm: "menu_shopping_list" },
+    { to: "/health", label: "健康中心", icon: Activity, desc: "产检/生长曲线/疫苗", perm: "menu_health" },
+    { to: "/ai-assistant", label: "AI小助手", icon: Bot, desc: "7×24小时问答比价", perm: "menu_ai_assistant" },
   ];
+  const visibleQuickEntries = quickEntries.filter((it) => user?.is_staff || !it.perm || hasPermission(it.perm));
 
   if (loading) {
     return <div className="py-20 text-center text-gray-400">加载中…</div>;
@@ -203,27 +204,30 @@ export default function HomePage() {
         <section className="card p-5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <div className="flex h-16 w-16 flex-col items-center justify-center rounded-2xl bg-brand-50">
-                <span className="text-2xl font-bold text-brand-600">{currentWeek}</span>
-                <span className="text-xs text-brand-400">周</span>
+              <div className="flex min-w-16 px-2.5 py-2 flex-col items-center justify-center rounded-2xl bg-brand-50 text-center">
+                <span className="text-base sm:text-lg font-bold text-brand-600 whitespace-nowrap">
+                  {stage?.week_days_text ? stage.week_days_text : `孕${currentWeek}周`}
+                </span>
               </div>
               <div>
                 <p className="text-sm text-gray-400">宝宝现在大约</p>
                 <p className="text-lg font-semibold text-gray-800">{fetusSize}</p>
                 <p className="mt-0.5 text-xs text-gray-400">
-                  {currentWeek <= 12 ? "孕早期" : currentWeek <= 27 ? "孕中期" : "孕晚期"} ·
-                  距预产期约 {Math.max(0, 40 - currentWeek)} 周
+                  {stage?.week_days_text || `孕${currentWeek}周`} · {stage?.trimester || (currentWeek <= 12 ? "孕早期" : currentWeek <= 27 ? "孕中期" : "孕晚期")}
+                  {stage?.days_to_due !== undefined ? ` · 距预产期 ${stage.days_to_due} 天` : ` · 距预产期约 ${Math.max(0, 40 - currentWeek)} 周`}
                 </p>
               </div>
             </div>
-            <Link
-              to="/weekly"
-              className="flex items-center gap-1 rounded-xl bg-brand-50 px-3 py-2 text-sm font-medium text-brand-600 transition hover:bg-brand-100"
-            >
-              本周详情 <ChevronRight className="h-4 w-4" />
-            </Link>
+            {(user?.is_staff || hasPermission("menu_timeline")) && (
+              <Link
+                to="/weekly"
+                className="flex items-center gap-1 rounded-xl bg-brand-50 px-3 py-2 text-sm font-medium text-brand-600 transition hover:bg-brand-100"
+              >
+                本周详情 <ChevronRight className="h-4 w-4" />
+              </Link>
+            )}
           </div>
-          {weekItems.length > 0 && (
+          {(user?.is_staff || hasPermission("menu_timeline")) && weekItems.length > 0 && (
             <div className="mt-4 border-t border-orange-50 pt-3">
               <p className="mb-2 text-xs font-medium text-gray-400">本周知识点</p>
               <div className="flex flex-wrap gap-2">
@@ -244,7 +248,7 @@ export default function HomePage() {
 
       {/* 快捷入口 */}
       <section className="grid grid-cols-2 gap-3 lg:grid-cols-3">
-        {quickEntries.map((entry) => (
+        {visibleQuickEntries.map((entry) => (
           <Link key={entry.to} to={entry.to} className="card hover:shadow-md transition">
             <div className="flex items-center gap-3">
               <div className="rounded-xl bg-brand-50 p-2.5">
@@ -260,42 +264,45 @@ export default function HomePage() {
       </section>
 
       {/* 本周重点 */}
-      <section>
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-bold text-gray-800">本周重点</h2>
-          <Link to="/timeline" className="flex items-center text-sm text-brand-500 hover:underline">
-            全部时间轴 <ArrowRight className="ml-1 h-4 w-4" />
-          </Link>
-        </div>
-        {essentials.length === 0 ? (
-          <div className="card py-8 text-center text-sm text-gray-400">
-            暂无重点内容
+      {(user?.is_staff || hasPermission("menu_timeline")) && (
+        <section>
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-lg font-bold text-gray-800">本周重点</h2>
+            <Link to="/timeline" className="flex items-center text-sm text-brand-500 hover:underline">
+              全部时间轴 <ArrowRight className="ml-1 h-4 w-4" />
+            </Link>
           </div>
-        ) : (
-          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-            {essentials.slice(0, 3).map((item) => (
-              <Link key={item.id} to={`/timeline/${item.id}`} className="card hover:shadow-md transition">
-                <div className="mb-2 flex items-center gap-2">
-                  <span className="tag">{item.stage_label}</span>
-                  <span className="tag">{item.category_label}</span>
-                  {item.is_essential && <span className="text-xs text-brand-500">必读</span>}
-                </div>
-                <h3 className="font-medium text-gray-800">{item.title}</h3>
-                <p className="mt-1 line-clamp-2 text-sm text-gray-500">{item.content}</p>
-              </Link>
-            ))}
-          </div>
-        )}
-      </section>
+          {essentials.length === 0 ? (
+            <div className="card py-8 text-center text-sm text-gray-400">
+              暂无重点内容
+            </div>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+              {essentials.slice(0, 3).map((item) => (
+                <Link key={item.id} to={`/timeline/${item.id}`} className="card hover:shadow-md transition">
+                  <div className="mb-2 flex items-center gap-2">
+                    <span className="tag">{item.stage_label}</span>
+                    <span className="tag">{item.category_label}</span>
+                    {item.is_essential && <span className="text-xs text-brand-500">必读</span>}
+                  </div>
+                  <h3 className="font-medium text-gray-800">{item.title}</h3>
+                  <p className="mt-1 line-clamp-2 text-sm text-gray-500">{item.content}</p>
+                </Link>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       {/* 推荐商品 */}
-      <section>
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="text-lg font-bold text-gray-800">高分推荐</h2>
-          <Link to="/products" className="flex items-center text-sm text-brand-500 hover:underline">
-            全部商品 <ArrowRight className="ml-1 h-4 w-4" />
-          </Link>
-        </div>
+      {(user?.is_staff || hasPermission("menu_products")) && (
+        <section>
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="text-lg font-bold text-gray-800">高分推荐</h2>
+            <Link to="/products" className="flex items-center text-sm text-brand-500 hover:underline">
+              全部商品 <ArrowRight className="ml-1 h-4 w-4" />
+            </Link>
+          </div>
         {recommend.length === 0 ? (
           <div className="card py-8 text-center text-sm text-gray-400">
             暂无推荐商品
@@ -313,6 +320,7 @@ export default function HomePage() {
           </div>
         )}
       </section>
+      )}
       <SetStageModal isOpen={showStageModal} onClose={() => setShowStageModal(false)} onSuccess={fetchHomeData} />
       {toast && (
         <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 rounded-xl bg-gray-900/90 px-4 py-2.5 text-sm text-white shadow-lg backdrop-blur-sm transition animate-fade-in">

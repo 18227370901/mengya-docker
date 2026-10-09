@@ -38,8 +38,13 @@ class BabyProfile(models.Model):
         return (date.today() - self.birthday).days
 
     def get_age_months(self):
-        days = self.get_age_days()
-        return days // 30 if days >= 0 else 0
+        from datetime import date
+        today = date.today()
+        if not self.is_born or self.birthday > today:
+            return 0
+        from dateutil.relativedelta import relativedelta
+        r = relativedelta(today, self.birthday)
+        return r.years * 12 + r.months
 
     def get_age_display(self):
         from datetime import date
@@ -47,21 +52,16 @@ class BabyProfile(models.Model):
         if not self.is_born or self.birthday > today:
             delta = self.birthday - today
             if delta.days >= 0:
-                weeks = 40 - (delta.days // 7)
-                weeks = max(1, min(weeks, 40))
-                return f"胎儿 (孕{weeks}周，距预产期{delta.days}天)"
+                from apps.core.utils.stage_utils import calculate_pregnancy_progress
+                prog = calculate_pregnancy_progress(self.birthday, today)
+                return f"胎儿 ({prog['week_days_text']}，距预产期{delta.days}天)"
             return "即将出生"
         days = self.get_age_days()
         if days < 0:
             return "尚未出生"
-        if days < 30:
-            return f"{days}天"
-        months = days // 30
-        if months >= 36:
-            years = months // 12
-            rem = months % 12
-            return f"{years}岁{rem}个月" if rem else f"{years}岁"
-        return f"{months}个月"
+        from apps.core.utils.stage_utils import calculate_baby_age
+        age_info = calculate_baby_age(self.birthday, today)
+        return age_info["age_text"]
 
     def __str__(self):
         return f"{self.user.phone} - {self.name}"

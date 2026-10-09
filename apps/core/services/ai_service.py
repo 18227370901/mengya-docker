@@ -29,8 +29,10 @@ from django.conf import settings
 
 from apps.core.services.web_search import needs_search, search_and_summarize
 
-# OpenAI 延迟按需加载：避免服务启动时预载 44MB+ 的 Pydantic/HTTPX 依赖树
-OpenAI = None
+try:
+    from openai import OpenAI
+except ImportError:  # pragma: no cover
+    OpenAI = None
 
 GENERAL_CHAT_PROMPT = """
 你是一个乐于助人的智能助手，名字叫"萌小芽"。
@@ -96,16 +98,9 @@ PRODUCT_COMPARE_PROMPT = """
 
 
 def _client(api_key=None, base_url=None, timeout=25.0):
-    """创建 OpenAI 客户端（按需延迟加载依赖，自动规范化 URL 并设置合理超时与单次重试）"""
-    global OpenAI
-    if not api_key:
+    """创建 OpenAI 客户端（自动规范化 URL 并设置合理超时与单次重试）"""
+    if not api_key or OpenAI is None:
         return None
-    if OpenAI is None:
-        try:
-            from openai import OpenAI as _OpenAI
-            OpenAI = _OpenAI
-        except ImportError:  # pragma: no cover
-            return None
     clean_url = normalize_base_url(base_url)
     kwargs = {"api_key": api_key, "timeout": timeout, "max_retries": 1}
     if clean_url:
@@ -469,7 +464,19 @@ def ai_evaluate_product(product, user=None) -> dict:
     price_info = product.price_info or {}
     specs = {k: v for k, v in (product.specifications or {}).items() if "接口" not in k and "isofix" not in str(v).lower()}
     
-    prompt = f"""请对以下母婴商品进行全面专业的深度评测：
+    # 联网检索外部真实舆情、抽检合格性与召回缺陷（通过 SearXNG 赋能）
+    external_context = ""
+    try:
+        from apps.core.services.searxng_client import SearXNGClient
+        s_query = f"{product.brand} {product.name} 质量抽检 评测 缺陷 召回"
+        s_res = SearXNGClient.search(s_query, max_results=3)
+        if s_res:
+            lines = [f"- 《{r["title"]}》: {r["body"][:150]}" for r in s_res]
+            external_context = "\n【互联网质检与消协评测参考(SearXNG)】:\n" + "\n".join(lines)
+    except Exception:
+        pass
+
+    prompt = f"""请对以下母婴商品进行全面专业的深度评测：{external_context}
 【商品名称】: {product.brand} {product.name}
 【品类】: {cat_label} - {product.second_category}
 【规格参数】: {specs}

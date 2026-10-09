@@ -132,7 +132,33 @@ class RegisterSerializer(serializers.ModelSerializer):
         username = validated_data.get("phone")
         user = User(username=username, **validated_data)
         user.set_password(password)
+
+        # 依据用户配置的宝宝年龄阶段自动精准初始化可分配的菜单与功能权限
+        from apps.core.utils.permissions import get_default_permissions_for_stage
+        default_perms = get_default_permissions_for_stage(
+            due_date=user.due_date,
+            baby_birthday=user.baby_birthday,
+            is_pregnant=user.is_pregnant,
+        )
+        user.custom_permissions = default_perms
         user.save()
+
+        # 若提供了出生日期或预产期，自动同步建立宝宝档案
+        if user.baby_birthday or user.due_date:
+            try:
+                from apps.core.models import BabyProfile
+                b_date = user.baby_birthday or user.due_date
+                is_born = not bool(user.is_pregnant) if user.is_pregnant is not None else bool(user.baby_birthday and not user.due_date)
+                BabyProfile.objects.create(
+                    user=user,
+                    name=user.nickname or ("小宝贝" if is_born else "胎儿"),
+                    birthday=b_date,
+                    is_born=is_born,
+                    is_primary=True,
+                )
+            except Exception:
+                pass
+
         return user
 
 
@@ -497,3 +523,5 @@ class FetalStorySerializer(serializers.ModelSerializer):
             "created_at",
         ]
         read_only_fields = ["id", "view_count", "created_at"]
+
+from .health import BmiAnalysisInputSerializer
