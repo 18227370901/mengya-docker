@@ -1311,3 +1311,33 @@ django.db.utils.OperationalError: unable to open database file
 #### 10.22.2 验证效果
 - 前后端代码与传统版 100% 同源同构同步。
 - 生产构建静态资产已全量同步到 `templates/` 与 `static/assets/`。
+
+---
+
+### 10.23 健康打卡与分析报告闭环联动、双向折叠与状态持久化 (v1.60)
+
+#### 10.23.1 业务背景与问题复盘
+在 v1.59 优化后，用户反馈：通过「健康打卡」或「一键分析评估 & 归档至时序档案」录入新数据时，原有的「展开分析报告 / 收起分析报告」模块未展示或无法找到。经深入排查，发现以下三大核心体验断层：
+1. **折叠/展开按钮位置迁移与视觉盲区**：在 v1.57.1 中，顶部工具栏常驻的「展开/收起分析报告」按钮被移至卡片 4（分析报告卡片）内部标题栏，且文案改为「展开/收起报告内容」。由于卡片 4 位于录入表单、时序看板、历史数据表格的最下方，用户在上方提交后视口停留在上部，被中间长图表和表格阻隔，加上顶部按钮已移除，直观上产生“分析报告模块丢失”的体验。
+2. **健康打卡弹窗数据链路断层**：统一健康打卡弹窗（`UnifiedHealthCheckIn`）提交时虽调用了 `analyzeBmi` 接口，但接口返回的分析评估对象 `res` 未回传给外层，导致 `BmiAnalysisView` 的 `result` 状态始终为 `null`，使得打卡后分析报告区块完全不渲染。
+3. **分析结果内存状态非持久化**：`result` 状态仅保存在 React 临时状态中，用户刷新浏览器页面或在 Tab（如宝宝生长/时间轴）之间切换后再返回，`result` 被清空，报告瞬间蒸发。
+
+#### 10.23.2 架构设计与实现细节
+1. **数据联动全链路打通 (`UnifiedHealthCheckIn.tsx` & `HealthPage.tsx`)**：
+   - `UnifiedHealthCheckInProps` 的 `onSaved` 回调签名扩展为 `(archiveHint: string, analysisResult?: BmiAnalysisResult | null) => void`。
+   - 首次打卡与 409 同日覆盖提交时，完整捕获 `healthApi.analyzeBmi` 返回的 `res` 结果对象并通过 `onSaved` 传出。
+   - `HealthPage` 维护 `latestAnalysisResult` 状态并透传给 `<BmiAnalysisView externalAnalysisResult={latestAnalysisResult} />`，实现打卡即时联动。
+2. **恢复顶部快捷折叠/展开按钮与自动平滑定位 (`BmiAnalysisView.tsx`)**：
+   - 在页面顶部说明卡片右侧（与「导出 A4 报告」并列）恢复显眼的 `【展开分析报告 / 收起分析报告】` 快捷按钮。
+   - 当用户在表单点击「一键分析评估」或从外部健康打卡弹窗完成打卡时，不仅自动将状态置为展开态（`reportCollapsed = false`），而且通过 `reportSectionRef` 自动触发平滑滚动定位（`scrollIntoView({ behavior: 'smooth', block: 'start' })`），引导视口直达分析报告卡片。
+   - 卡片 4 内部自身的折叠按钮同步统一文案为 `【展开分析报告 / 收起分析报告】`，实现顶部与卡片内双向开关无缝联动。
+   - 折叠态底部恢复独立的提示横幅条，保障折叠后用户随时一键重新展开。
+3. **分析结果客户端持久化留存 (`sessionStorage`)**：
+   - 引入 `STORAGE_KEY = "mengya_latest_bmi_analysis"`，在 `useState` 初始化时自动从 `sessionStorage` 还原最近一次生成的医学评估报告。
+   - 统一封装 `updateResult` 调度器，确保用户在切换 Tab 或刷新页面后，最新一期的评估档案依然稳定呈现，杜绝报告数据“瞬时蒸发”。
+
+#### 10.23.3 验证效果
+- 验证一键分析评估链路：表单提交后顶部展开/收起按钮点亮，页面自动平滑滚动直达报告区域，点击收起后底部提示条与顶部按钮同步联动。
+- 验证健康打卡弹窗链路：右上角打卡保存后，自动回传最新分析报告并平滑定位展示，数据与图表、表格完全一致。
+- 验证刷新与 Tab 切换留存：刷新页面后评估报告依然完整保留，支持随时展开/收起。
+- 生产构建与静态资源全量同步，前端 `tsc -b && vite build` 0 错误编译通过。

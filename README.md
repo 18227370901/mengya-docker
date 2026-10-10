@@ -776,3 +776,20 @@ django.db.utils.OperationalError: unable to open database file
 4. **妈妈孕产档案单表融合与折叠详情 (`BmiHistoryTable.tsx` & `views.py`)**：后端补齐 `ai_analysis`；表格增加折叠行展开打卡备注与 AI 临床解读；移除底部重复渲染的 `momRecords` 卡片流。
 5. **跨组件双向数据联动与409覆盖完善 (`BmiAnalysisView.tsx` & `HealthPage.tsx`)**：接入 `refreshTrigger` 与 `onRecordChanged`；完善 409 异常提取；清理 `shoppingApi` 冗余代码。
 6. **多页面深色模式 (Dark Mode) 全面对齐**：`HomePage`、`ProductListPage`、`ProductCard`、`HealthCalendar` 补齐深色样式。
+
+---
+
+## 20. v1.60 健康打卡与分析报告全闭环联动、双向折叠与持久化
+
+### 20.1 优化背景
+针对新增数据（健康打卡 / 一键分析评估）时「展开/收起分析报告」模块未展示的问题，彻底打通组件间数据链路、恢复双向折叠交互并实现报告客户端持久化留存。
+
+### 20.2 核心改造清单
+1. **数据联动全链路打通 (`UnifiedHealthCheckIn.tsx` & `HealthPage.tsx`)**：
+   - 打卡弹窗（普通打卡与 409 覆盖打卡）将 `analyzeBmi` 返回的完整报告对象 `res` 回传给 `HealthPage`，并透传给 `BmiAnalysisView`，彻底解决打卡后报告不显示的链路断层。
+2. **恢复顶部快捷折叠/展开与平滑滚动直达 (`BmiAnalysisView.tsx`)**：
+   - 顶部工具栏恢复显眼【展开分析报告 / 收起分析报告】快捷按钮，消除图表与表格造成的视觉阻隔。
+   - 新增数据后自动展开报告并平滑滚动定位（`scrollIntoView`）至报告卡片。
+   - 恢复折叠态提示条，与卡片 4 内部折叠开关实现双向无缝联动。
+3. **分析报告客户端持久化留存 (`sessionStorage`)**：
+   - 引入 `sessionStorage` 缓存机制，在页面刷新或 Tab 切换后自动恢复最近一期评估报告，避免数据瞬时蒸发。

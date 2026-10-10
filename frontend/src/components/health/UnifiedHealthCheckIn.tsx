@@ -17,7 +17,7 @@ import { useAuthStore } from "@/store/authStore";
 import { healthApi } from "@/api/services";
 import { computeGestation, gestationLabel, type GestationAnchor } from "@/utils/gestation";
 import type { BmiAnalysisInput, HealthRecord } from "@/types";
-import type { SameDayConflictPayload } from "@/types/health";
+import type { BmiAnalysisResult, SameDayConflictPayload } from "@/types/health";
 
 /**
  * 统一健康打卡弹窗（v1.55 健康中心唯一录入入口）
@@ -31,7 +31,7 @@ interface UnifiedHealthCheckInProps {
   isOpen: boolean;
   onClose: () => void;
   /** 保存成功后回调，参数为归档去向提示文案 */
-  onSaved: (archiveHint: string) => void;
+  onSaved: (archiveHint: string, analysisResult?: BmiAnalysisResult | null) => void;
   /** v1.56：预填测量日期（健康时间轴点击日期补录入口） */
   initialDate?: string;
   /** v1.58：孕周锚点（首次孕期打卡的 日期+孕周；无预产期时自动推算 孕x周x天） */
@@ -266,13 +266,14 @@ export default function UnifiedHealthCheckIn({ isOpen, onClose, onSaved, initial
         } else if (isPostpartumMode) {
           payload.postpartum_months = babyDays != null ? Math.max(0, Math.floor(babyDays / 30.44)) : 1;
         }
-        await healthApi.analyzeBmi(payload);
+        const res = await healthApi.analyzeBmi(payload);
         onSaved(
           isPostpartumMode
             ? "产后打卡已归档：孕产记录 · BMI 时序 · 日历"
             : isGeneralMode
             ? "非孕期打卡已归档：孕产记录 · BMI 时序 · 日历"
-            : "孕期打卡已归档：孕产记录 · BMI 时序与医学评估 · 日历"
+            : "孕期打卡已归档：孕产记录 · BMI 时序与医学评估 · 日历",
+          res
         );
       }
       onClose();
@@ -330,8 +331,8 @@ export default function UnifiedHealthCheckIn({ isOpen, onClose, onSaved, initial
     setErrorMsg("");
     try {
       if (conflict.mode === "mom" && conflict.momPayload) {
-        await healthApi.analyzeBmi({ ...conflict.momPayload, overwrite: true });
-        onSaved("已覆盖当日打卡记录，孕产档案与 BMI 时序已同步更新");
+        const res = await healthApi.analyzeBmi({ ...conflict.momPayload, overwrite: true });
+        onSaved("已覆盖当日打卡记录，孕产档案与 BMI 时序已同步更新", res);
       } else if (conflict.mode === "baby" && conflict.babyPayload) {
         await healthApi.update(conflict.info.existing_id, conflict.babyPayload);
         onSaved("已覆盖当日宝宝测量记录，生长曲线已同步更新");

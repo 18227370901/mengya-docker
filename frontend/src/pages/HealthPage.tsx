@@ -5,6 +5,7 @@ import { healthApi } from "@/api/services";
 import { authApi } from "@/api/auth";
 import { extractGestationAnchor, gestationLabel } from "@/utils/gestation";
 import type { HealthRecord } from "@/types";
+import type { BmiAnalysisResult } from "@/types/health";
 import GrowthChart from "@/components/GrowthChart";
 import VaccineCalendar from "@/components/VaccineCalendar";
 import HealthCalendar from "@/components/HealthCalendar";
@@ -43,8 +44,9 @@ export default function HealthPage() {
   const [showImport, setShowImport] = useState(false);
   const [toast, setToast] = useState("");
   const [calendarMonth, setCalendarMonth] = useState(() => new Date());
-  // v1.59：跨组件同步触发器与宝宝性别基准
+  // v1.59/v1.60：跨组件同步触发器、宝宝性别基准与最新分析报告联动
   const [refreshTick, setRefreshTick] = useState(0);
+  const [latestAnalysisResult, setLatestAnalysisResult] = useState<BmiAnalysisResult | null>(null);
   const [babyGender, setBabyGender] = useState<"boy" | "girl">("boy");
 
   const triggerRefresh = () => {
@@ -219,8 +221,11 @@ export default function HealthPage() {
         onClose={() => setShowCheckIn(false)}
         initialDate={checkInDate}
         gestationAnchor={gestationAnchor}
-        onSaved={(archiveHint) => {
+        onSaved={(archiveHint, analysisResult) => {
           showToast(archiveHint);
+          if (analysisResult) {
+            setLatestAnalysisResult(analysisResult);
+          }
           triggerRefresh();
         }}
       />
@@ -241,7 +246,7 @@ export default function HealthPage() {
       ) : tab === "mom" ? (
         <div className="space-y-6">
           {/* 妈妈·孕产档案：BMI 分析（状态卡 + 表单 + 时序看板 + 历史表 + 医学评估） */}
-          <BmiAnalysisView refreshTrigger={refreshTick} onRecordChanged={load} />
+          <BmiAnalysisView refreshTrigger={refreshTick} onRecordChanged={load} externalAnalysisResult={latestAnalysisResult} />
         </div>
       ) : tab === "growth" ? (
         <div className="space-y-5">

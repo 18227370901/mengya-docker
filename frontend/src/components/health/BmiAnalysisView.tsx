@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Scale, CheckCircle2, ArrowUpRight, ArrowDownRight, ChevronUp, ChevronDown, FileText } from "lucide-react";
 import { healthApi } from "@/api/services";
 import { extractGestationAnchor, gestationLabel } from "@/utils/gestation";
@@ -13,16 +13,36 @@ import LifestyleCareCard from "./LifestyleCareCard";
 import HealthReportExport from "./HealthReportExport";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 
+const STORAGE_KEY = "mengya_latest_bmi_analysis";
+
 interface BmiAnalysisViewProps {
   /** v1.59：外部刷新触发令牌（健康打卡弹窗/CSV导入/外层变动时联动刷新） */
   refreshTrigger?: number;
   /** v1.59：内部变更回调（分析打卡/删除/批量删除后通知外层刷新 HealthPage.records） */
   onRecordChanged?: () => void;
+  /** v1.60：外部打卡传入的最新分析评估结果（打卡后联动展示分析报告） */
+  externalAnalysisResult?: BmiAnalysisResult | null;
 }
 
-export default function BmiAnalysisView({ refreshTrigger, onRecordChanged }: BmiAnalysisViewProps = {}) {
+export default function BmiAnalysisView({ refreshTrigger, onRecordChanged, externalAnalysisResult }: BmiAnalysisViewProps = {}) {
   const [loading, setLoading] = useState<boolean>(false);
-  const [result, setResult] = useState<BmiAnalysisResult | null>(null);
+  const [result, setResult] = useState<BmiAnalysisResult | null>(() => {
+    try {
+      const cached = sessionStorage.getItem(STORAGE_KEY);
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  });
+  const reportSectionRef = useRef<HTMLDivElement | null>(null);
+
+  const updateResult = useCallback((newRes: BmiAnalysisResult | null) => {
+    setResult(newRes);
+    try {
+      if (newRes) sessionStorage.setItem(STORAGE_KEY, JSON.stringify(newRes));
+      else sessionStorage.removeItem(STORAGE_KEY);
+    } catch {}
+  }, []);
   const [toast, setToast] = useState<string>("");
   const [timeseries, setTimeseries] = useState<BmiTimeSeriesRecord[]>([]);
   const [historyLoading, setHistoryLoading] = useState<boolean>(true);
@@ -55,11 +75,22 @@ export default function BmiAnalysisView({ refreshTrigger, onRecordChanged }: Bmi
     loadTimeseries();
   }, [loadTimeseries, refreshTrigger]);
 
+  // v1.60：当外部健康打卡弹窗生成了最新医学评估报告时，同步更新并自动平滑滚动定位
+  useEffect(() => {
+    if (externalAnalysisResult) {
+      updateResult(externalAnalysisResult);
+      setReportCollapsed(false);
+      setTimeout(() => {
+        reportSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 150);
+    }
+  }, [externalAnalysisResult, updateResult]);
+
   const handleAnalyze = async (data: BmiAnalysisInput, overwrite = false) => {
     setLoading(true);
     try {
       const res = await healthApi.analyzeBmi(overwrite ? { ...data, overwrite: true } : data);
-      setResult(res);
+      updateResult(res);
       // 分析打卡已自动持久化，优先直接采用响应内带回的最新时序，失败再回源拉取
       if (res?.timeseries) {
         setTimeseries(res.timeseries);
@@ -80,8 +111,11 @@ export default function BmiAnalysisView({ refreshTrigger, onRecordChanged }: Bmi
         hints.push(res.gestation_check.hint);
       }
       showToast(hints.join("；"));
-      // 覆盖/新增都切回展开态，方便用户查看最新报告
+      // 覆盖/新增都切回展开态，并自动平滑滚动定位到分析报告
       setReportCollapsed(false);
+      setTimeout(() => {
+        reportSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 150);
     } catch (err: any) {
       // v1.57：同日重复打卡 409 → 弹出覆盖确认弹窗（保留原 payload，确认后携 overwrite 重发）
       const conflict = (err?.data || err?.response?.data?.data) as SameDayConflictPayload | undefined;
@@ -177,7 +211,28 @@ export default function BmiAnalysisView({ refreshTrigger, onRecordChanged }: Bmi
           <div className="flex items-center gap-2">
             {/* v1.57：导出 A4 评估报告（打印 / PDF 下载，动态分包不影响首屏） */}
             <HealthReportExport records={timeseries} result={result} />
-            {/* v1.58：展开/收起按钮下移至报告区块自身的标题栏（明确区块归属） */}
+            {/* v1.60：恢复顶部显眼折叠/展开分析报告快捷按钮 */}
+            {result && (
+              <button
+                type="button"
+                onClick={() => {
+                  setReportCollapsed((c) => {
+                    const next = !c;
+                    if (!next) {
+                      setTimeout(() => {
+                        reportSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+                      }, 50);
+                    }
+                    return next;
+                  });
+                }}
+                className="btn-secondary gap-1.5 text-xs shadow-2xs"
+                title={reportCollapsed ? "展开下方分析报告区块（医学预警/指标概览/曲线/食谱）" : "收起下方分析报告区块，数据保留随时可展开"}
+              >
+                {reportCollapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
+                {reportCollapsed ? "展开分析报告" : "收起分析报告"}
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -249,9 +304,9 @@ export default function BmiAnalysisView({ refreshTrigger, onRecordChanged }: Bmi
         deletingId={deletingId}
       />
 
-      {/* 卡片 4: 本次分析报告（v1.58：折叠按钮随报告区块标题栏——明确区块归属；收起仅隐藏内容，result 数据保留可反复切换） */}
+      {/* 卡片 4: 本次分析报告（v1.60：双向联动折叠 + 平滑滚动锚点 + 持久化留存） */}
       {result && evalData && (
-        <div className="card overflow-hidden">
+        <div ref={reportSectionRef} className="card overflow-hidden">
           {/* 报告标题栏：标题 + 评估摘要 + 折叠开关 */}
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-orange-100/60 bg-gradient-to-r from-orange-50/70 to-transparent px-4 py-3 dark:border-gray-800 dark:from-gray-900/60">
             <div className="flex items-center gap-2.5">
@@ -272,7 +327,7 @@ export default function BmiAnalysisView({ refreshTrigger, onRecordChanged }: Bmi
               title={reportCollapsed ? "展开报告内容（医学预警/指标概览/曲线/食谱/运动关怀）" : "收起报告内容，数据保留可随时展开"}
             >
               {reportCollapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
-              {reportCollapsed ? "展开报告内容" : "收起报告内容"}
+              {reportCollapsed ? "展开分析报告" : "收起分析报告"}
             </button>
           </div>
 
@@ -375,6 +430,28 @@ export default function BmiAnalysisView({ refreshTrigger, onRecordChanged }: Bmi
           <LifestyleCareCard advice={result.lifestyle_advice} />
             </div>
           )}
+        </div>
+      )}
+
+      {/* v1.60 折叠态提示条：报告已保留，可随时展开 */}
+      {result && evalData && reportCollapsed && (
+        <div className="card flex flex-wrap items-center justify-between gap-3 p-4 text-xs text-gray-500 dark:text-gray-400">
+          <div className="flex items-center gap-2">
+            <FileText className="h-4 w-4 text-brand-500" />
+            <span>本次分析报告已收起（医学预警 · 指标概览 · WS/T 801 增重曲线 · 膳食食谱 · 运动心理关怀），数据保留至下次分析。</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setReportCollapsed(false);
+              setTimeout(() => {
+                reportSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+              }, 50);
+            }}
+            className="btn-secondary shrink-0 gap-1 text-xs"
+          >
+            <ChevronDown className="h-3.5 w-3.5" /> 展开分析报告
+          </button>
         </div>
       )}
 

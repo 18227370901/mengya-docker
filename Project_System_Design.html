@@ -1883,5 +1883,28 @@ estart: unless-stopped；
   </ul>
 </div>
 
+
+<div style="background:#fff;border-radius:12px;padding:24px;margin-bottom:24px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+  <h3 style="color:#0f172a;font-size:18px;margin-top:0;border-bottom:2px solid #f97316;padding-bottom:8px;">10.23 健康打卡与分析报告闭环联动、双向折叠与状态持久化 (v1.60)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.23.1 业务背景与问题定位</h4>
+  <p style="color:#475569;font-size:14px;line-height:1.6;">排查用户反馈新增数据后「展开/收起分析报告」不见的问题，准确定位三大断层：</p>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>折叠按钮迁移至最底部与视觉阻隔</strong>：原顶部按钮被移入卡片 4 内部，排在长图表和历史表格后，提交后视口停留在上方产生丢失错觉；</li>
+    <li><strong>健康打卡弹窗结果未回传</strong>：<code>UnifiedHealthCheckIn</code> 调用 <code>analyzeBmi</code> 后丢弃了返回对象，看板中 <code>result</code> 仍为 null；</li>
+    <li><strong>状态纯内存化</strong>：刷新页面或切换 Tab 后 <code>result</code> 被重置清空，报告瞬间消失。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.23.2 核心重构与闭环落地</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>全链路数据打通</strong>：打卡弹窗 <code>onSaved</code> 回调透传 <code>res</code> 分析结果，<code>HealthPage</code> 桥接传递给 <code>BmiAnalysisView</code>，打卡后秒级呈现报告；</li>
+    <li><strong>双向折叠开关与平滑滚动直达</strong>：顶部横幅恢复显眼【展开/收起分析报告】按钮；打卡与一键分析后自动展开并平滑滚动到报告区域；底部恢复折叠态提示卡片；</li>
+    <li><strong>sessionStorage 持久化留存</strong>：引入缓存自动还原最近一次评估报告，刷新网页与 Tab 切换无缝保留。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.23.3 验证结论</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li>打卡弹窗与深度表单两种录入方式均可 100% 稳定生成并呈现分析报告，支持顶部、中部双向随心展开/收起；</li>
+    <li>前端 <code>tsc -b &amp;&amp; vite build</code> 0 错误编译通过，静态资源完整同步。</li>
+  </ul>
+</div>
+
 </body>
 </html>
