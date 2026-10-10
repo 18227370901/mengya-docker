@@ -1,8 +1,11 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertCircle, ArrowLeft, Bot, CheckCircle, ChevronDown, ChevronUp, Eye, EyeOff, Loader2, Play, Plus, Settings, Trash2 } from "lucide-react";
+import { AlertCircle, ArrowLeft, Bot, CheckCircle, ChevronDown, ChevronUp, Eye, EyeOff, Globe, Loader2, Play, Plus, Settings, Trash2 } from "lucide-react";
 import { authApi } from "@/api/auth";
 import type { AIConfigItem } from "@/api/auth";
+import { searxngConfigApi } from "@/api/services";
+import type { SearXNGConfig } from "@/types/health";
+import SearXNGConfigModal from "@/components/health/SearXNGConfigModal";
 
 export default function AIConfigPage() {
   const navigate = useNavigate();
@@ -16,6 +19,18 @@ export default function AIConfigPage() {
   const [testingIdx, setTestingIdx] = useState<number | null>(null);
   const [testResults, setTestResults] = useState<Record<number, { status: "success" | "failed"; message: string; latency_ms?: number }>>({});
   const [accessDenied, setAccessDenied] = useState(false);
+  // v1.56：搜索引擎配置（入口由健康中心 BMI 页迁移至 AI 助手配置页）
+  const [searxngModalOpen, setSearxngModalOpen] = useState(false);
+  const [searchCfg, setSearchCfg] = useState<SearXNGConfig | null>(null);
+
+  useEffect(() => {
+    if (!accessDenied) {
+      searxngConfigApi
+        .get()
+        .then((cfg) => setSearchCfg(cfg))
+        .catch(() => {});
+    }
+  }, [accessDenied]);
 
   useEffect(() => {
     authApi.aiConfig().then((data) => {
@@ -307,6 +322,57 @@ export default function AIConfigPage() {
               </div>
             ))}
           </div>
+        </section>
+      )}
+
+      {/* v1.56：搜索引擎配置区块（原健康中心 BMI 页入口迁移至此） */}
+      {aiCanManage && (
+        <section className="card">
+          <div className="mb-2 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Globe className="h-5 w-5 text-brand-500" />
+              <h2 className="font-semibold text-gray-800">搜索引擎配置</h2>
+            </div>
+            <button
+              type="button"
+              className="btn-secondary gap-1.5 text-xs shadow-2xs"
+              onClick={() => setSearxngModalOpen(true)}
+            >
+              <Settings className="h-3.5 w-3.5" /> 配置面板
+            </button>
+          </div>
+          <p className="text-xs leading-relaxed text-gray-400">
+            管理私有 SearXNG 实例地址、权威健康白名单与 AI 助手公网兜底开关。AI 助手实时检索不可用时自动降级，不影响用户提问。
+          </p>
+          {searchCfg && (
+            <div className="mt-3 grid grid-cols-1 gap-2 text-xs text-gray-600 dark:text-gray-400 sm:grid-cols-3">
+              <div className="rounded-lg bg-gray-50 px-3 py-2 dark:bg-gray-800/60">
+                实例地址：<b className="text-gray-800 dark:text-gray-200">{searchCfg.base_url}</b>
+              </div>
+              <div className="rounded-lg bg-gray-50 px-3 py-2 dark:bg-gray-800/60">
+                连通状态：
+                <b className={searchCfg.is_available ? "text-emerald-600 dark:text-emerald-400" : "text-red-500"}>
+                  {searchCfg.is_available ? "可达" : "不可达"}
+                </b>
+              </div>
+              <div className="rounded-lg bg-gray-50 px-3 py-2 dark:bg-gray-800/60">
+                公网兜底：
+                <b className={searchCfg.ai_fallback_enabled ? "text-blue-600 dark:text-blue-400" : "text-gray-500"}>
+                  {searchCfg.ai_fallback_enabled ? "已开启" : "已关闭"}
+                </b>
+              </div>
+            </div>
+          )}
+          <SearXNGConfigModal
+            isOpen={searxngModalOpen}
+            onClose={() => setSearxngModalOpen(false)}
+            onSaved={() => {
+              searxngConfigApi
+                .get()
+                .then(setSearchCfg)
+                .catch(() => {});
+            }}
+          />
         </section>
       )}
     </div>

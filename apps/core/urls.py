@@ -1,7 +1,7 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
-from . import views
+from . import views, views_searxng
 
 router = DefaultRouter()
 router.register(r"babies", views.BabyViewSet, basename="baby")
@@ -42,6 +42,8 @@ urlpatterns = [
     path("products/compare/", views.ProductCompareView.as_view(), name="product-compare"),
     path("products/compare/radar/", views.CompareRadarView.as_view(), name="compare-radar"),
     path("health/bmi-analysis/", views.HealthBmiAnalysisView.as_view(), name="health-bmi-analysis"),
+    path("admin/searxng-config/", views_searxng.AdminSearXNGConfigView.as_view(), name="admin-searxng-config"),
+    path("admin/searxng-config/test/", views_searxng.AdminSearXNGConfigTestView.as_view(), name="admin-searxng-config-test"),
     path("ai/chat/", views.ai_chat, name="ai-chat"),
     path("ai/compare/", views.ai_compare, name="ai-compare"),
     path("ai/history/", views.ai_history, name="ai-history"),

@@ -2,9 +2,20 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { ChatSessionSummary } from "@/types";
 
+/** AI 回答的实时检索来源条目 */
+export interface ChatSource {
+  title: string;
+  url: string;
+  domain?: string;
+}
+
 interface Msg {
   role: "user" | "ai";
   content: string;
+  /** v1.55 实时检索状态：searxng / fallback:<engine> / unavailable / skipped */
+  search_status?: string;
+  /** 实时检索来源列表（仅实时响应携带，历史会话不回放） */
+  sources?: ChatSource[];
 }
 
 interface ChatState {

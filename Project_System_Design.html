@@ -1733,5 +1733,120 @@ estart: unless-stopped；
   </ul>
 </div>
 
+<div class="card" style="margin-top:20px;border-left:4px solid #f97316;padding:16px;background:var(--bg-card, #fff);">
+  <h3 style="margin-top:0;color:#f97316;">10.16 健康中心 BMI 动态图表与 SearXNG 双通道改造体系 (v1.54)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.16.1 业务背景与改造目标</h4>
+  <p style="color:#334155;line-height:1.6;">健康中心新增「体重/BMI分析」Tab，补齐四卡片闭环：按天补录打卡（移除冗余勾选）→ 多维度时序图表看板（趋势/增量双视图 + 时间跨度筛选）→ 历史打卡表（删除二次确认 + 看板联动）→ 医学预警 + WS/T 801-2022 曲线 + 平台与 SearXNG 双通道食谱 + 生活关怀。</p>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.16.2 架构设计与实现落地</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>零迁移复用成熟表</strong>：测量打卡写入 <code>HealthRecord</code>（<code>record_type=prenatal_exam|growth_measurement</code>），<code>exam_items</code> JSONField 扩展承载 <code>waist_circumference / pre_weight / bmi / actual_gain / gain_status / is_twins</code>，零数据库迁移；</li>
+    <li><strong>医学计算引擎</strong>：<code>medical_calculator.py</code> 落地 WS/T 801-2022 单/双胎分级与 1~40 周推荐区间/中位线曲线契约（<code>curve.target_median</code>），4 级医学预警（剧吐脱水 / 子痫前期 / FGR 滞后 / GDM 控糖）；</li>
+    <li><strong>双通道食谱服务</strong>：<code>diet_recommendation_service.py</code> 平台库 <code>[平台优选: ID]</code> ↔ SearXNG <code>[外部检索: 域名]</code> ↔ 本地指南兜底，禁忌食材全量扫描；</li>
+    <li><strong>SearXNG 私有化搜索客户端</strong>：<code>searxng_client.py</code> 固化 <code>SEARXNG_BASE_URL/TIMEOUT/FORMAT/ENGINES/HEALTH_DOMAINS</code> 环境变量，0.5s 极速探针 + 快速熔断安全降级，支持连通测试与 <code>.env</code> 同步持久化；</li>
+    <li><strong>接口契约</strong>：<code>GET/POST /api/health/bmi-analysis/</code>（时序拉取 + 打卡自动持久化 + 综合评估 + 双通道食谱 + timeseries 全量回传）；管理员 <code>GET/PUT /api/admin/searxng-config/</code> 与 <code>POST /api/admin/searxng-config/test/</code>；</li>
+    <li><strong>前端组件</strong>：<code>BmiFormCard</code>（按天补录/腹围/单双胎/代谢病史）→ <code>BmiTimeSeriesBoard</code>（ECharts 趋势通道带+中位线+实测曲线 / Δkg 变色柱状 + 视图切换 + 近7天/近1月/全周期筛选）→ <code>BmiHistoryTable</code> → 医学预警 + WS/T 曲线看板 + 双通道食谱 + 运动心理关怀；管理员入口 <code>SearXNGConfigModal</code>（仅 is_staff 可见，支持在线测试与同步 .env）。</li>
+  </ul>
+</div>
+
+<div class="card" style="margin-top:20px;border-left:4px solid #f97316;padding:16px;background:var(--bg-card, #fff);">
+  <h3 style="margin-top:0;color:#f97316;">10.17 统一健康打卡 · 孕周引擎 · AI 实时检索体系 (v1.55)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.17.1 业务背景与改造目标</h4>
+  <p style="color:#334155;line-height:1.6;">修复 <code>growth_measurement</code> 一词两义（产后妈妈打卡 ↔ 宝宝测量混写）导致的跨页面数据串扰；孕周与日期缺乏一致性校验，矛盾数据可入库；产检与生长两套录入表单互不相通、非孕期用户被迫使用孕期语义；AI 助手无实时检索能力且耗时指标失真。</p>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.17.2 架构设计与实现落地</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>记录语义重构（零迁移）</strong>：产后妈妈打卡复用 <code>prenatal_exam</code> + <code>exam_items.stage="postpartum"</code> 标记（新增 <code>stage / postpartum_months</code> 字段），宝宝测量独占 <code>growth_measurement</code>，三页面口径彻底分离（孕产记录 = prenatal_exam 全量 + 阶段徽章；生长曲线 = growth_measurement 专属；BMI 时序 = prenatal_exam 专属）；</li>
+    <li><strong>孕周一致性引擎</strong>：<code>gestation_engine.py</code> 双基准推算（预产期 280 天医学模型优先 ↔ 最早打卡锚点线性外推），<code>MAX_WEEK_DEVIATION=1</code> 周矛盾拦截（<code>HealthRecordSerializer</code> 与 BMI 接口双重校验，超偏差 400 + "该日期应为孕 X 周"精确提示）；身高 / 孕前体重基线自动继承，首次打卡实测初始化（<code>baseline_initialized=true</code>）；</li>
+    <li><strong>统一健康打卡弹窗</strong>：<code>UnifiedHealthCheckIn.tsx</code> 三选一记录对象（孕期产检 / 产后恢复 / 宝宝生长测量）按档案智能默认（<code>is_pregnant</code> → 孕期、<code>baby_birthday</code> → 宝宝）；日期补录自动推算孕周 / 产后天数 / 宝宝月龄；妈妈打卡走 <code>bmi-analysis</code> 接口、宝宝测量走 <code>healthApi.create</code>；</li>
+    <li><strong>AI 实时检索管线</strong>：<code>web_search.search_for_ai()</code> SearXNG 优先（毫秒级熔断）→ 不可用时按管理员开关 <code>AI_SEARCH_FALLBACK_ENABLED</code> 决策（默认关闭直接 AI 知识库回答 <code>status=unavailable</code>；开启回退多公网引擎 <code>status=fallback:引擎名</code>）；<code>_SEARCH_PATTERNS</code> 扩展母婴健康关键词，寒暄创作类不联网；<code>ai_chat</code> 响应新增 <code>search_status / sources</code>，<code>latency_ms</code> 修复为真实耗时；</li>
+    <li><strong>AI 前端状态透出</strong>：<code>AIAssistantPage</code> 消息级检索徽章（SearXNG 实时检索绿色 / 未接入实时检索灰色 / 公网引擎蓝色）+ 来源列表展开折叠 + 管理员头部 SearXNG 配置入口；<code>SearXNGConfigModal</code> 新增公网兜底开关并随配置接口同步 <code>.env</code>；</li>
+    <li><strong>验证结论</strong>：v1.55 冒烟测试 29/29 通过；浏览器全链路验证通过（三种打卡模式归档 / 孕周 5 周矛盾被 400 精确拦截 / 基线继承 / 生长曲线与孕产记录互不混数 / AI 灰色徽章降级提示 / 兜底开关默认关闭）。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.17.3 SearXNG 接入链路诊断增强与配置生效修复 (v1.55.1)</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>问题定位</strong>：用户反馈 AI 助手"未接入 SearXNG"——实测实例 <code>100.64.0.1:8090</code> 连通正常（<code>/healthz</code> 193ms、JSON 已开启），根因为 SearXNG 实例默认通用引擎全部被上游封禁（brave 限流、duckduckgo/qwant/startpage CAPTCHA、google 静默 0 结果、bing 返回无关结果），检索恒为 0 条；叠加平台侧缺陷：<code>SEARXNG_ENGINES</code> 配置从未在检索链路生效、"0 结果"与"不可达"混为 <code>unavailable</code>、连通测试 0 条仍报成功；</li>
+    <li><strong>修复落地</strong>：<code>SearXNGClient.search()</code> engines 为空时回退 <code>SEARXNG_ENGINES</code> 配置；<code>search_for_ai()</code> 新增 <code>searxng_empty</code> 精确状态（实例可达但 0 结果），前端新增橙色警示徽章；<code>test_connection()</code> 两跳诊断新增 <code>warning</code> 状态与 <code>unresponsive_engines</code> 失效引擎清单透出，弹窗橙色展示修复指引；</li>
+    <li><strong>验证结论</strong>：shell 实测 <code>search_for_ai</code> → <code>searxng_empty</code>、<code>test_connection</code> → <code>warning</code>（757ms + brave/duckduckgo/qwant/startpage 失效清单）；浏览器实测橙色徽章与弹窗诊断正常显示。实例侧引擎修复（更换出口 IP / 配置代理 / 启用可用引擎）由 SearXNG 部署机管理员执行。</li>
+  </ul>
+</div>
+
+<div class="card" style="margin-top:20px;border-left:4px solid #f97316;padding:16px;background:var(--bg-card, #fff);">
+  <h3 style="margin-top:0;color:#f97316;">10.18 健康中心信息架构重构与搜索引擎配置体系 (v1.56)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.18.1 业务背景与改造目标</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>搜索引擎可用性原则</strong>：SearXNG 不可用时不能影响用户使用，且需明确提示当前搜索引擎——v1.55.1 已确诊用户实例上游引擎全部被 CAPTCHA/限流封禁（检索恒 0 条），默认关闭的公网兜底使 AI 失去实时检索能力；</li>
+    <li><strong>配置入口分散</strong>：SearXNG 配置弹窗挂在健康中心 BMI 页与 AI 对话页，位置混乱，期望收敛至 AI 助手配置页；</li>
+    <li><strong>非孕期用户缺位</strong>：打卡/表单仅孕期与产后，备孕与日常体重管理用户无对应阶段；新增记录后列表偶发不显示（根因：浏览器缓存旧前端包）；</li>
+    <li><strong>看板只认孕期</strong>：WS/T 801-2022 全孕期走势看板对产后/非孕期无参考通道，且缺少标准 BMI 与当前 BMI 的直观展示；</li>
+    <li><strong>信息架构混乱</strong>：5 个平铺 Tab（孕产记录/生长曲线/体重BMI/疫苗/日历总览）对象归属与关联关系不清。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.18.2 架构设计与实现落地</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>搜索引擎三级降级（v1.56 默认开启兜底）</strong>：<code>AI_SEARCH_FALLBACK_ENABLED=True</code>（settings/.env/.env.example 三方同步）——SearXNG 无结果/不可达自动回退平台内置公网引擎（Bing 直连），徽章明确显示当前引擎（<code>公网实时检索（Bing）</code>）；三层状态 + <code>searxng_empty</code> 橙色诊断，AI 回答末尾注明「信息来源：当前搜索引擎」；</li>
+    <li><strong>配置入口收敛</strong>：<code>AIConfigPage</code>（<code>/settings/ai</code>）新增「搜索引擎配置」区块（实例地址/连通状态/兜底开关摘要 + 配置面板），BMI 页与 AI 对话页按钮移除；</li>
+    <li><strong>非孕期（备孕/日常）阶段</strong>：<code>stage=general</code> 零迁移复用 <code>prenatal_exam</code>——统一打卡新增「我·非孕期/备孕」模式、BMI 表单新增「非孕期/备孕」按钮、序列化器 <code>stage_type</code> 增 <code>general</code>（自动清空孕周/产后月龄）、医学计算器新增非孕期评估分支（标准 BMI 区间 18.5~23.9）；孕产记录/历史表阶段列显示「非孕期」；后端 <code>index.html</code> 强制 no-cache 根治旧前端缓存；</li>
+    <li><strong>BMI 状态卡 + 非孕期看板</strong>：三卡展示标准 BMI 区间（18.5~23.9）/ 当前测算 BMI（最新打卡实时计算 + 分类）/ 孕前 BMI 基线；时序看板纯非孕期自动切换为「体重走势 + BMI 18.5~23.9 体重参考带 + BMI 21 中位虚线」，孕期维持 WS/T 通道带；</li>
+    <li><strong>健康中心 4-Tab 重构</strong>：妈妈·孕产档案（明细列表 + BMI 分析全模块）/ 宝宝·生长档案（曲线 + WHO 男童 P50 参考线 + 测量记录表）/ 宝宝·疫苗计划（日历 + 接种状态 + 免疫规划清单 + 下一针建议按月龄）/ 健康时间轴（日历总览 + 任意日期点击补录弹窗预填日期）；页头「健康打卡」四模式为唯一录入入口，保存后联动刷新全部 Tab；</li>
+    <li><strong>其他优化</strong>：BMI 表单基线连续预填（身高/孕前体重自动带出）；时间轴补录；WHO P50 参考线（<code>GrowthChart</code> 按宝宝月龄插值对齐）；疫苗下一针建议（逾期红字提醒）。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.18.3 验证结论</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li>后端 <code>Django check</code> 通过；<code>stage=general</code> 序列化/评估冒烟通过（BMI 22.58 正常、文案「非孕期体重管理阶段」）；</li>
+    <li>浏览器全链路验证通过：4-Tab 结构、BMI 状态卡（当前 20.7 正常）、BmiFormCard 三阶段按钮、打卡弹窗四模式（无重复）、非孕期打卡归档（toast「已归档」+ 历史表阶段「非孕期」+ 明细徽章）、宝宝 WHO 参考线、疫苗下一针建议（乙肝第1剂·宝宝 32 个月）、时间轴点 15 日弹窗预填 2026-10-15、AI 配置页搜索区块（实例可达 + 兜底已开启）、AI 助手新消息蓝色「公网实时检索（Bing）· 5 条来源」徽章、BMI 页与 AI 页无配置入口、<code>Cache-Control: no-cache</code> 生效；验证数据已清理（用户历史记录保留）。</li>
+  </ul>
+</div>
+
+<div class="card" style="margin-top:20px;border-left:4px solid #f97316;padding:16px;background:var(--bg-card, #fff);">
+  <h3 style="margin-top:0;color:#f97316;">10.19 健康数据严谨性 · 列表管理 · 工程瘦身 · 临床赋能 (v1.57)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.19.1 业务背景与改造目标</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>数据严谨性缺位</strong>：打卡/BMI 归档/宝宝测量均无同日唯一性校验，同日反复提交产生重复记录污染时序图；打卡日期可任填未来日期；宝宝测量无数值范围提示；</li>
+    <li><strong>列表管理能力不足</strong>：三处数据列表（妈妈历史表/明细卡片流/宝宝测量表）仅支持逐条删除且无分页，数据增多后页面冗长、批量清理低效；删除确认交互三处不统一（window.confirm / 两段式按钮）；</li>
+    <li><strong>「收起本次分析结果」按钮体验缺陷</strong>：点击后清空 result——非孕期模式报告区块内容少视觉变化极小，且按钮随 result 消失无法再展开，被用户判定为"无反应"；</li>
+    <li><strong>权限模块欠账</strong>：<code>menu_health</code> 与 CRUD 权限描述仍为旧 5-Tab 语义；BMI 分析接口写库但仅校验菜单级权限，存在越权写入漏洞；</li>
+    <li><strong>工程三项阶段目标</strong>：主包体积瘦身（echarts/React 全家桶混装 ~1MB）、SearXNG 引擎配置手工输入低效 + 外部食谱卡片食材缺失、临床实用能力（A4 报告导出 / 蓝牙秤/Apple Health 数据导入）缺位。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.19.2 架构设计与实现落地</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>同日唯一 + 覆盖更新引擎</strong>：<code>HealthRecordViewSet.create</code> 与 <code>HealthBmiAnalysisView.post</code> 双链路查重（user + record_type + record_date，<code>UNIQUE_DATE_TYPES=(prenatal_exam, growth_measurement)</code>，疫苗豁免——同日可接种多剂）；命中返回 <code>409 + code 4090 + existing 摘要</code>，前端确认后携 <code>overwrite=true</code> 重发——妈妈链路后端原地更新当日记录并重新生成评估（<code>record_action=updated</code>），宝宝链路 <code>PATCH</code> 原记录；保留 id 与 created_at 不产生重复数据；</li>
+    <li><strong>未来日期硬拦截 + 宝宝数值软提示</strong>：serializer 层校验 record_date ≤ 今天（400 精确提示）+ 前端 date input <code>max=今天</code> 双防线；宝宝身高 30~140 / 体重 0.5~40 / 头围 25~60 之外仅作黄色警示不阻断录入；</li>
+    <li><strong>列表管理组件化</strong>：新增 <code>useListPagination</code> Hook（分页 + 页大小 localStorage 记忆）+ <code>PaginationBar</code>（页码省略号导航 + 5/10/20/50 选择器）+ <code>ConfirmDialog</code>（红色二次确认弹窗），四处列表接入（妈妈历史表/明细卡片流/宝宝测量表/疫苗全量记录区）；批量删除走后端 <code>batch-delete</code>（单事务 + 200 条/次上限 + 仅本人 + 逐条审计）；</li>
+    <li><strong>报告可逆折叠</strong>：<code>reportCollapsed</code> 状态 + 常驻切换按钮（Chevron 图标），收起仅隐藏区块不丢数据，重新分析自动展开；</li>
+    <li><strong>权限同步与越权修复</strong>：<code>PERMISSION_DEFINITIONS</code> 五项描述更新 4-Tab 语义（含 CSV 导入/批删能力说明）；BMI 接口补齐 <code>health_record_view</code>（GET 时序）与 <code>health_record_create</code>（POST 归档）细粒度校验，堵住被禁记录权限用户经分析接口绕过管控写库的漏洞；</li>
+    <li><strong>工程瘦身（阶段一）</strong>：<code>manualChunks</code> 分包（echarts 1MB / react-vendor 190KB / router 22KB / axios 51KB / pdf-tools 593KB 独立 chunk），主包由 ~1MB 减至 <b>453KB（gzip 116KB）</b>；<code>BmiTimeSeriesBoard</code> 重构为 init 一次 + <code>setOption({notMerge})</code> 热更新 + ResizeObserver 容器自适应，容器常驻挂载杜绝条件渲染重建实例；</li>
+    <li><strong>SearXNG 预设与食谱结构化（阶段二）</strong>：配置弹窗三档预设一键填入（国内优选 bing,sogou / 仅 bing / 国际组合 google,bing）+ ✓ 选中态 + 一键清空；<code>extract_ingredients_from_text()</code> 数量型/适量型双正则 + 动词干扰词过滤提取食材用量（菠菜100克、鸡蛋2个、牛奶250ml），自动补全外部推荐卡片 ingredients 字段；</li>
+    <li><strong>临床赋能（阶段三）</strong>：<code>HealthReportExport</code> A4 报告四区块（基本信息/评估结论/时序明细/免责声明）+ iframe 打印 + html2canvas/jsPDF 动态加载多页切片下载；<code>CsvImportModal</code> 双对象导入（mom/baby 模板、文件/粘贴/模板下载、解析预览+本地预检、冲突策略 skip|overwrite、逐行错误明细、500 条上限、基线继承），蓝牙健康秤/Apple Health 数据转 CSV 即可批量建档。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.19.3 验证结论</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li>后端冒烟 22 项全部通过（正则提取/BMI 链路 409+覆盖+未来日期/宝宝链路/疫苗同日两剂不查重/批量删除/CSV 导入逐行明细）；构建产物五独立 chunk 且 pdf-tools 按需加载；</li>
+    <li>浏览器全链路验证通过：三链路 409 覆盖确认（含当日已有数据摘要）、收起/展开可逆折叠、四处列表勾选/全选本页/批删确认（涉及清单展示）、分页与页大小 localStorage 记忆、批量删除精确清理、疫苗同日两剂 + 批删还原、A4 报告四区块 + PDF 实际下载、CSV 导入（skip 策略新增1/跳过1/失败2 含行级错误）、SearXNG 预设、权限矩阵新描述、修复版包 console 零 JS 错误；</li>
+    <li>测试期间发现并修复一个真实缺陷：<code>CsvImportModal</code> 的 useMemo 位于 <code>if (!isOpen) return null</code> 之后导致 React #310 hooks 数量不一致整树崩溃白屏，修复后（hooks 全部前置 + 注释固化规范）复验通过；</li>
+    <li>验证数据全部清理（12 条测试记录 + 冒烟脚本 + 下载 PDF 均回收站），用户原有数据与 <code>.env</code> 配置完好。</li>
+  </ul>
+</div>
+
+<div class="card" style="margin-top:20px;border-left:4px solid #f97316;padding:16px;background:var(--bg-card, #fff);">
+  <h3 style="margin-top:0;color:#f97316;">10.20 孕周锚点自动推算（孕x周x天）与报告区块归属优化 (v1.57.1)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.20.1 业务背景与改造目标</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>孕周自动推算断链</strong>：无预产期用户录入过一次孕期数据（如 2026-05-01 孕1周）后，再次打卡选其他日期孕周仍要求手填——后端 <code>gestation_engine</code> 双基准推算能力（预产期 280 天模型 &gt; 最早打卡锚点外推）未贯通到前端两条录入链路；</li>
+    <li><strong>粒度不足</strong>：孕周仅有整周展示，缺少「孕x周x天」天粒度（05-01 孕1周 → 05-02 应显示孕1周1天）；</li>
+    <li><strong>报告区块归属不清</strong>：「展开/收起分析报告」按钮挂在模块头部（与导出按钮并排），距报告内容区过远，用户无法分辨"分析报告"指哪部分内容。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.20.2 架构设计与实现落地</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>锚点自动推算贯通</strong>：新增 <code>frontend/src/utils/gestation.ts</code> 共享工具（<code>computeGestation</code> 280 天模型/锚点外推、<code>gestationLabel</code> 孕X周/孕X周Y天格式、<code>extractGestationAnchor</code> 最早孕期打卡锚点——与后端 first_anchor 查询口径一致）；打卡弹窗与深度 BMI 表单孕期模式下无预产期但有锚点时孕周随日期自动推算预填（±1 周微调、超偏差后端拦截），完全无基准才手填；日期变更即时联动（05-01 孕1周锚点：选 05-08 自动"孕2周"、选 05-02 自动"孕1周1天"）；</li>
+    <li><strong>孕x周x天全链路</strong>：<code>validate_gestational_week</code> 全部成功路径透出 <code>days</code>（周内天数 0~6，手填与推算一致沿用推算天数、微调 ±1 归零、40 周封顶超期保留），随 <code>exam_items.gestational_days</code> 零迁移存储；显示层统一 <code>gestationLabel</code>（历史表阶段列、明细卡片徽章、图表轴标签与 tooltip、报告摘要），历史无 days 记录降级整周；CSV 导入 mom 模板 <code>week</code> 列支持小数（23.5 = 孕23周3天）；</li>
+    <li><strong>相邻日期兼容</strong>：锚点次日起任意日期可打卡（同日唯一 409 覆盖机制与按日推算互不冲突），从机制上支持"录完 05-01 再录 05-02"的连续补录场景；</li>
+    <li><strong>报告区块归属重构</strong>：折叠按钮下移至报告区块自身标题栏——报告包裹独立卡片（📊 本次分析报告 + 评估摘要行「孕X周Y天评估 · 实际增重 Xkg（状态）」+ 收起/展开报告内容按钮），收起仅留标题栏、展开显示五区块完整内容；模块头部仅保留「导出评估报告」。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.20.3 验证结论</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li>后端冒烟（用户真实锚点 2026-05-01 孕1周）：05-02 → 孕1周1天 / 05-08 → 孕2周 / 今天 → 孕24周1天推算全对；validate 自动填充透出 days、手填一致透传/微调归零/偏差&gt;1 拦截、BMI 接口自动归档孕1周1天 note + 存储 + 时序透出、同日 409、历史 days=None 降级整周——全部通过；</li>
+    <li>浏览器全链路：打卡弹窗今天预填 24 / 05-08 预填 2 / 05-02 预填 1（提示"按首次打卡 2026-05-01 孕1周自动推算"）、05-02 保存归档后历史表·明细卡片·看板均显示"孕1周1天"、深度表单推算提示、报告标题栏折叠按钮（收起隐藏曲线区/展开恢复/模块头部无旧按钮）、console 零 JS 错误；</li>
+    <li>测试数据已清理（05-02、10-09 两条验证记录批删），用户原有数据（05-01/05-08/05-15 三条孕期打卡 + 宝宝测量）完整保留。</li>
+  </ul>
+</div>
+
 </body>
 </html>

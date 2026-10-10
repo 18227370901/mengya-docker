@@ -741,3 +741,25 @@ django.db.utils.OperationalError: unable to open database file
   * `RequireAuth.tsx` 实现路由切换防抖拉取、页面获焦（`focus`）同步与 15 秒定时静默轮询更新，确保管理员修改后用户端无感秒级生效；
 - **后端 API 403 严格防线**：
   * 孕期食谱、胎教故事、周历接口等 ViewSet 添加动态权限校验，越权访问直接返回 403 Forbidden。
+
+---
+
+## 功能版本同步公告：健康中心全系列能力对齐传统版 (v1.54 ~ v1.57.1)
+
+本仓库（Docker 版）已完成与 [mengya-traditional](https://github.com/18227370901/mengya-traditional.git) 传统版 **v1.54 ~ v1.57.1** 共 6 个版本的全部业务功能同步（部署运维体系保持 Docker 版独立演进不受影响）：
+
+| 版本 | 能力摘要 |
+|---|---|
+| v1.54 | 健康中心 BMI 动态图表看板（WS/T 801-2022 通道带/中位线/Δkg 变色柱状）+ SearXNG 双通道食谱引擎 + 医学预警 |
+| v1.55 | 统一健康打卡弹窗（孕期/产后/宝宝三模式）+ 孕周一致性校验引擎 + AI 实时检索管线（SearXNG 优先/公网兜底） |
+| v1.55.1 | SearXNG 接入链路两跳诊断（searxng_empty 精确状态 + 失效引擎清单透出） |
+| v1.56 | 健康中心 4-Tab 信息架构重构（妈妈·孕产档案/宝宝·生长档案 WHO P50/疫苗下一针建议/时间轴补录）+ 非孕期阶段 + 搜索引擎三级降级 + SPA no-cache |
+| v1.57 | 数据严谨性（同日唯一 409/覆盖更新/未来日期拦截/宝宝数值软提示）+ 四处列表勾选批删与分页 + vite manualChunks 瘦身（主包 453KB）+ SearXNG 引擎预设 + 食材正则提取 + A4 评估报告导出（打印/PDF）+ CSV 批量导入 + BMI 接口越权漏洞修复 |
+| v1.57.1 | 孕周锚点自动推算贯通前端（无预产期时按首次打卡自动算 孕x周x天，如 05-01 孕1周 → 05-08 自动"孕2周"、05-02 自动"孕1周1天"）+ 分析报告折叠按钮归位区块标题栏（附评估摘要行） |
+
+**同步范围**：后端 `apps/core/`（孕周引擎/医学计算/食谱双通道/SearXNG 客户端/视图与序列化器/权限矩阵）、前端 `frontend/src/`（健康中心全套组件/`utils/gestation.ts`/ui 通用组件/构建产物分包）、`config/urls.py`、`templates/index.html`、`static/assets/`（最新构建产物）；`config/settings.py` 与 `.env.example` 已合并 SearXNG 配置段（`SEARXNG_FORMAT` / `AI_SEARCH_FALLBACK_ENABLED=True`）；Docker 专属运维文件（Dockerfile / docker-compose / bin/ / run.sh 等）零改动。
+
+**注意**：
+- 前端已分包（echarts/react-vendor/router/axios/pdf-tools 独立 chunk，PDF 工具链按需加载），容器重建后 `templates/index.html` 与 `static/assets/` 产物即最新（已随仓库提交，无需本地构建）；
+- 若需容器内自行构建前端，`frontend/package.json` 已含 `jspdf` + `html2canvas` 依赖，执行 `run.sh rebuild` 即可；
+- 详细架构设计见 `Project_System_Design.md` / `.html` 第 10.16 ~ 10.20 章。

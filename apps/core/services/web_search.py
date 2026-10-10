@@ -56,6 +56,16 @@ _SEARCH_PATTERNS = [
     r"是谁|谁.*说|谁.*做|发生了什么",
     # 节日/节气
     r"今天.*节|星期几|礼拜几|放假|休假|农历|公历|节气|倒计时",
+    # ===== 母婴健康与安全实时性问答（v1.55：确保权威实时检索）=====
+    r"孕\d+周|孕早期|孕中期|孕晚期|预产期|待产|分娩|坐月子|产检|唐筛|糖耐|胎心|胎动|宫缩",
+    r"产后|回奶|追奶|堵奶|乳腺炎|恶露|盆底肌|产后抑郁",
+    r"哺乳|母乳|奶粉|辅食|断奶|厌奶|吐奶|溢奶|夜奶|打嗝",
+    r"宝宝.*(发烧|发热|咳嗽|腹泻|拉肚子|湿疹|红屁屁|黄疸|鼻塞|哭闹|睡眠|翻身|长牙|说话|走路)",
+    r"婴儿|新生儿|幼儿.*(护理|喂养|发育|体检|身高|体重|头围)",
+    r"疫苗|接种|乙肝疫苗|脊灰疫苗|百白破|流感",
+    r"吃药|用药|退烧药|剂量|能不能吃|可以吃吗|禁忌|过敏",
+    r"安全座椅|婴儿车|奶瓶|吸奶器|纸尿裤|辅食机|餐具|母婴用品.*(召回|抽检|不合格|评测)",
+    r"水土不服|疫苗反应|肠绞痛|鹅口疮|痱子|幼儿急疹|猩红热|手足口",
 ]
 
 
@@ -427,3 +437,81 @@ def search_and_summarize(query: str, max_results: int = 5) -> tuple[str, str]:
         return "\n".join(lines), engine_name
     except Exception:
         return "", ""
+
+
+# ==================== AI 助手专用：SearXNG 优先检索链路 (v1.55) ====================
+
+def _is_ai_fallback_enabled() -> bool:
+    """读取管理员控制的公网引擎兜底开关（默认关闭：SearXNG 不通时直接调用 AI）"""
+    from django.conf import settings
+    return bool(getattr(settings, "AI_SEARCH_FALLBACK_ENABLED", False))
+
+
+def search_for_ai(query: str, max_results: int = 5) -> dict:
+    """AI 助手专用检索入口：
+    1. SearXNG 已配置且健康 → 私有化元搜索（权威白名单加权），status="searxng"；
+    2. SearXNG 未配置/不通 →
+       - 管理员兜底开关开启 → 回退多公网引擎管线，status="fallback:<engine>"；
+       - 开关关闭（默认）→ 直接放弃检索，status="unavailable"（由 AI 直接回答）；
+    3. 查询未命中联网检索特征 → status="skipped"。
+
+    返回: {"context": str, "engine": str, "status": str, "sources": [{title,url,domain}]}
+    """
+    result = {"context": "", "engine": "", "status": "skipped", "sources": []}
+
+    if not needs_search(query):
+        return result
+
+    # ===== 1. SearXNG 私有化实例优先 =====
+    try:
+        from apps.core.services.searxng_client import SearXNGClient
+        if SearXNGClient.is_available():
+            items = SearXNGClient.search(query, max_results=max_results)
+            if items:
+                lines = [
+                    f"【以下是通过私有化 SearXNG 元搜索引擎检索到关于“{query}”的实时结果，"
+                    "请优先参考这些权威信息回答用户，并在回答中体现来源机构：】\n"
+                ]
+                for i, r in enumerate(items, 1):
+                    title = (r.get("title") or "")[:100]
+                    body = (r.get("body") or "")[:250]
+                    href = r.get("href") or r.get("url") or ""
+                    domain = r.get("source_domain") or ""
+                    lines.append(f"{i}. 《{title}》({domain})\n   {body}\n   来源: {href}\n")
+                    result["sources"].append({"title": title, "url": href, "domain": domain})
+                result["context"] = "\n".join(lines)
+                result["engine"] = "SearXNG"
+                result["status"] = "searxng"
+                return result
+            # v1.55.1：实例可达但检索 0 条（上游引擎被 CAPTCHA/限流封禁或无相关索引），
+            # 透出精确诊断状态，供前端徽章与管理员排查；后续兜底分支不得覆盖此状态
+            result["status"] = "searxng_empty"
+    except Exception:
+        pass
+
+    # ===== 2. 管理员兜底开关：公网引擎管线（默认关闭）=====
+    if not _is_ai_fallback_enabled():
+        # v1.55.1：保留 searxng_empty 诊断状态（实例活着但引擎无结果），仅其余情况标记 unavailable
+        if result["status"] != "searxng_empty":
+            result["status"] = "unavailable"
+        return result
+
+    try:
+        results, engine_name = web_search_with_source(query, max_results=max_results)
+        if results:
+            lines = [f"【以下是通过 {engine_name} 检索到关于“{query}”的实时网络搜索结果，请优先参考这些信息回答用户：】\n"]
+            for i, r in enumerate(results, 1):
+                title = r["title"][:100]
+                body = r["body"][:250]
+                href = r.get("href") or r.get("url") or ""
+                domain = r.get("source_domain") or ""
+                lines.append(f"{i}. 《{title}》\n   {body}\n   来源: {href}\n")
+                result["sources"].append({"title": title, "url": href, "domain": domain})
+            result["context"] = "\n".join(lines)
+            result["engine"] = engine_name
+            result["status"] = f"fallback:{engine_name}"
+        else:
+            result["status"] = "unavailable"
+    except Exception:
+        result["status"] = "unavailable"
+    return result

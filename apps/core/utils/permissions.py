@@ -139,7 +139,7 @@ PERMISSION_DEFINITIONS = [
             {"key": "menu_products", "name": "商品库中心", "desc": "母婴选品库及同类商品对比", "parent_key": None},
             {"key": "menu_ai_assistant", "name": "AI 助手", "desc": "7×24小时智能问答小助手", "parent_key": None},
             {"key": "menu_shopping_list", "name": "智能待产包", "desc": "待产包清单与物品准备管理", "parent_key": None},
-            {"key": "menu_health", "name": "健康中心", "desc": "产检日历、生长曲线与疫苗记录", "parent_key": None},
+            {"key": "menu_health", "name": "健康中心", "desc": "妈妈孕产档案、宝宝生长档案、疫苗计划与健康时间轴", "parent_key": None},
             {"key": "menu_fetal_stories", "name": "胎教故事", "desc": "每日温馨胎教故事阅读", "parent_key": None},
             {"key": "menu_recipes", "name": "孕期食谱", "desc": "各阶段专属孕期餐与营养谱", "parent_key": None},
             {"key": "menu_encyclopedia", "name": "幼儿百科", "desc": "幼儿身体与认知趣味科普", "parent_key": None},
@@ -161,12 +161,12 @@ PERMISSION_DEFINITIONS = [
     {
         "group_key": "health",
         "group_name": "健康中心功能（CRUD）",
-        "description": "控制普通用户在健康中心中产检、体征与疫苗记录的增删改查权限",
+        "description": "控制普通用户在健康中心中妈妈孕产档案、宝宝生长档案、疫苗计划与健康时间轴的增删改查权限",
         "permissions": [
-            {"key": "health_record_view", "name": "查看健康档案 (查)", "desc": "查看产检日历、体温/血压/体重曲线", "parent_key": "menu_health"},
-            {"key": "health_record_create", "name": "新增健康记录 (增)", "desc": "录入新的产检备忘、生长指标或疫苗打卡", "parent_key": "health_record_view"},
-            {"key": "health_record_update", "name": "修改健康记录 (改)", "desc": "编辑更新既往录入的健康与产检数据", "parent_key": "health_record_view"},
-            {"key": "health_record_delete", "name": "删除记录 (删)", "desc": "删除历史录入的体征或产检记录", "parent_key": "health_record_view"},
+            {"key": "health_record_view", "name": "查看健康档案 (查)", "desc": "查看妈妈孕产档案、BMI 时序看板、宝宝生长曲线与疫苗计划", "parent_key": "menu_health"},
+            {"key": "health_record_create", "name": "新增健康记录 (增)", "desc": "健康打卡（孕期/产后/非孕期）、宝宝测量与疫苗接种记录录入，及 CSV 批量导入", "parent_key": "health_record_view"},
+            {"key": "health_record_update", "name": "修改健康记录 (改)", "desc": "编辑更新既往录入的健康打卡、测量与接种数据，含同日覆盖更新", "parent_key": "health_record_view"},
+            {"key": "health_record_delete", "name": "删除记录 (删)", "desc": "删除历史健康记录，支持勾选批量删除", "parent_key": "health_record_view"},
         ],
     },
     {

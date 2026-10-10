@@ -100,9 +100,10 @@ export default function HealthCalendar({ records, currentMonth, onMonthChange, o
                   : hasRecords
                   ? "border-gray-100 bg-white hover:border-brand-200"
                   : "border-gray-50 hover:bg-gray-50"
-              } ${hasRecords && onDayClick ? "cursor-pointer" : ""}`}
+              } ${onDayClick ? "cursor-pointer" : ""}`}
               onClick={() => {
-                if (hasRecords && onDayClick && cell.dateStr) {
+                // v1.56 P1-D：任意日期可点击（含空日期），用于补录健康打卡
+                if (onDayClick && cell.dateStr) {
                   onDayClick(cell.dateStr, dayRecords);
                 }
               }}

@@ -27,7 +27,7 @@ from datetime import datetime
 
 from django.conf import settings
 
-from apps.core.services.web_search import needs_search, search_and_summarize
+from apps.core.services.web_search import search_for_ai
 
 try:
     from openai import OpenAI
@@ -299,16 +299,20 @@ def ai_chat(query_text: str, stage_label: str = "", user=None) -> dict:
     used_config_name = ""
     used_search = False
 
-    # 判断是否需要联网搜索（支持多引擎回退与来源追踪）
+    # 判断是否需要联网检索（v1.55：SearXNG 私有实例优先；未配置或不通时按管理员开关决定是否公网兜底，默认直接 AI）
     search_context = ""
     engine_source = ""
-    if needs_search(query_text):
-        res = search_and_summarize(query_text, max_results=5)
-        if isinstance(res, tuple):
-            search_context, engine_source = res
-        else:
-            search_context = str(res or "")
-        used_search = bool(search_context)
+    search_status = "skipped"
+    sources = []
+    try:
+        search_res = search_for_ai(query_text, max_results=5)
+        search_context = search_res.get("context") or ""
+        engine_source = search_res.get("engine") or ""
+        search_status = search_res.get("status") or "skipped"
+        sources = search_res.get("sources") or []
+    except Exception:
+        search_status = "unavailable"
+    used_search = bool(search_context)
 
     # 构建本周知识库
     week_knowledge = _build_week_knowledge(user)
@@ -348,9 +352,9 @@ def ai_chat(query_text: str, stage_label: str = "", user=None) -> dict:
     if not response:
         response = _local_question(query_text, stage_label)
     elif used_search:
-        src_label = f"网络搜索 - {engine_source}" if engine_source else "网络搜索"
-        if "信息来源" not in response and "网络搜索" not in response:
-            response = f"{response.rstrip()}\n\n（信息来源：{src_label}）" 
+        src_label = f"实时检索 - {engine_source}" if engine_source else "网络搜索"
+        if "信息来源" not in response and "网络搜索" not in response and "来源" not in response:
+            response = f"{response.rstrip()}\n\n（信息来源：{src_label}）"
 
     # 组装 error_hint
     if not used_openai:
@@ -361,7 +365,9 @@ def ai_chat(query_text: str, stage_label: str = "", user=None) -> dict:
     else:
         error_hint = ""
 
-    latency = int((time.time() - start) * 1000) if False else random.randint(300, 900)
+    # 真实耗时统计（修复历史版本假随机数缺陷）
+    latency = int((time.time() - start) * 1000)
+
 
     return {
         "query": query_text,
@@ -369,6 +375,8 @@ def ai_chat(query_text: str, stage_label: str = "", user=None) -> dict:
         "used_openai": used_openai,
         "used_config_name": used_config_name,
         "used_search": used_search,
+        "search_status": search_status,
+        "sources": sources,
         "latency_ms": latency,
         "suggestions": _suggestions(stage_label),
         "error_hint": error_hint,

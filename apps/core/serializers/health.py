@@ -10,21 +10,21 @@ class BmiAnalysisInputSerializer(serializers.Serializer):
     height_cm = serializers.FloatField(
         min_value=100.0,
         max_value=230.0,
-        required=True,
+        required=False,
+        allow_null=True,
         error_messages={
             "min_value": "身高不能低于 100 cm",
             "max_value": "身高不能高于 230 cm",
-            "required": "请输入身高",
         },
     )
     pre_pregnancy_weight_kg = serializers.FloatField(
         min_value=30.0,
         max_value=200.0,
-        required=True,
+        required=False,
+        allow_null=True,
         error_messages={
             "min_value": "孕前体重不能低于 30 kg",
             "max_value": "孕前体重不能高于 200 kg",
-            "required": "请输入孕前体重",
         },
     )
     current_weight_kg = serializers.FloatField(
@@ -38,7 +38,7 @@ class BmiAnalysisInputSerializer(serializers.Serializer):
         },
     )
     stage_type = serializers.ChoiceField(
-        choices=["pregnancy", "postpartum"],
+        choices=["pregnancy", "postpartum", "general"],
         default="pregnancy",
     )
     gestational_week = serializers.IntegerField(
@@ -56,22 +56,48 @@ class BmiAnalysisInputSerializer(serializers.Serializer):
     is_twins = serializers.BooleanField(
         default=False,
     )
+    record_date = serializers.DateField(
+        required=False,
+        allow_null=True,
+    )
+    # v1.57：同日重复打卡覆盖开关（检测到当日已有记录时，前端确认后携 true 覆盖更新）
+    overwrite = serializers.BooleanField(
+        default=False,
+        required=False,
+    )
+    waist_circumference_cm = serializers.FloatField(
+        min_value=30.0,
+        max_value=200.0,
+        required=False,
+        allow_null=True,
+    )
     medical_history = serializers.ListField(
         child=serializers.CharField(max_length=50),
         default=list,
         required=False,
     )
     save_record = serializers.BooleanField(
-        default=False,
+        default=True,
         required=False,
     )
 
     def validate(self, attrs):
         stage = attrs.get("stage_type", "pregnancy")
-        if stage == "pregnancy":
-            if not attrs.get("gestational_week"):
-                raise serializers.ValidationError({"gestational_week": "孕期阶段必须提供当前孕周(1~42周)"})
-        elif stage == "postpartum":
+        # v1.57：测量日期硬拦截——不能晚于今天（补录回溯合理，未来预填会污染时序图与孕周引擎）
+        record_date = attrs.get("record_date")
+        if record_date:
+            from django.utils import timezone
+
+            if record_date > timezone.localdate():
+                raise serializers.ValidationError(
+                    {"record_date": "测量日期不能晚于今天，请选择今天或之前的日期"}
+                )
+        if stage == "postpartum":
             if attrs.get("postpartum_months") is None:
                 attrs["postpartum_months"] = 1
+        elif stage == "general":
+            # v1.56：非孕期（备孕/日常）不携带产后月龄与孕周
+            attrs["postpartum_months"] = None
+            attrs["gestational_week"] = None
+        # 孕周/身高/孕前体重的补齐与校验由视图层统一执行（孕周引擎 + 基线继承）
         return attrs

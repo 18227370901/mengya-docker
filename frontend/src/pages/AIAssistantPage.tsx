@@ -2,6 +2,8 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import {
   Bot,
   Check,
+  Globe,
+  Link2,
   Loader2,
   MessageSquare,
   Plus,
@@ -13,7 +15,8 @@ import {
   X,
 } from "lucide-react";
 import { aiApi } from "@/api/services";
-import { useChatStore } from "@/store/chatStore";
+import { useAuthStore } from "@/store/authStore";
+import { useChatStore, type ChatSource } from "@/store/chatStore";
 import type { ChatSessionSummary } from "@/types";
 import CopyButton from "@/components/CopyButton";
 
@@ -25,6 +28,11 @@ interface ChatData {
   error_hint?: string;
   session_id?: number;
   session_title?: string;
+  /** v1.55：实时检索状态 searxng / searxng_empty / fallback:<engine> / unavailable / skipped */
+  search_status?: string;
+  /** v1.55：SearXNG 实时检索来源列表 */
+  sources?: ChatSource[];
+  latency_ms?: number;
 }
 
 const DEFAULT_SUGGESTIONS = [
@@ -58,6 +66,9 @@ export default function AIAssistantPage() {
   const [renameValue, setRenameValue] = useState("");
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [toast, setToast] = useState<{ msg: string; type: "success" | "error" }>({ msg: "", type: "success" });
+  const [expandedSourceMsg, setExpandedSourceMsg] = useState<number | null>(null);
+  const { user } = useAuthStore();
+  const isAdmin = !!user?.is_staff;
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const showToast = (msg: string, type: "success" | "error" = "success") => {
@@ -108,7 +119,12 @@ export default function AIAssistantPage() {
     setLoading(true);
     try {
       const data = await aiApi.chat(q, activeSessionId ?? undefined) as ChatData;
-      addMessage({ role: "ai", content: data.response });
+      addMessage({
+        role: "ai",
+        content: data.response,
+        search_status: data.search_status,
+        sources: data.sources,
+      });
 
       // 更新 activeSessionId
       if (data.session_id && data.session_id !== activeSessionId) {
@@ -280,6 +296,7 @@ export default function AIAssistantPage() {
               </p>
             </div>
           </div>
+          {/* v1.56：SearXNG 引擎配置入口已统一收敛至「AI 助手配置」页 */}
         </div>
 
         {/* 消息区 */}
@@ -315,6 +332,67 @@ export default function AIAssistantPage() {
                 }`}
               >
                 {m.content}
+{m.role === "ai" && m.search_status && m.search_status !== "skipped" && (
+                  <div className="mt-2 border-t border-gray-200/70 pt-1.5 dark:border-gray-700/70">
+                    {m.search_status === "searxng" ? (
+                      <button
+                        type="button"
+                        className="flex items-center gap-1 text-[11px] font-semibold text-emerald-600 hover:text-emerald-700 dark:text-emerald-400"
+                        onClick={() => setExpandedSourceMsg(expandedSourceMsg === i ? null : i)}
+                      >
+                        <Globe className="h-3 w-3" />
+                        SearXNG 实时检索 · {m.sources?.length || 0} 条来源
+                        {m.sources && m.sources.length > 0 && (
+                          <span className="text-gray-400">{expandedSourceMsg === i ? "收起" : "展开"}</span>
+                        )}
+                      </button>
+                    ) : m.search_status === "searxng_empty" ? (
+                      <span
+                        className="flex items-center gap-1 text-[11px] text-amber-500 dark:text-amber-400"
+                        title="SearXNG 实例已连通，但其上游引擎未返回结果（常见于出口 IP 被搜索引擎限流/验证码封禁），本次回答基于 AI 知识库"
+                      >
+                        <Globe className="h-3 w-3" />
+                        SearXNG 已连接但实例引擎无结果，回答基于 AI 知识库{isAdmin ? "（可在 AI 助手配置页排查）" : ""}
+                      </span>
+                    ) : m.search_status === "unavailable" ? (
+                      <span className="flex items-center gap-1 text-[11px] text-gray-400">
+                        <Globe className="h-3 w-3" />
+                        未接入实时检索，回答基于 AI 知识库{isAdmin ? "（可在 AI 助手配置页排查）" : ""}
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="flex items-center gap-1 text-[11px] font-semibold text-blue-500 hover:text-blue-600"
+                        onClick={() => setExpandedSourceMsg(expandedSourceMsg === i ? null : i)}
+                      >
+                        <Globe className="h-3 w-3" />
+                        公网实时检索{m.search_status?.startsWith("fallback:") ? `（${m.search_status.split(":")[1]}）` : ""} · {m.sources?.length || 0} 条来源
+                      </button>
+                    )}
+                    {expandedSourceMsg === i && m.sources && m.sources.length > 0 && (
+                      <ul className="mt-1.5 space-y-1">
+                        {m.sources.map((src, idx) => (
+                          <li key={idx} className="truncate text-[11px] text-gray-500 dark:text-gray-400">
+                            <Link2 className="mr-1 inline h-3 w-3 shrink-0" />
+                            {src.url ? (
+                              <a
+                                href={src.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="hover:text-brand-500 hover:underline"
+                                title={src.url}
+                              >
+                                {src.domain ? `[${src.domain}] ` : ""}{src.title || src.url}
+                              </a>
+                            ) : (
+                              <span>{src.domain ? `[${src.domain}] ` : ""}{src.title}</span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
               </div>
               {m.role === "ai" && (
                 <div className="flex items-center gap-1 pl-1 pt-0.5">
@@ -390,6 +468,8 @@ export default function AIAssistantPage() {
           </div>
         </div>
       )}
+
+      {/* v1.56：SearXNG 引擎配置入口已统一收敛至「AI 助手配置」页 */}
 
       {/* Toast 提示 */}
       {toast.msg && (
