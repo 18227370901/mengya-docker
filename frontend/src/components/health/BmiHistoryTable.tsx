@@ -50,6 +50,8 @@ export default function BmiHistoryTable({ records, loading, onDelete, onBatchDel
   const [batchConfirm, setBatchConfirm] = useState(false);
   const [batchDeleting, setBatchDeleting] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  // v1.61：支持历史表折叠展开，空数据时默认紧凑
+  const [isCollapsed, setIsCollapsed] = useState(false);
   // v1.59：展开打卡详情（备注 + AI 临床解读）
   const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
 
@@ -152,6 +154,17 @@ export default function BmiHistoryTable({ records, loading, onDelete, onBatchDel
               删除所选 ({selected.size})
             </button>
           )}
+          {records.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setIsCollapsed(!isCollapsed)}
+              className="btn-secondary shrink-0 gap-1 text-xs"
+              title={isCollapsed ? "展开历史数据表" : "收起历史数据表"}
+            >
+              {isCollapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
+              {isCollapsed ? "展开表格" : "收起表格"}
+            </button>
+          )}
         </div>
       </div>
 
@@ -161,12 +174,23 @@ export default function BmiHistoryTable({ records, loading, onDelete, onBatchDel
         </div>
       )}
 
-      {loading ? (
-        <p className="py-10 text-center text-sm text-gray-400">历史数据加载中…</p>
+      {isCollapsed ? (
+        <div className="rounded-xl bg-orange-50/50 px-4 py-3 text-xs text-gray-500 dark:bg-gray-900/40 dark:text-gray-400 flex items-center justify-between">
+          <span>历史打卡数据表已收起（共 {records.length} 条记录），可随时展开查看明细。</span>
+          <button
+            type="button"
+            onClick={() => setIsCollapsed(false)}
+            className="text-brand-600 hover:text-brand-700 dark:text-brand-400 text-xs font-medium ml-2"
+          >
+            展开查看
+          </button>
+        </div>
+      ) : loading ? (
+        <p className="py-6 text-center text-sm text-gray-400">历史数据加载中…</p>
       ) : total === 0 ? (
-        <p className="py-10 text-center text-sm text-gray-400">
-          暂无测量打卡记录，完成一次打卡后将在此形成可回溯的历史档案
-        </p>
+        <div className="rounded-xl bg-orange-50/40 px-4 py-3.5 text-center text-xs text-gray-400 dark:bg-gray-900/30 dark:text-gray-500">
+          暂无测量打卡记录 · 完成一次健康打卡后将在此自动生成结构化历史档案
+        </div>
       ) : (
         <>
           <div className="overflow-x-auto">

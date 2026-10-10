@@ -1906,5 +1906,26 @@ estart: unless-stopped；
   </ul>
 </div>
 
+
+<div style="background:#fff;border-radius:12px;padding:24px;margin-bottom:24px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+  <h3 style="color:#0f172a;font-size:18px;margin-top:0;border-bottom:2px solid #f97316;padding-bottom:8px;">10.24 健康时间轴全景多视图重构、时序空数据自适应折叠与分析报告篇幅精简 (v1.61)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.24.1 业务背景与问题复盘</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>健康时间轴名实错位</strong>：原页面仅有月历格子缺少垂直时间轴流，且缺少打卡活跃度与类型构成的统计图表；</li>
+    <li><strong>清空数据后大片空白占用</strong>：无数据时时序看板仍常驻 320px 空白图表容器，造成近 800px 无效垂直留白；</li>
+    <li><strong>分析报告默认展开导致篇幅过长</strong>：初次载入或刷新时报告全量铺陈上千像素，产生视觉压迫感。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.24.2 架构重构与优化落地</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>时间轴全景多视图体系</strong>：<code>HealthTimelineView</code> 整合纵向时间轴流（指标芯片/AI解读/类型筛选）、统计图表看板（近6月活跃度堆叠柱状图、类型构成环形图）与经典月历总览（保留补录），支持本地偏好记忆与宏观指标卡；</li>
+    <li><strong>时序图表与表格自适应折叠</strong>：无数据时自动收拢图表留白，变为轻量紧凑引导栏，支持手动折叠控制；</li>
+    <li><strong>分析报告默认收起策略</strong>：初始状态严格设为收起（52px单行标题栏），仅在用户主动一键分析时展开直达，整页篇幅适中紧凑。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.24.3 验证结论</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li>前端 <code>tsc -b &amp;&amp; vite build</code> 0 错误编译通过，静态资产与模板完全同步；页面视觉与交互体验大幅提升。</li>
+  </ul>
+</div>
+
 </body>
 </html>

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as echarts from "echarts";
-import { LineChart as LineChartIcon, BarChart3, TrendingUp } from "lucide-react";
+import { LineChart as LineChartIcon, BarChart3, TrendingUp, ChevronDown, ChevronUp } from "lucide-react";
 import { useThemeStore } from "@/store/themeStore";
 import { gestationLabel } from "@/utils/gestation";
 import type { BmiTimeSeriesRecord } from "@/types/health";
@@ -424,6 +424,11 @@ export default function BmiTimeSeriesBoard({ records, loading }: BmiTimeSeriesBo
     };
   }, []);
 
+  // v1.61：数据清空或无数据时自动收拢，避免出现 320px 巨大空白占用；支持手动折叠
+  const hasRecords = records.length > 0;
+  const [collapsedManually, setCollapsedManually] = useState<boolean | null>(null);
+  const isCollapsed = collapsedManually !== null ? collapsedManually : !hasRecords;
+
   const noData = filtered.length === 0;
   const deltaInsufficient = viewMode === "delta" && filtered.length < 2;
 
@@ -448,7 +453,9 @@ export default function BmiTimeSeriesBoard({ records, loading }: BmiTimeSeriesBo
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* 视图切换器 */}
+          {/* 视图切换器与筛选（有数据时展示） */}
+          {hasRecords && !isCollapsed && (
+          <>
           <div className="flex rounded-xl bg-gray-100 p-0.5 dark:bg-gray-800">
             <button
               type="button"
@@ -493,6 +500,19 @@ export default function BmiTimeSeriesBoard({ records, loading }: BmiTimeSeriesBo
               </button>
             ))}
           </div>
+          </>
+          )}
+
+          {/* v1.61：看板折叠/展开按钮 */}
+          <button
+            type="button"
+            onClick={() => setCollapsedManually(!isCollapsed)}
+            className="btn-secondary shrink-0 gap-1 text-xs"
+            title={isCollapsed ? "展开时序图表看板" : "收起时序图表看板"}
+          >
+            {isCollapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
+            {isCollapsed ? "展开图表" : "收起图表"}
+          </button>
         </div>
       </div>
 
@@ -506,28 +526,44 @@ export default function BmiTimeSeriesBoard({ records, loading }: BmiTimeSeriesBo
         </div>
       )}
 
-      {/* 图表主体（v1.57：容器常驻挂载，提示层覆盖其上，避免条件渲染导致图表实例反复重建） */}
-      <div className="relative">
-        <div ref={chartRef} style={{ height: 320 }} className="w-full" />
-        {(loading || noData || deltaInsufficient) && (
-          <div className="absolute inset-0 flex items-center justify-center bg-white/70 dark:bg-gray-900/50">
-            <p className="max-w-[80%] text-center text-sm text-gray-400">
-              {loading
-                ? "时序数据加载中…"
-                : noData
-                ? "当前时间跨度内暂无测量打卡数据，完成一次打卡后即可查看趋势与增量分析"
-                : "增量视图需至少两次打卡记录才能对比相邻变化，请再完成一次测量打卡"}
-            </p>
+      {/* v1.61：无数据或收起状态下的紧凑轻量引导条 */}
+      {isCollapsed ? (
+        <div className="rounded-xl bg-orange-50/50 px-4 py-3 text-xs text-gray-500 dark:bg-gray-900/40 dark:text-gray-400 flex items-center justify-between">
+          <span>{hasRecords ? "时序图表看板已收起，数据保留可随时展开。" : "暂无打卡数据 · 完成上方测量打卡后，系统将自动激活并展开 WS/T 801 趋势与增量图表。"}</span>
+          <button
+            type="button"
+            onClick={() => setCollapsedManually(false)}
+            className="text-brand-600 hover:text-brand-700 dark:text-brand-400 text-xs font-medium ml-2"
+          >
+            展开查看
+          </button>
+        </div>
+      ) : (
+        <>
+          {/* 图表主体 */}
+          <div className="relative">
+            <div ref={chartRef} style={{ height: 320 }} className="w-full" />
+            {(loading || noData || deltaInsufficient) && (
+              <div className="absolute inset-0 flex items-center justify-center bg-white/70 dark:bg-gray-900/50">
+                <p className="max-w-[80%] text-center text-sm text-gray-400">
+                  {loading
+                    ? "时序数据加载中…"
+                    : noData
+                    ? "当前时间跨度内暂无测量打卡数据，完成一次打卡后即可查看趋势与增量分析"
+                    : "增量视图需至少两次打卡记录才能对比相邻变化，请再完成一次测量打卡"}
+                </p>
+              </div>
+            )}
           </div>
-        )}
-      </div>
 
-      {viewMode === "trend" && !noData && (
-        <p className="text-right text-[11px] text-gray-400">
-          {isNonPregnancyView
-            ? "蓝色带为 BMI 18.5~23.9 标准区间对应体重范围 · 橙色曲线为您的实测体重走势"
-            : "绿色带为 WS/T 801-2022 当周推荐增重通道 · 橙色曲线为您的实测累计增重走势"}
-        </p>
+          {viewMode === "trend" && !noData && (
+            <p className="text-right text-[11px] text-gray-400">
+              {isNonPregnancyView
+                ? "蓝色带为 BMI 18.5~23.9 标准区间对应体重范围 · 橙色曲线为您的实测体重走势"
+                : "绿色带为 WS/T 801-2022 当周推荐增重通道 · 橙色曲线为您的实测累计增重走势"}
+            </p>
+          )}
+        </>
       )}
     </div>
   );

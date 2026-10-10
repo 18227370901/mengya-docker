@@ -48,7 +48,8 @@ export default function BmiAnalysisView({ refreshTrigger, onRecordChanged, exter
   const [historyLoading, setHistoryLoading] = useState<boolean>(true);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   // v1.57：分析报告可逆折叠（默认展开；收起仅隐藏报告区块，分析数据保留可反复切换）
-  const [reportCollapsed, setReportCollapsed] = useState(false);
+  // v1.61：分析报告默认收起，保持页面篇幅适中紧凑；仅在用户主动分析评估时自动展开
+  const [reportCollapsed, setReportCollapsed] = useState(true);
   // v1.57：同日重复打卡 409 冲突信息与待覆盖重发的原 payload
   const [conflictInfo, setConflictInfo] = useState<SameDayConflictPayload | null>(null);
   const [pendingPayload, setPendingPayload] = useState<BmiAnalysisInput | null>(null);

@@ -9,6 +9,7 @@ import type { BmiAnalysisResult } from "@/types/health";
 import GrowthChart from "@/components/GrowthChart";
 import VaccineCalendar from "@/components/VaccineCalendar";
 import HealthCalendar from "@/components/HealthCalendar";
+import HealthTimelineView from "@/components/health/HealthTimelineView";
 import BmiAnalysisView from "@/components/health/BmiAnalysisView";
 import UnifiedHealthCheckIn from "@/components/health/UnifiedHealthCheckIn";
 import CsvImportModal from "@/components/health/CsvImportModal";
@@ -31,7 +32,7 @@ const TABS: Array<{ key: TabKey; label: string; icon: typeof CalendarCheck }> = 
   { key: "mom", label: "妈妈·孕产档案", icon: HeartPulse },
   { key: "growth", label: "宝宝·生长档案", icon: LineChart },
   { key: "vaccine", label: "宝宝·疫苗计划", icon: Baby },
-  { key: "calendar", label: "健康时间轴", icon: Calendar },
+  { key: "calendar", label: "健康时间轴与日历", icon: Calendar },
 ];
 
 export default function HealthPage() {
@@ -385,7 +386,7 @@ export default function HealthPage() {
           )}
         </div>
       ) : tab === "calendar" ? (
-        <HealthCalendar
+        <HealthTimelineView
           records={records}
           currentMonth={calendarMonth}
           onMonthChange={setCalendarMonth}
@@ -393,6 +394,7 @@ export default function HealthPage() {
             // v1.56 P1-D：点击日期 → 打开健康打卡弹窗并预填该日期（补录入口）
             openCheckIn(_date);
           }}
+          onCheckInClick={() => openCheckIn()}
         />
       ) : (
         <VaccineCalendar records={records} onChanged={load} babyBirthday={user?.baby_birthday} />
