@@ -1367,3 +1367,31 @@ django.db.utils.OperationalError: unable to open database file
 #### 10.24.3 验证效果
 - 前端 `tsc -b && vite build` 0 错误编译通过，生产静态资源全量同步。
 - 时间轴流、统计图表、经典日历三重视图切换顺畅；空数据状态下时序看板与历史表紧凑自适应折叠，留白占用彻底消除；分析报告默认收起，页面篇幅美观清爽。
+---
+
+### 10.25 首页定时轮询抖动根除与时序看板图表生命周期完整联动 (v1.62)
+
+#### 10.25.1 业务背景与问题复盘
+1. **首页停驻时每隔 15 秒页面剧烈抖动与闪烁**：
+   - 现象：停留在系统首页，每隔约 15 秒整个页面内容瞬间消失替换为“加载中…”，随即恢复，造成强烈的视觉跳动与滚动条抖动。
+   - 根因：RequireAuth 的 15 秒定时器持续调用 fetchMe()。每次返回的 JSON 数据反序列化出新的 data.stage 对象引用。HomePage.tsx 的 useEffect 依赖了 [stage] 对象，引发 fetchHomeData() 反复重发。同时 fetchHomeData() 首行调用 setLoading(true)，触发顶层 if (loading) 条件拦截，将整个几千像素高度的页面 DOM 销毁并替换为 80px 的加载中占位，数据返回后再重建 DOM，导致页面周期性塌陷重建。
+2. **妈妈孕产档案多维度时序图表新增数据后持续空白**：
+   - 现象：在「妈妈·孕产档案」录入身高体重打卡或一键分析后，下方的「测量打卡历史数据表」已有新增数据，但上方的「多维度时序图表看板」仍然是一片空白，且手动点击展开/收起依然无图表。
+   - 根因：在 v1.61 的空数据自适应收拢设计中，当无记录时 isCollapsed === true，JSX 条件渲染分支中并未挂载 <div ref={chartRef} />。而组件中 ECharts 实例的初始化写在仅执行一次的 useEffect([], ...) 中。当组件首次挂载时，chartRef.current 为 null，初始化被直接 return 跳过，chartInstanceRef.current 永久滞留在 null。当用户新增第一条数据后，组件重绘并挂载了图表 DOM，但 Mount 钩子不再触发；图表数据更新钩子又因 !chartInstanceRef.current 拦截而直接退出，导致 ECharts 实例永远未被创建，图表持续空白。
+
+#### 10.25.2 架构重构与实现细节
+1. **首页静默刷新机制与引用防抖 (HomePage.tsx & authStore.ts)**：
+   - authStore.ts：在 fetchMe 逻辑中加入 stage 结构化比较。针对 type、is_pregnant、value、label、week_days_text 等核心字段进行比对，若未发生真实变更则保持既有对象引用，防止状态机发出虚假重绘事件。
+   - HomePage.tsx：将 useEffect 依赖解耦为基元合成键 stageKey = `${stage?.type || ""}_${stage?.is_pregnant ? "1" : "0"}_${stage?.value || 0}`，彻底隔离对象引用干扰。
+   - HomePage.tsx：将全量 Loading 拦截优化为首屏条件判断（仅在初次无任何数据时展示），常规刷新与阶段更新均采用后台异步静默更新（fetchHomeData(silent)），接口返回后原地替换状态，杜绝 DOM 结构瞬态销毁与页面抖动。
+2. **多维度时序图表生命周期与折叠态完全联动 (BmiTimeSeriesBoard.tsx)**：
+   - 实例创建与数据渲染统一解耦：移除原脱节的挂载单次 useEffect([], ...)，统一在响应 [isCollapsed, filtered, viewMode, isDark, loading] 的主作用域中执行管理。
+   - 容器挂载原地懒初始化：当 !isCollapsed && chartRef.current 满足时，自动通过 echarts.getInstanceByDom(container) || echarts.init(container) 完成实例激活与挂载，确保新增数据切换展开时 100% 能够捕获到真实的 DOM 节点并立即绘制。
+   - 资源受控清理：当折叠或组件卸载时，自动断开 ResizeObserver 并执行 chart.dispose()，重置实例指针，消除内存泄露与游离画布。
+   - 动态留白与单点适配：Category 轴设置 boundaryGap: filtered.length > 1 ? false : true，确保新增单条打卡时数据点居中、图表美观。
+   - 状态自动复位：监听 records.length === 0 时自动重置 collapsedManually 为 null，确保数据清空后重新打卡时图表能够自动展开激活。
+
+#### 10.25.3 验证效果
+- 验证首页停留行为：在首页停留连续观察多次 15s 轮询周期，网络面板正常静默同步用户信息，首页 DOM 稳定无任何抖动、无白屏闪烁。
+- 验证妈妈孕产档案看板：初始无数据时紧凑自适应折叠；点击表单打卡或一键分析后，多维度时序图表看板即刻自动展开并流畅渲染出实测走势点线与 WS/T 801 安全通道带，与历史数据表保持 100% 实时同步；多次手动折叠/展开图表均能稳定呈现。
+- 生产环境构建：python build_frontend.py 成功执行，TypeScript 检查 0 报错，产物完整同步。

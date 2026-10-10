@@ -133,301 +133,323 @@ export default function BmiTimeSeriesBoard({ records, loading }: BmiTimeSeriesBo
     return enriched.filter((r) => new Date(r.record_date).getTime() >= from);
   }, [enriched, spanKey]);
 
+  // v1.61/v1.62：数据清空或无数据时自动收拢，避免出现 320px 巨大空白占用；支持手动折叠
+  const hasRecords = records.length > 0;
+  const [collapsedManually, setCollapsedManually] = useState<boolean | null>(null);
+  const isCollapsed = collapsedManually !== null ? collapsedManually : !hasRecords;
+
+  // 当记录被清空时重置手动折叠标记为 null，确保后续新增数据时能够自动展开并激活图表
   useEffect(() => {
-    if (!chartRef.current || !chartInstanceRef.current || filtered.length === 0 || loading) return;
+    if (records.length === 0) {
+      setCollapsedManually(null);
+    }
+  }, [records.length]);
 
-    const chart = chartInstanceRef.current;
-    const axisLabelColor = isDark ? "#94a3b8" : "#64748b";
-    const splitLineColor = isDark ? "#1e293b" : "#f1f5f9";
-    const axisLineColor = isDark ? "#334155" : "#e2e8f0";
+  // v1.62：图表实例生命周期与折叠态、筛选数据及主题完全联动
+  // 彻底修复展开/收起切换或新增数据时 DOM 延迟挂载导致 chartInstanceRef 为 null 的空白 bug
+  useEffect(() => {
+    if (isCollapsed) {
+      if (chartInstanceRef.current) {
+        chartInstanceRef.current.dispose();
+        chartInstanceRef.current = null;
+      }
+      return;
+    }
 
-    const labels = filtered.map((r) => r.label);
-    let option: echarts.EChartsOption;
+    const container = chartRef.current;
+    if (!container) return;
 
-    if (viewMode === "trend") {
-      if (isNonPregnancyView) {
-        // ===== v1.56 非孕期视图：体重走势 + BMI 标准区间（18.5~23.9）体重参考带 =====
-        const heightM = filtered[0]?.height ? filtered[0].height / 100 : null;
-        const bandMin = heightM ? +(18.5 * heightM * heightM).toFixed(1) : null;
-        const bandMax = heightM ? +(23.9 * heightM * heightM).toFixed(1) : null;
-        const bandDiffArr = filtered.map(() => (bandMin != null && bandMax != null ? +(bandMax - bandMin).toFixed(1) : null));
-        const bandBase = filtered.map(() => bandMin);
-        const midBmiWeight = heightM ? +(21.2 * heightM * heightM).toFixed(1) : null;
-        const mediansWeight = filtered.map(() => midBmiWeight);
-        const weights = filtered.map((r) => r.weight);
+    let chart = echarts.getInstanceByDom(container);
+    if (!chart) {
+      chart = echarts.init(container);
+      chartInstanceRef.current = chart;
+    }
+
+    if (filtered.length > 0 && !loading) {
+      const axisLabelColor = isDark ? "#94a3b8" : "#64748b";
+      const splitLineColor = isDark ? "#1e293b" : "#f1f5f9";
+      const axisLineColor = isDark ? "#334155" : "#e2e8f0";
+
+      const labels = filtered.map((r) => r.label);
+      let option: echarts.EChartsOption;
+
+      if (viewMode === "trend") {
+        if (isNonPregnancyView) {
+          // ===== v1.56 非孕期视图：体重走势 + BMI 标准区间（18.5~23.9）体重参考带 =====
+          const heightM = filtered[0]?.height ? filtered[0].height / 100 : null;
+          const bandMin = heightM ? +(18.5 * heightM * heightM).toFixed(1) : null;
+          const bandMax = heightM ? +(23.9 * heightM * heightM).toFixed(1) : null;
+          const bandDiffArr = filtered.map(() => (bandMin != null && bandMax != null ? +(bandMax - bandMin).toFixed(1) : null));
+          const bandBase = filtered.map(() => bandMin);
+          const midBmiWeight = heightM ? +(21.2 * heightM * heightM).toFixed(1) : null;
+          const mediansWeight = filtered.map(() => midBmiWeight);
+          const weights = filtered.map((r) => r.weight);
+
+          option = {
+            tooltip: {
+              trigger: "axis",
+              backgroundColor: isDark ? "#1e293b" : "#ffffff",
+              borderColor: axisLineColor,
+              textStyle: { color: isDark ? "#f1f5f9" : "#1e293b", fontSize: 12 },
+              formatter: (params: any) => {
+                const rec = filtered[params[0]?.dataIndex];
+                if (!rec) return "";
+                const stageTxt =
+                  rec.stage === "general" ? "非孕期" : rec.stage === "postpartum" ? "产后" : "孕期";
+                let tip = `<b>${rec.record_date} · ${stageTxt}</b><br/>`;
+                if (bandMin != null && bandMax != null) {
+                  tip += `<span style="color:#3b82f6">●</span> BMI 正常区间对应体重：${bandMin} ~ ${bandMax} kg<br/>`;
+                }
+                tip += `<span style="color:#f97316">★</span> <b>实测体重：${rec.weight} kg</b>${rec.bmi ? `（孕前 BMI ${rec.bmi}）` : ""}`;
+                return tip;
+              },
+            },
+            legend: {
+              bottom: 0,
+              textStyle: { color: axisLabelColor, fontSize: 12 },
+              data: ["BMI 18.5~23.9 标准区间", "BMI 21 中位参考", "实测体重走势"],
+            },
+            grid: { top: 30, right: 25, bottom: 50, left: 45 },
+            xAxis: {
+              type: "category",
+              data: labels,
+              boundaryGap: filtered.length > 1 ? false : true,
+              axisLabel: { color: axisLabelColor, fontSize: 11 },
+              axisLine: { lineStyle: { color: axisLineColor } },
+            },
+            yAxis: {
+              type: "value",
+              name: "体重 (kg)",
+              nameTextStyle: { color: axisLabelColor, fontSize: 11 },
+              axisLabel: { color: axisLabelColor },
+              splitLine: { lineStyle: { color: splitLineColor } },
+            },
+            series: [
+              {
+                name: "下限基准",
+                type: "line",
+                data: bandMin != null ? bandBase : [],
+                stack: "bmi-band",
+                lineStyle: { opacity: 0 },
+                symbol: "none",
+                silent: true,
+              },
+              {
+                name: "BMI 18.5~23.9 标准区间",
+                type: "line",
+                data: bandDiffArr,
+                stack: "bmi-band",
+                lineStyle: { opacity: 0 },
+                areaStyle: { color: isDark ? "rgba(59, 130, 246, 0.22)" : "rgba(59, 130, 246, 0.15)" },
+                symbol: "none",
+              },
+              {
+                name: "BMI 21 中位参考",
+                type: "line",
+                data: mediansWeight,
+                smooth: true,
+                lineStyle: { color: isDark ? "#60a5fa" : "#3b82f6", width: 2, type: "dashed" },
+                symbol: "none",
+              },
+              {
+                name: "实测体重走势",
+                type: "line",
+                data: weights,
+                smooth: true,
+                lineStyle: { color: "#f97316", width: 3 },
+                itemStyle: {
+                  color: "#f97316",
+                  borderColor: "#ffffff",
+                  borderWidth: 1.5,
+                  shadowBlur: 6,
+                  shadowColor: "rgba(249, 115, 22, 0.5)",
+                },
+                symbolSize: 9,
+              },
+            ],
+          };
+        } else {
+          // ===== 趋势视图：WS/T 801-2022 通道带 + 中位线 + 实测走势 =====
+          const bandMins = filtered.map((r) => (r.target ? r.target.min : null));
+          const bandDiff = filtered.map((r) =>
+            r.target ? +((r.target.max - r.target.min)).toFixed(2) : null
+          );
+          const medians = filtered.map((r) => (r.target ? r.target.median : null));
+          const actualGains = filtered.map((r) => r.cumulative);
+
+          option = {
+            tooltip: {
+              trigger: "axis",
+              backgroundColor: isDark ? "#1e293b" : "#ffffff",
+              borderColor: axisLineColor,
+              textStyle: { color: isDark ? "#f1f5f9" : "#1e293b", fontSize: 12 },
+              formatter: (params: any) => {
+                const rec = filtered[params[0]?.dataIndex];
+                if (!rec) return "";
+                let tip = `<b>${rec.record_date}${rec.gestational_week ? ` · ${gestationLabel(rec.gestational_week, rec.gestational_days)}` : rec.stage === "postpartum" ? " · 产后" : rec.stage === "general" ? " · 非孕期" : ""}</b><br/>`;
+                if (rec.target) {
+                  tip += `<span style="color:#10b981">●</span> 当周适宜增重：${rec.target.min} ~ ${rec.target.max} kg<br/>`;
+                  tip += `<span style="color:#34d399">--</span> 适宜中位：${rec.target.median} kg<br/>`;
+                }
+                tip += `<span style="color:#f97316">★</span> <b>实测累计增重：${rec.cumulative > 0 ? "+" : ""}${rec.cumulative} kg</b>（体重 ${rec.weight} kg）`;
+                return tip;
+              },
+            },
+            legend: {
+              bottom: 0,
+              textStyle: { color: axisLabelColor, fontSize: 12 },
+              data: ["WS/T 801-2022推荐区间", "推荐中位线", "实测增重走势"],
+            },
+            grid: { top: 30, right: 25, bottom: 50, left: 45 },
+            xAxis: {
+              type: "category",
+              data: labels,
+              boundaryGap: filtered.length > 1 ? false : true,
+              axisLabel: { color: axisLabelColor, fontSize: 11 },
+              axisLine: { lineStyle: { color: axisLineColor } },
+            },
+            yAxis: {
+              type: "value",
+              name: "累计增重 (kg)",
+              nameTextStyle: { color: axisLabelColor, fontSize: 11 },
+              axisLabel: { color: axisLabelColor },
+              splitLine: { lineStyle: { color: splitLineColor } },
+            },
+            series: [
+              {
+                name: "下限基准",
+                type: "line",
+                data: bandMins,
+                stack: "confidence-band",
+                lineStyle: { opacity: 0 },
+                symbol: "none",
+                silent: true,
+              },
+              {
+                name: "WS/T 801-2022推荐区间",
+                type: "line",
+                data: bandDiff,
+                stack: "confidence-band",
+                lineStyle: { opacity: 0 },
+                areaStyle: { color: isDark ? "rgba(16, 185, 129, 0.25)" : "rgba(16, 185, 129, 0.18)" },
+                symbol: "none",
+              },
+              {
+                name: "推荐中位线",
+                type: "line",
+                data: medians,
+                smooth: true,
+                lineStyle: { color: isDark ? "#34d399" : "#10b981", width: 2, type: "dashed" },
+                symbol: "none",
+              },
+              {
+                name: "实测增重走势",
+                type: "line",
+                data: actualGains,
+                smooth: true,
+                lineStyle: { color: "#f97316", width: 3 },
+                itemStyle: {
+                  color: "#f97316",
+                  borderColor: "#ffffff",
+                  borderWidth: 1.5,
+                  shadowBlur: 6,
+                  shadowColor: "rgba(249, 115, 22, 0.5)",
+                },
+                symbolSize: 9,
+              },
+            ],
+          };
+        }
+      } else {
+        // ===== 增量视图：相邻两次打卡净增重 Δkg 变色柱状图 =====
+        const deltaRecords = filtered.slice(1); // 首次打卡无前值参照，不参与柱状图
+        const deltaLabels = deltaRecords.map((r) => r.label);
+        const deltaValues = deltaRecords.map((r) => ({
+          value: r.delta_kg,
+          itemStyle: {
+            color:
+              r.delta_kg > 0.9
+                ? "#ef4444"
+                : r.delta_kg > 0.6
+                ? "#f59e0b"
+                : r.delta_kg < -0.5
+                ? "#6366f1"
+                : "#10b981",
+          },
+        }));
 
         option = {
           tooltip: {
-            trigger: "axis",
+            trigger: "item",
             backgroundColor: isDark ? "#1e293b" : "#ffffff",
             borderColor: axisLineColor,
             textStyle: { color: isDark ? "#f1f5f9" : "#1e293b", fontSize: 12 },
-            formatter: (params: any) => {
-              const rec = filtered[params[0]?.dataIndex];
+            formatter: (param: any) => {
+              const rec = deltaRecords[param.dataIndex];
               if (!rec) return "";
-              const stageTxt =
-                rec.stage === "general" ? "非孕期" : rec.stage === "postpartum" ? "产后" : "孕期";
-              let tip = `<b>${rec.record_date} · ${stageTxt}</b><br/>`;
-              if (bandMin != null && bandMax != null) {
-                tip += `<span style="color:#3b82f6">●</span> BMI 正常区间对应体重：${bandMin} ~ ${bandMax} kg<br/>`;
-              }
-              tip += `<span style="color:#f97316">★</span> <b>实测体重：${rec.weight} kg</b>${rec.bmi ? `（孕前 BMI ${rec.bmi}）` : ""}`;
-              return tip;
+              const val = param.value as number;
+              const verdict =
+                val > 0.9 ? "⚠ 超出单次安全阈值" : val > 0.6 ? "注意：增重偏快" : val < -0.5 ? "体重明显下降，请关注" : "处于安全范围";
+              return `<b>${rec.record_date}${rec.gestational_week ? ` · ${gestationLabel(rec.gestational_week, rec.gestational_days)}` : rec.stage === "postpartum" ? " · 产后" : ""}</b><br/>较上次变化：<b>${val > 0 ? "+" : ""}${val} kg</b><br/>${verdict}`;
             },
           },
-          legend: {
-            bottom: 0,
-            textStyle: { color: axisLabelColor, fontSize: 12 },
-            data: ["BMI 18.5~23.9 标准区间", "BMI 21 中位参考", "实测体重走势"],
-          },
-          grid: { top: 30, right: 25, bottom: 50, left: 45 },
+          grid: { top: 30, right: 25, bottom: 45, left: 45 },
           xAxis: {
             type: "category",
-            data: labels,
-            boundaryGap: false,
+            data: deltaLabels,
             axisLabel: { color: axisLabelColor, fontSize: 11 },
             axisLine: { lineStyle: { color: axisLineColor } },
           },
           yAxis: {
             type: "value",
-            name: "体重 (kg)",
+            name: "单次净增重 (kg)",
             nameTextStyle: { color: axisLabelColor, fontSize: 11 },
             axisLabel: { color: axisLabelColor },
             splitLine: { lineStyle: { color: splitLineColor } },
           },
           series: [
             {
-              name: "下限基准",
-              type: "line",
-              data: bandMin != null ? bandBase : [],
-              stack: "bmi-band",
-              lineStyle: { opacity: 0 },
-              symbol: "none",
-              silent: true,
-            },
-            {
-              name: "BMI 18.5~23.9 标准区间",
-              type: "line",
-              data: bandDiffArr,
-              stack: "bmi-band",
-              lineStyle: { opacity: 0 },
-              areaStyle: { color: isDark ? "rgba(59, 130, 246, 0.22)" : "rgba(59, 130, 246, 0.15)" },
-              symbol: "none",
-            },
-            {
-              name: "BMI 21 中位参考",
-              type: "line",
-              data: mediansWeight,
-              smooth: true,
-              lineStyle: { color: isDark ? "#60a5fa" : "#3b82f6", width: 2, type: "dashed" },
-              symbol: "none",
-            },
-            {
-              name: "实测体重走势",
-              type: "line",
-              data: weights,
-              smooth: true,
-              lineStyle: { color: "#f97316", width: 3 },
-              itemStyle: {
-                color: "#f97316",
-                borderColor: "#ffffff",
-                borderWidth: 1.5,
-                shadowBlur: 6,
-                shadowColor: "rgba(249, 115, 22, 0.5)",
+              name: "净增重 Δkg",
+              type: "bar",
+              barMaxWidth: 36,
+              data: deltaValues,
+              markLine: {
+                symbol: "none",
+                data: [
+                  { yAxis: 0.9, lineStyle: { color: "#ef4444", type: "dashed" }, label: { formatter: "超标阈值 0.9kg", color: "#ef4444", fontSize: 10 } },
+                  { yAxis: 0, lineStyle: { color: axisLabelColor } },
+                ],
               },
-              symbolSize: 9,
             },
           ],
         };
-      } else {
-      // ===== 趋势视图：WS/T 801-2022 通道带 + 中位线 + 实测走势 =====
-      const bandMins = filtered.map((r) => (r.target ? r.target.min : null));
-      const bandDiff = filtered.map((r) =>
-        r.target ? +((r.target.max - r.target.min)).toFixed(2) : null
-      );
-      const medians = filtered.map((r) => (r.target ? r.target.median : null));
-      const actualGains = filtered.map((r) => r.cumulative);
-
-      option = {
-        tooltip: {
-          trigger: "axis",
-          backgroundColor: isDark ? "#1e293b" : "#ffffff",
-          borderColor: axisLineColor,
-          textStyle: { color: isDark ? "#f1f5f9" : "#1e293b", fontSize: 12 },
-          formatter: (params: any) => {
-            const rec = filtered[params[0]?.dataIndex];
-            if (!rec) return "";
-            let tip = `<b>${rec.record_date}${rec.gestational_week ? ` · ${gestationLabel(rec.gestational_week, rec.gestational_days)}` : rec.stage === "postpartum" ? " · 产后" : rec.stage === "general" ? " · 非孕期" : ""}</b><br/>`;
-            if (rec.target) {
-              tip += `<span style="color:#10b981">●</span> 当周适宜增重：${rec.target.min} ~ ${rec.target.max} kg<br/>`;
-              tip += `<span style="color:#34d399">--</span> 适宜中位：${rec.target.median} kg<br/>`;
-            }
-            tip += `<span style="color:#f97316">★</span> <b>实测累计增重：${rec.cumulative > 0 ? "+" : ""}${rec.cumulative} kg</b>（体重 ${rec.weight} kg）`;
-            return tip;
-          },
-        },
-        legend: {
-          bottom: 0,
-          textStyle: { color: axisLabelColor, fontSize: 12 },
-          data: ["WS/T 801-2022推荐区间", "推荐中位线", "实测增重走势"],
-        },
-        grid: { top: 30, right: 25, bottom: 50, left: 45 },
-        xAxis: {
-          type: "category",
-          data: labels,
-          boundaryGap: false,
-          axisLabel: { color: axisLabelColor, fontSize: 11 },
-          axisLine: { lineStyle: { color: axisLineColor } },
-        },
-        yAxis: {
-          type: "value",
-          name: "累计增重 (kg)",
-          nameTextStyle: { color: axisLabelColor, fontSize: 11 },
-          axisLabel: { color: axisLabelColor },
-          splitLine: { lineStyle: { color: splitLineColor } },
-        },
-        series: [
-          {
-            // 1. 通道带下限基准（透明占位）
-            name: "下限基准",
-            type: "line",
-            data: bandMins,
-            stack: "confidence-band",
-            lineStyle: { opacity: 0 },
-            symbol: "none",
-            silent: true,
-          },
-          {
-            // 2. WS/T 801-2022 推荐安全通道带（淡绿半透明堆叠面积）
-            name: "WS/T 801-2022推荐区间",
-            type: "line",
-            data: bandDiff,
-            stack: "confidence-band",
-            lineStyle: { opacity: 0 },
-            areaStyle: { color: isDark ? "rgba(16, 185, 129, 0.25)" : "rgba(16, 185, 129, 0.18)" },
-            symbol: "none",
-          },
-          {
-            // 3. 推荐中位线（绿色虚线）
-            name: "推荐中位线",
-            type: "line",
-            data: medians,
-            smooth: true,
-            lineStyle: { color: isDark ? "#34d399" : "#10b981", width: 2, type: "dashed" },
-            symbol: "none",
-          },
-          {
-            // 4. 用户实测时序曲线（橙色实线发光点）
-            name: "实测增重走势",
-            type: "line",
-            data: actualGains,
-            smooth: true,
-            lineStyle: { color: "#f97316", width: 3 },
-            itemStyle: {
-              color: "#f97316",
-              borderColor: "#ffffff",
-              borderWidth: 1.5,
-              shadowBlur: 6,
-              shadowColor: "rgba(249, 115, 22, 0.5)",
-            },
-            symbolSize: 9,
-          },
-        ],
-      };
       }
-    } else {
-      // ===== 增量视图：相邻两次打卡净增重 Δkg 变色柱状图 =====
-      const deltaRecords = filtered.slice(1); // 首次打卡无前值参照，不参与柱状图
-      const deltaLabels = deltaRecords.map((r) => r.label);
-      const deltaValues = deltaRecords.map((r) => ({
-        value: r.delta_kg,
-        itemStyle: {
-          // >0.9kg 红色预警 / >0.6kg 橙色提醒 / <-0.5kg 紫色下降 / 其余绿色达标
-          color:
-            r.delta_kg > 0.9
-              ? "#ef4444"
-              : r.delta_kg > 0.6
-              ? "#f59e0b"
-              : r.delta_kg < -0.5
-              ? "#6366f1"
-              : "#10b981",
-        },
-      }));
 
-      option = {
-        tooltip: {
-          trigger: "item",
-          backgroundColor: isDark ? "#1e293b" : "#ffffff",
-          borderColor: axisLineColor,
-          textStyle: { color: isDark ? "#f1f5f9" : "#1e293b", fontSize: 12 },
-          formatter: (param: any) => {
-            const rec = deltaRecords[param.dataIndex];
-            if (!rec) return "";
-            const val = param.value as number;
-            const verdict =
-              val > 0.9 ? "⚠ 超出单次安全阈值" : val > 0.6 ? "注意：增重偏快" : val < -0.5 ? "体重明显下降，请关注" : "处于安全范围";
-            return `<b>${rec.record_date}${rec.gestational_week ? ` · ${gestationLabel(rec.gestational_week, rec.gestational_days)}` : rec.stage === "postpartum" ? " · 产后" : ""}</b><br/>较上次变化：<b>${val > 0 ? "+" : ""}${val} kg</b><br/>${verdict}`;
-          },
-        },
-        grid: { top: 30, right: 25, bottom: 45, left: 45 },
-        xAxis: {
-          type: "category",
-          data: deltaLabels,
-          axisLabel: { color: axisLabelColor, fontSize: 11 },
-          axisLine: { lineStyle: { color: axisLineColor } },
-        },
-        yAxis: {
-          type: "value",
-          name: "单次净增重 (kg)",
-          nameTextStyle: { color: axisLabelColor, fontSize: 11 },
-          axisLabel: { color: axisLabelColor },
-          splitLine: { lineStyle: { color: splitLineColor } },
-        },
-        series: [
-          {
-            name: "净增重 Δkg",
-            type: "bar",
-            barMaxWidth: 36,
-            data: deltaValues,
-            markLine: {
-              symbol: "none",
-              data: [
-                { yAxis: 0.9, lineStyle: { color: "#ef4444", type: "dashed" }, label: { formatter: "超标阈值 0.9kg", color: "#ef4444", fontSize: 10 } },
-                { yAxis: 0, lineStyle: { color: axisLabelColor } },
-              ],
-            },
-          },
-        ],
-      };
+      chart.setOption(option, { notMerge: true });
+    } else {
+      chart.clear();
     }
 
-    // v1.57 热更新：原地 setOption（notMerge 全量替换，视图切换时彻底清理旧系列/坐标轴）
-    chart.setOption(option, { notMerge: true });
-  }, [filtered, viewMode, isDark, loading]);
-
-  // v1.57 图表实例生命周期：挂载时 init 一次 + ResizeObserver 容器级自适应（替代 window resize 监听），卸载时 dispose
-  useEffect(() => {
-    const container = chartRef.current;
-    if (!container) return;
-    const chart = echarts.init(container);
-    chartInstanceRef.current = chart;
     const observer = new ResizeObserver(() => {
-      if (chartInstanceRef.current) chartInstanceRef.current.resize();
+      chart?.resize();
     });
     observer.observe(container);
+
+    const timer = setTimeout(() => {
+      chart?.resize();
+    }, 50);
+
     return () => {
+      clearTimeout(timer);
       observer.disconnect();
-      if (chartInstanceRef.current) {
-        chartInstanceRef.current.dispose();
-        chartInstanceRef.current = null;
+      if (chart) {
+        chart.dispose();
+        if (chartInstanceRef.current === chart) {
+          chartInstanceRef.current = null;
+        }
       }
     };
-  }, []);
-
-  // v1.61：数据清空或无数据时自动收拢，避免出现 320px 巨大空白占用；支持手动折叠
-  const hasRecords = records.length > 0;
-  const [collapsedManually, setCollapsedManually] = useState<boolean | null>(null);
-  const isCollapsed = collapsedManually !== null ? collapsedManually : !hasRecords;
+  }, [isCollapsed, filtered, viewMode, isDark, loading, isNonPregnancyView]);
 
   const noData = filtered.length === 0;
   const deltaInsufficient = viewMode === "delta" && filtered.length < 2;

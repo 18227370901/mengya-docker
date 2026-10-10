@@ -77,8 +77,12 @@ export default function HomePage() {
     showToast(fav ? "已添加到收藏夹" : "已取消收藏");
   };
 
-    const fetchHomeData = () => {
-    setLoading(true);
+  const stageKey = `${stage?.type || ""}_${stage?.is_pregnant ? "1" : "0"}_${stage?.value || 0}`;
+
+  const fetchHomeData = (silent = false) => {
+    if (!silent && essentials.length === 0 && recommend.length === 0) {
+      setLoading(true);
+    }
     setError("");
     const weekStage = stage?.is_pregnant && stage.value
       ? `pregnancy_${Math.min(Math.max(1, stage.value), 40)}w`
@@ -98,16 +102,16 @@ export default function HomePage() {
   };
 
   useEffect(() => {
-    fetchHomeData();
-  }, [stage]);
+    fetchHomeData(essentials.length > 0);
+  }, [stageKey]);
 
   useEffect(() => {
     const handleStageChanged = () => {
-      fetchHomeData();
+      fetchHomeData(true);
     };
     window.addEventListener("stageChanged", handleStageChanged);
     return () => window.removeEventListener("stageChanged", handleStageChanged);
-  }, [stage]);
+  }, [stageKey]);
 
   const quickEntries = [
     { to: "/weekly", label: "孕期周历", icon: CalendarDays, desc: "40周全程知识导航", perm: "menu_timeline" },

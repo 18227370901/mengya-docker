@@ -76,7 +76,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       if ((data as any).admin_session_timeout_minutes !== undefined) {
         localStorage.setItem("mengya_admin_timeout", String((data as any).admin_session_timeout_minutes));
       }
-      set({ user: { ...data.user, permissions: perms }, stage: data.stage, permissions: perms, loading: false });
+      const curStage = get().stage;
+      const newStage = data.stage;
+      const isStageEqual =
+        (!curStage && !newStage) ||
+        (curStage &&
+          newStage &&
+          curStage.type === newStage.type &&
+          curStage.is_pregnant === newStage.is_pregnant &&
+          curStage.value === newStage.value &&
+          curStage.label === newStage.label &&
+          curStage.week_days_text === newStage.week_days_text &&
+          curStage.days_to_due === newStage.days_to_due &&
+          curStage.trimester === newStage.trimester &&
+          curStage.period === newStage.period);
+      const nextStage = isStageEqual ? curStage : newStage;
+      set({ user: { ...data.user, permissions: perms }, stage: nextStage, permissions: perms, loading: false });
     } catch {
       const refreshToken = localStorage.getItem("mengya_refresh");
       if (refreshToken) {
@@ -88,7 +103,22 @@ export const useAuthStore = create<AuthState>((set, get) => ({
             set({ token: newAccess });
             const data = await authApi.me();
             const perms = (data as any).permissions || data.user.permissions || {};
-            set({ user: { ...data.user, permissions: perms }, stage: data.stage, permissions: perms, loading: false });
+            const curStage = get().stage;
+      const newStage = data.stage;
+      const isStageEqual =
+        (!curStage && !newStage) ||
+        (curStage &&
+          newStage &&
+          curStage.type === newStage.type &&
+          curStage.is_pregnant === newStage.is_pregnant &&
+          curStage.value === newStage.value &&
+          curStage.label === newStage.label &&
+          curStage.week_days_text === newStage.week_days_text &&
+          curStage.days_to_due === newStage.days_to_due &&
+          curStage.trimester === newStage.trimester &&
+          curStage.period === newStage.period);
+      const nextStage = isStageEqual ? curStage : newStage;
+      set({ user: { ...data.user, permissions: perms }, stage: nextStage, permissions: perms, loading: false });
             return;
           }
         } catch {

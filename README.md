@@ -811,3 +811,21 @@ django.db.utils.OperationalError: unable to open database file
    - 无数据或清空后自动收拢 320px 空白图表，转为轻量引导卡，根除大面积空白占用；支持手动折叠控制。
 3. **分析报告默认收起策略 (`BmiAnalysisView.tsx`)**：
    - 默认状态设为收起（紧凑单行 52px 标题栏），避免刷新或切 Tab 页面过长；仅在用户主动一键分析时自动展开直达。
+---
+
+## 22. v1.62 首页定时轮询抖动根除与时序看板图表生命周期完整联动
+
+### 22.1 优化背景
+1. **首页每隔 15 秒自动闪烁抖动**：RequireAuth 中设置了 15 秒间隔的 fetchMe() 全局权限同步轮询。接口返回的 data.stage 对象字面量每次产生新引用，触发 HomePage 中监听 [stage] 的 fetchHomeData()；而 fetchHomeData() 内部第一行执行 setLoading(true)，触发 if (loading) return <div>加载中…</div> 硬性拦截，导致整页卡片 DOM 瞬间被销毁并替换为占位符，200ms 后再全量重建，视觉上表现为每 15 秒剧烈“抖动/白屏塌陷”。
+2. **妈妈孕产档案时序看板新增数据空白**：空数据或初始状态下，BmiTimeSeriesBoard 依据自适应规则收拢，JSX 条件渲染未将 <div ref={chartRef} /> 挂载至 DOM；组件 Mount 阶段的单次 useEffect([], ...) 获取 chartRef.current 为 null，导致 echarts.init() 被跳过、图表实例永久处于 null；用户后续新增数据或打卡后，尽管纯 React 编写的测量历史表格正常渲染，但图表更新副作用因实例缺失直接退出，导致时序图表看板持续显示空白。
+
+### 22.2 核心改造清单
+1. **首页静默无感更新与引用抖动阻断 (HomePage.tsx & authStore.ts)**：
+   - authStore.ts：在 fetchMe() 中增加 stage 关键属性（type、is_pregnant、value、label、week_days_text 等）的一致性前置比对；当服务端返回数据未变时复用原对象引用，切断无效全局广播。
+   - HomePage.tsx：将 useEffect 依赖调整为不可变基元字符串 stageKey，阻断对象引用变动引发的无意义请求；
+   - HomePage.tsx：重构 fetchHomeData(silent) 调度逻辑，仅在首次初次进入（列表双空）时展示整屏 Loading；后续阶段更新或后台同步全面采用**静默数据替换**，数据返回后无缝覆盖，彻底根除 15s 页面抖动与白屏塌陷。
+2. **多维度时序图表看板生命周期深度联动 (BmiTimeSeriesBoard.tsx)**：
+   - 重构 ECharts 生命周期：消除 Mount 阶段脱节的单次初始化，将图表实例创建、配置热更新、ResizeObserver 尺寸监听与 dispose() 资源释放完全与 isCollapsed、筛选数据及主题统一联动；
+   - 健全原地懒加载初始化机制：无论组件首次有数据自动展开、还是用户后续手动在引导条点击【展开查看】，均能安全识别当前 DOM 容器并即时执行 echarts.init() 与 setOption()，双重保底 50ms resize() 规避弹性布局宽度计算滞后；
+   - 增加单条记录留白美化：为 Category 轴引入 boundaryGap: filtered.length > 1 ? false : true，确保首次打卡或仅有 1 条记录时圆点居中清晰呈现；
+   - 清空数据重置折叠记忆：当记录被清空时自动重置 collapsedManually 为 null，确保后续再次新增数据时 100% 自动激活并唤醒图表。

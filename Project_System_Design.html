@@ -1928,5 +1928,25 @@ estart: unless-stopped；
   </ul>
 </div>
 
+
+<div style="background:#fff;border-radius:12px;padding:24px;margin-bottom:24px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+  <h3 style="color:#0f172a;font-size:18px;margin-top:0;border-bottom:2px solid #f97316;padding-bottom:8px;">10.25 首页定时轮询抖动根除与时序看板图表生命周期完整联动 (v1.62)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.25.1 业务背景与问题复盘</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>首页每隔 15 秒周期性闪烁抖动</strong>：15s 全局静默轮询更新用户信息导致 <code>stage</code> 引用变更，引发 HomePage 全局卸载重载与破坏性 <code>loading</code> 拦截，页面频繁塌陷闪烁；</li>
+    <li><strong>时序图表新增数据后持续空白</strong>：无数据自适应收拢导致图表 DOM 延迟挂载，而原 ECharts 仅在 Mount 阶段执行单次初始化，错过绑定时机导致实例恒为 null，新增数据后图表无法展示。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.25.2 架构重构与优化落地</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>首页静默刷新与引用防抖</strong>：<code>authStore</code> 增加 <code>stage</code> 关键属性浅比对切断无效广播；<code>HomePage</code> 依赖基元合成键 <code>stageKey</code>，并将更新改为非破坏性后台静默更新，彻底根除 15s 抖动；</li>
+    <li><strong>时序图表生命周期深度联动</strong>：移除脱节的 Mount 单次初始化，将 ECharts 实例的创建、配置更新、Resize 监听及释放完全与展开态和数据联动，支持动态原地懒加载；</li>
+    <li><strong>单点适配与状态复位</strong>：X 轴引入单条数据动态留白，数据清空自动重置折叠标记，保障后续新增数据 100% 自动唤醒并激活图表。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.25.3 验证结论</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li>首页静默轮询期间 100% 平滑无抖动；时序图表看板在新增数据、反复收起展开时渲染稳定，与历史数据表完全一致；前端生产构建 0 错误通过。</li>
+  </ul>
+</div>
+
 </body>
 </html>
