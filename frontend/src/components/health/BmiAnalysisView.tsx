@@ -209,30 +209,8 @@ export default function BmiAnalysisView({ refreshTrigger, onRecordChanged, exter
           </div>
 
           <div className="flex items-center gap-2">
-            {/* v1.57：导出 A4 评估报告（打印 / PDF 下载，动态分包不影响首屏） */}
+            {/* 导出 A4 评估报告（打印 / PDF 下载，动态分包不影响首屏） */}
             <HealthReportExport records={timeseries} result={result} />
-            {/* v1.60：恢复顶部显眼折叠/展开分析报告快捷按钮 */}
-            {result && (
-              <button
-                type="button"
-                onClick={() => {
-                  setReportCollapsed((c) => {
-                    const next = !c;
-                    if (!next) {
-                      setTimeout(() => {
-                        reportSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-                      }, 50);
-                    }
-                    return next;
-                  });
-                }}
-                className="btn-secondary gap-1.5 text-xs shadow-2xs"
-                title={reportCollapsed ? "展开下方分析报告区块（医学预警/指标概览/曲线/食谱）" : "收起下方分析报告区块，数据保留随时可展开"}
-              >
-                {reportCollapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
-                {reportCollapsed ? "展开分析报告" : "收起分析报告"}
-              </button>
-            )}
           </div>
         </div>
       </div>
@@ -433,27 +411,7 @@ export default function BmiAnalysisView({ refreshTrigger, onRecordChanged, exter
         </div>
       )}
 
-      {/* v1.60 折叠态提示条：报告已保留，可随时展开 */}
-      {result && evalData && reportCollapsed && (
-        <div className="card flex flex-wrap items-center justify-between gap-3 p-4 text-xs text-gray-500 dark:text-gray-400">
-          <div className="flex items-center gap-2">
-            <FileText className="h-4 w-4 text-brand-500" />
-            <span>本次分析报告已收起（医学预警 · 指标概览 · WS/T 801 增重曲线 · 膳食食谱 · 运动心理关怀），数据保留至下次分析。</span>
-          </div>
-          <button
-            type="button"
-            onClick={() => {
-              setReportCollapsed(false);
-              setTimeout(() => {
-                reportSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
-              }, 50);
-            }}
-            className="btn-secondary shrink-0 gap-1 text-xs"
-          >
-            <ChevronDown className="h-3.5 w-3.5" /> 展开分析报告
-          </button>
-        </div>
-      )}
+
 
       {/* 管理员 SearXNG 配置已移至「AI 助手配置」页（v1.56） */}
 

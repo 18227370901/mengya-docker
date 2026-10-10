@@ -787,9 +787,8 @@ django.db.utils.OperationalError: unable to open database file
 ### 20.2 核心改造清单
 1. **数据联动全链路打通 (`UnifiedHealthCheckIn.tsx` & `HealthPage.tsx`)**：
    - 打卡弹窗（普通打卡与 409 覆盖打卡）将 `analyzeBmi` 返回的完整报告对象 `res` 回传给 `HealthPage`，并透传给 `BmiAnalysisView`，彻底解决打卡后报告不显示的链路断层。
-2. **恢复顶部快捷折叠/展开与平滑滚动直达 (`BmiAnalysisView.tsx`)**：
-   - 顶部工具栏恢复显眼【展开分析报告 / 收起分析报告】快捷按钮，消除图表与表格造成的视觉阻隔。
-   - 新增数据后自动展开报告并平滑滚动定位（`scrollIntoView`）至报告卡片。
-   - 恢复折叠态提示条，与卡片 4 内部折叠开关实现双向无缝联动。
+2. **聚焦具体报告处的单点折叠控制与平滑直达 (`BmiAnalysisView.tsx`)**：
+   - 消除多处折叠按钮重复冗余：移除顶部横幅及底部多余提示条，仅在分析报告卡片标题栏保留唯一的【展开/收起分析报告】交互按钮。
+   - 新增数据后自动展开报告并平滑滚动定位（`scrollIntoView`）直达报告卡片，既保障视觉直达，又消除重复干扰。
 3. **分析报告客户端持久化留存 (`sessionStorage`)**：
    - 引入 `sessionStorage` 缓存机制，在页面刷新或 Tab 切换后自动恢复最近一期评估报告，避免数据瞬时蒸发。

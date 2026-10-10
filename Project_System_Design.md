@@ -1327,11 +1327,10 @@ django.db.utils.OperationalError: unable to open database file
    - `UnifiedHealthCheckInProps` 的 `onSaved` 回调签名扩展为 `(archiveHint: string, analysisResult?: BmiAnalysisResult | null) => void`。
    - 首次打卡与 409 同日覆盖提交时，完整捕获 `healthApi.analyzeBmi` 返回的 `res` 结果对象并通过 `onSaved` 传出。
    - `HealthPage` 维护 `latestAnalysisResult` 状态并透传给 `<BmiAnalysisView externalAnalysisResult={latestAnalysisResult} />`，实现打卡即时联动。
-2. **恢复顶部快捷折叠/展开按钮与自动平滑定位 (`BmiAnalysisView.tsx`)**：
-   - 在页面顶部说明卡片右侧（与「导出 A4 报告」并列）恢复显眼的 `【展开分析报告 / 收起分析报告】` 快捷按钮。
-   - 当用户在表单点击「一键分析评估」或从外部健康打卡弹窗完成打卡时，不仅自动将状态置为展开态（`reportCollapsed = false`），而且通过 `reportSectionRef` 自动触发平滑滚动定位（`scrollIntoView({ behavior: 'smooth', block: 'start' })`），引导视口直达分析报告卡片。
-   - 卡片 4 内部自身的折叠按钮同步统一文案为 `【展开分析报告 / 收起分析报告】`，实现顶部与卡片内双向开关无缝联动。
-   - 折叠态底部恢复独立的提示横幅条，保障折叠后用户随时一键重新展开。
+2. **聚焦具体报告处的唯一定位折叠控制与自动平滑直达 (`BmiAnalysisView.tsx`)**：
+   - 针对多处折叠按钮重复展示问题，收拢全局交互：移除顶部横幅及底部的多余冗余折叠按钮与提示条，仅在「本次分析报告」卡片标题栏保留唯一的 `【展开分析报告 / 收起分析报告】` 控制按钮。
+   - 当用户在表单点击「一键分析评估」或从外部健康打卡弹窗完成打卡时，自动将报告置为展开态，并通过 `reportSectionRef` 平滑滚动定位直达报告卡片。
+   - 折叠态下报告卡片保留紧凑单行标题栏，用户点击即可无缝展开，界面纯粹精炼无重复干扰。
 3. **分析结果客户端持久化留存 (`sessionStorage`)**：
    - 引入 `STORAGE_KEY = "mengya_latest_bmi_analysis"`，在 `useState` 初始化时自动从 `sessionStorage` 还原最近一次生成的医学评估报告。
    - 统一封装 `updateResult` 调度器，确保用户在切换 Tab 或刷新页面后，最新一期的评估档案依然稳定呈现，杜绝报告数据“瞬时蒸发”。

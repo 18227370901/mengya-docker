@@ -1896,7 +1896,7 @@ estart: unless-stopped；
   <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.23.2 核心重构与闭环落地</h4>
   <ul style="color:#334155;line-height:1.6;">
     <li><strong>全链路数据打通</strong>：打卡弹窗 <code>onSaved</code> 回调透传 <code>res</code> 分析结果，<code>HealthPage</code> 桥接传递给 <code>BmiAnalysisView</code>，打卡后秒级呈现报告；</li>
-    <li><strong>双向折叠开关与平滑滚动直达</strong>：顶部横幅恢复显眼【展开/收起分析报告】按钮；打卡与一键分析后自动展开并平滑滚动到报告区域；底部恢复折叠态提示卡片；</li>
+    <li><strong>聚焦报告主体的唯一定位折叠控制</strong>：消除多处按钮重复，移除顶部及底部冗余折叠按钮与提示条，仅在具体分析报告卡片标题栏保留唯一的展开/收起按钮；新增数据后自动展开并平滑滚动直达报告区域；</li>
     <li><strong>sessionStorage 持久化留存</strong>：引入缓存自动还原最近一次评估报告，刷新网页与 Tab 切换无缝保留。</li>
   </ul>
   <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.23.3 验证结论</h4>
