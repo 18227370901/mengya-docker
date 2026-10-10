@@ -47,6 +47,13 @@ class BmiAnalysisInputSerializer(serializers.Serializer):
         required=False,
         allow_null=True,
     )
+    # v1.58：孕x周x天输入——周内天数（0~6；周数仍经孕周引擎双基准校验，天数用户显式传值优先采纳）
+    gestational_days = serializers.IntegerField(
+        min_value=0,
+        max_value=6,
+        required=False,
+        allow_null=True,
+    )
     postpartum_months = serializers.IntegerField(
         min_value=0,
         max_value=36,

@@ -1848,5 +1848,25 @@ estart: unless-stopped；
   </ul>
 </div>
 
+<div class="card" style="margin-top:20px;border-left:4px solid #f97316;padding:16px;background:var(--bg-card, #fff);">
+  <h3 style="margin-top:0;color:#f97316;">10.21 孕周输入自动填充修复与孕x周x天双输入 (v1.58)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.21.1 业务背景与根因定位</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>自动填充失效</strong>：v1.57.1 孕周输入框仅显示 placeholder「自动推算」却无数值填充，用户仍需手填——填充实现依赖 <code>useEffect</code>（依赖 <code>gestation?.week</code>）setState 回填，「推算值未变化不触发 effect」「弹窗打开重置与填充执行顺序竞争」「锚点异步加载时序」多重竞态叠加，输入框常为空；</li>
+    <li><strong>天粒度不可修正</strong>：仅有整周输入框，推算出的周内天数（如孕24周1天的"1天"）无法被用户手动修改。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.21.2 架构设计与实现落地（派生显示值方案）</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>模型转换（消除填充竞态）</strong>：删除「effect 回填」→「touched 标记 + 派生显示值」：<code>weekDisplay / daysDisplay</code> 在未手动编辑且有推算值时直接取 <code>String(推算值)</code>、否则取手填值——未编辑时输入框直接绑定推算值（填充绝对可靠、无时序依赖），onChange 置 touched 尊重用户值；effect 职责收缩为「日期/模式变化时重置 touched 回自动推算」，不再承担填充职责；</li>
+    <li><strong>孕x周x天双输入框</strong>：打卡弹窗（<code>UnifiedHealthCheckIn</code>）与深度 BMI 表单（<code>BmiFormCard</code>）两组件同构改造——孕周块统一「[周] 周 [天] 天」双输入（周 1~42 必填、天 0~6），placeholder「自动推算」/「天」，标签与提示行显示推算依据（档案预产期 / 首次打卡锚点），周与天均可手改（周偏差 ±1 周内，超差后端 400 拦截）；深度表单产后月龄同步升级 <code>postpartumMonthsDisplay</code> 派生值（宝宝生日推算优先、可手改）；</li>
+    <li><strong>提交与后端采纳优先级</strong>：提交一律以显示值为准（未编辑=推算值、编辑=用户值），<code>gestational_days</code> clamp 0~6 上送（打卡 409 覆盖重发链路同口径）；<code>BmiAnalysisInputSerializer</code> 新增 <code>gestational_days</code>（0~6 可选），BMI 分析接口用户显式传天数优先采纳（clamp 0~6）、未传沿用孕周引擎推算值，周数仍经双基准校验（偏差 &gt;1 周 400 拦截），<code>gestation_check.days</code> 回透最终采纳值。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.21.3 验证结论</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li>浏览器全链路（用户真实锚点 2026-05-01 孕1周，传统版实测后同源同步）：深度表单今天自动填充 24/1、05-08 → 2/0、05-02 → 1/1，手改天数=3 后 05-16 提交落库「孕3周3天」；打卡弹窗今天 24/1、05-17 → 自动 3/2、手改天=4 后落库「孕3周4天」，同日 409 覆盖条出现与取消正常；console 零 JS 错误；</li>
+    <li>数据治理：测试数据（05-16、05-17 两条）批删清理，用户原有 8 条记录完整保留（数据库核验通过）；新主包 <code>index-AFe2A9fr.js</code> 构建同步并重启生效；本仓库（Docker 版）业务代码同源零分叉，同步后 <code>Django check</code> 通过。</li>
+  </ul>
+</div>
+
 </body>
 </html>

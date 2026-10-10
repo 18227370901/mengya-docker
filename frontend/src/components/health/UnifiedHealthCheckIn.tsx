@@ -58,6 +58,10 @@ export default function UnifiedHealthCheckIn({ isOpen, onClose, onSaved, initial
   const [weight, setWeight] = useState("");
   const [waist, setWaist] = useState("");
   const [manualWeek, setManualWeek] = useState("");
+  const [manualDays, setManualDays] = useState("");
+  // v1.58：touched 标记——用户手动改过孕周/天数后尊重用户值；日期/模式变化时重置回自动推算
+  const [weekTouched, setWeekTouched] = useState(false);
+  const [daysTouched, setDaysTouched] = useState(false);
   const [babyHeight, setBabyHeight] = useState("");
   const [babyWeight, setBabyWeight] = useState("");
   const [babyHead, setBabyHead] = useState("");
@@ -88,14 +92,16 @@ export default function UnifiedHealthCheckIn({ isOpen, onClose, onSaved, initial
     setWeight("");
     setWaist("");
     setManualWeek("");
+    setManualDays("");
+    setWeekTouched(false);
+    setDaysTouched(false);
     setBabyHeight("");
     setBabyWeight("");
     setBabyHead("");
     setNote("");
   }, [isOpen, user?.is_pregnant, user?.baby_birthday, initialDate]);
 
-  // v1.58 孕周自动推算（双基准与后端一致）：预产期 280 天模型 > 首次打卡锚点线性外推；
-  // 返回 {week, days, label}，展示粒度为 孕x周x天
+  // v1.58 孕周双基准自动推算（与后端一致）：预产期 280 天模型 > 首次打卡锚点线性外推；
   const gestation = useMemo(() => {
     if (mode !== "mom_pregnancy") return null;
     if (user?.due_date) {
@@ -107,12 +113,15 @@ export default function UnifiedHealthCheckIn({ isOpen, onClose, onSaved, initial
     return null;
   }, [mode, user?.due_date, gestationAnchor, recordDate]);
 
-  // 锚点推算时同步预填孕周输入框（允许 ±1 周微调，超出由后端拦截）
+  // 日期/模式变化时解除手动编辑态 → 回到自动推算展示（v1.58 派生显示值方案，无 effect 填充竞态）
   useEffect(() => {
-    if (mode === "mom_pregnancy" && gestation) {
-      setManualWeek(String(gestation.week));
-    }
-  }, [mode, gestation?.week, recordDate]);
+    setWeekTouched(false);
+    setDaysTouched(false);
+  }, [recordDate, mode]);
+
+  // v1.58：派生显示值——未手动编辑时直接展示推算值（自动填充绝对可靠）；编辑后展示用户值
+  const weekDisplay = !weekTouched && gestation ? String(gestation.week) : manualWeek;
+  const daysDisplay = !daysTouched && gestation ? String(gestation.days) : manualDays;
 
   // 产后天数 / 宝宝天数自动推算
   const babyDays = useMemo(() => {
@@ -208,6 +217,14 @@ export default function UnifiedHealthCheckIn({ isOpen, onClose, onSaved, initial
         setErrorMsg("您还未设置预产期，请手动填写本次打卡的孕周");
         return;
       }
+      // v1.58：孕周显示值（自动推算或用户手改）必须为有效整数（1~42）
+      if (momMode) {
+        const wk = parseInt(weekDisplay, 10);
+        if (Number.isNaN(wk) || wk < 1 || wk > 42) {
+          setErrorMsg("请填写有效的孕周（1 ~ 42 周）");
+          return;
+        }
+      }
     } else {
       const hasAnyMeasure = babyHeight || babyWeight || babyHead;
       if (!hasAnyMeasure) {
@@ -242,8 +259,10 @@ export default function UnifiedHealthCheckIn({ isOpen, onClose, onSaved, initial
           is_twins: false,
         };
         if (momMode) {
-          // v1.58：有推算基准（预产期/首次打卡锚点）时优先采用推算孕周，无基准时手填
-          payload.gestational_week = gestation ? gestation.week : Number(manualWeek);
+          // v1.58：周+天双输入——提交显示值（未手动编辑时为推算值，手动编辑后为用户值）；后端双基准校验周偏差
+          payload.gestational_week = parseInt(weekDisplay, 10);
+          const gd = parseInt(daysDisplay, 10);
+          if (!Number.isNaN(gd)) payload.gestational_days = Math.max(0, Math.min(6, gd));
         } else if (isPostpartumMode) {
           payload.postpartum_months = babyDays != null ? Math.max(0, Math.floor(babyDays / 30.44)) : 1;
         }
@@ -285,7 +304,10 @@ export default function UnifiedHealthCheckIn({ isOpen, onClose, onSaved, initial
             is_twins: false,
           };
           if (momMode) {
-            payload.gestational_week = gestation ? gestation.week : Number(manualWeek);
+            // v1.58：周+天双输入（与首次提交同口径：显示值为准）
+            payload.gestational_week = parseInt(weekDisplay, 10);
+            const gd = parseInt(daysDisplay, 10);
+            if (!Number.isNaN(gd)) payload.gestational_days = Math.max(0, Math.min(6, gd));
           } else if (isPostpartumMode) {
             payload.postpartum_months = babyDays != null ? Math.max(0, Math.floor(babyDays / 30.44)) : 1;
           }
@@ -442,11 +464,11 @@ export default function UnifiedHealthCheckIn({ isOpen, onClose, onSaved, initial
               onChange={(e) => setRecordDate(e.target.value)}
               required
             />
-            {/* v1.58：孕周自动推算提示（双基准：预产期 / 首次打卡锚点；展示孕x周x天） */}
+            {/* v1.58：孕周自动推算提示（双基准：预产期 / 首次打卡锚点；与下方周+天输入框联动） */}
             {momMode && gestation && user?.due_date && (
               <p className="mt-1 text-[11px] text-emerald-600 dark:text-emerald-400">
                 <CheckCircle2 className="mr-0.5 inline h-3 w-3" />
-                按档案预产期自动记录为：{gestation.label}（无需手填，后端同步校验）
+                按档案预产期推算：{gestation.label}（已自动填充，可修改，后端同步校验）
               </p>
             )}
             {momMode && gestation && !user?.due_date && gestationAnchor && (
@@ -476,41 +498,49 @@ export default function UnifiedHealthCheckIn({ isOpen, onClose, onSaved, initial
 
             {!isBabyMode ? (
               <div className="space-y-3">
-                {/* v1.58：无预产期且无锚点时才强制手填；有锚点时预填推算值可微调 */}
-                {momMode && !hasAutoBasis && (
-                  <div>
-                    <label className="text-xs text-gray-500 dark:text-gray-400">孕周 (1~42) *</label>
-                    <input
-                      type="number"
-                      min={1}
-                      max={42}
-                      className="input"
-                      placeholder="例如 24"
-                      value={manualWeek}
-                      onChange={(e) => setManualWeek(e.target.value)}
-                      required
-                    />
-                  </div>
-                )}
-                {momMode && !hasDueDate && gestationAnchor && (
+                {/* v1.58：孕周 周+天 双输入框——自动推算填充（未手动编辑时显示推算值），支持用户修改周与天 */}
+                {momMode && (
                   <div>
                     <label className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-                      <span>孕周 (推算已预填，可 ±1 周微调) *</span>
-                      {gestation && (
-                        <span className="text-[11px] font-medium text-brand-600 dark:text-brand-400">
-                          {gestation.label}
-                        </span>
-                      )}
+                      <span>
+                        孕周 * {hasAutoBasis && <span className="text-emerald-600 dark:text-emerald-400">（{gestation ? gestation.label : "推算中"}，可修改）</span>}
+                      </span>
+                      {!hasAutoBasis && <span className="text-[11px] text-gray-400">首次打卡需手填</span>}
                     </label>
-                    <input
-                      type="number"
-                      min={0}
-                      max={42}
-                      className="input"
-                      value={manualWeek}
-                      onChange={(e) => setManualWeek(e.target.value)}
-                      required
-                    />
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="number"
+                        min={1}
+                        max={42}
+                        className="input"
+                        placeholder={hasAutoBasis ? "自动推算" : "周"}
+                        value={weekDisplay}
+                        onChange={(e) => {
+                          setManualWeek(e.target.value);
+                          setWeekTouched(true);
+                        }}
+                        required
+                      />
+                      <span className="shrink-0 text-xs text-gray-400">周</span>
+                      <input
+                        type="number"
+                        min={0}
+                        max={6}
+                        className="input"
+                        placeholder="天"
+                        value={daysDisplay}
+                        onChange={(e) => {
+                          setManualDays(e.target.value);
+                          setDaysTouched(true);
+                        }}
+                      />
+                      <span className="shrink-0 text-xs text-gray-400">天</span>
+                    </div>
+                    {hasAutoBasis && (
+                      <p className="mt-1 text-[11px] text-gray-400">
+                        已按{user?.due_date ? "档案预产期" : `首次打卡 ${gestationAnchor?.date} 孕${gestationAnchor?.week}周`}自动推算，可修改周数（±1 周内）与天数
+                      </p>
+                    )}
                   </div>
                 )}
                 <div className="grid grid-cols-2 gap-3">

@@ -52,6 +52,10 @@ export default function BmiFormCard({ onSubmit, loading, initialHeight, initialP
       : "pregnancy"
   );
   const [gestationalWeek, setGestationalWeek] = useState<string>("");
+  const [gestationalDays, setGestationalDays] = useState<string>("");
+  // v1.58：touched 标记——用户手动改过周/天后尊重用户值；日期/阶段变化时重置回自动推算
+  const [weekTouched, setWeekTouched] = useState(false);
+  const [daysTouched, setDaysTouched] = useState(false);
   const [postpartumMonths, setPostpartumMonths] = useState<string>("");
   const [isTwins, setIsTwins] = useState<boolean>(false);
   const [medicalHistory, setMedicalHistory] = useState<string[]>([]);
@@ -65,20 +69,21 @@ export default function BmiFormCard({ onSubmit, loading, initialHeight, initialP
     return null;
   }, [stageType, user?.due_date, gestationAnchor, recordDate]);
 
-  // 孕周自动推算：随打卡日期联动填充（允许 ±1 周微调，超出由后端拦截）
+  // 日期/阶段变化时解除手动编辑态 → 回到自动推算展示（v1.58 派生显示值方案，无 effect 填充竞态）
   useEffect(() => {
-    if (stageType === "pregnancy" && gestation) {
-      setGestationalWeek(String(gestation.week));
-    }
-  }, [stageType, gestation?.week, recordDate, hasDueDate]);
+    setWeekTouched(false);
+    setDaysTouched(false);
+  }, [recordDate, stageType]);
 
-  // 产后月龄自动推算：已设宝宝生日时随打卡日期联动填充
-  useEffect(() => {
-    if (stageType === "postpartum" && hasBabyBirthday && user?.baby_birthday) {
-      const months = autoPostpartumMonths(user.baby_birthday, recordDate);
-      if (months != null) setPostpartumMonths(String(months));
-    }
-  }, [stageType, hasBabyBirthday, user?.baby_birthday, recordDate]);
+  // v1.58：派生显示值——未手动编辑时直接展示推算值（自动填充绝对可靠）；编辑后展示用户值
+  const weekDisplay = !weekTouched && gestation ? String(gestation.week) : gestationalWeek;
+  const daysDisplay = !daysTouched && gestation ? String(gestation.days) : gestationalDays;
+
+  // v1.58 产后月龄双基准：未手动编辑时直接展示推算值（自动填充可靠）
+  const postpartumMonthsDisplay =
+    stageType === "postpartum" && user?.baby_birthday
+      ? String(autoPostpartumMonths(user.baby_birthday, recordDate) ?? 1)
+      : postpartumMonths;
 
   const instantBmi = useMemo(() => {
     const h = parseFloat(height);
@@ -145,8 +150,9 @@ export default function BmiFormCard({ onSubmit, loading, initialHeight, initialP
     }
 
     if (stageType === "pregnancy") {
-      const gwNum = parseInt(gestationalWeek, 10);
-      if (isNaN(gwNum) || gwNum < 0 || gwNum > 42) {
+      // v1.58：周+天双输入——提交显示值（未手动编辑时为推算值，手动编辑后为用户值）
+      const gwNum = parseInt(weekDisplay, 10);
+      if (isNaN(gwNum) || gwNum < 1 || gwNum > 42) {
         setErrorMsg(
           hasAutoBasis
             ? "孕周自动推算失败，请核对档案预产期或首次打卡记录"
@@ -155,8 +161,13 @@ export default function BmiFormCard({ onSubmit, loading, initialHeight, initialP
         return;
       }
       payload.gestational_week = gwNum;
+      const gdNum = parseInt(daysDisplay, 10);
+      if (!isNaN(gdNum)) {
+        payload.gestational_days = Math.max(0, Math.min(6, gdNum));
+      }
     } else if (stageType === "postpartum") {
-      const pmNum = parseInt(postpartumMonths, 10);
+      // v1.58：产后月龄同样采用显示值（推算优先，可手改）
+      const pmNum = parseInt(postpartumMonthsDisplay, 10);
       payload.postpartum_months = isNaN(pmNum) ? 1 : pmNum;
     }
     // v1.56：general 非孕期阶段无需孕周/产后月龄
@@ -257,20 +268,37 @@ export default function BmiFormCard({ onSubmit, loading, initialHeight, initialP
             {stageType === "pregnancy" ? (
               <>
                 <label className="label">
-                  当前孕周 (0 ~ 42 周) {hasAutoBasis ? "· 自动推算" : "*"}
+                  当前孕周 {hasAutoBasis ? "· 已自动推算（可修改周与天）" : "(1 ~ 42 周) *"}
                 </label>
+                {/* v1.58：周+天双输入框——自动推算填充（未编辑时显示推算值），支持手改 */}
                 <div className="flex items-center gap-2">
                   <input
                     type="number"
-                    min="0"
+                    min="1"
                     max="42"
                     className="input"
-                    placeholder={hasAutoBasis ? "自动推算填充" : "例如 24"}
-                    value={gestationalWeek}
-                    onChange={(e) => setGestationalWeek(e.target.value)}
+                    placeholder={hasAutoBasis ? "自动推算" : "如 24"}
+                    value={weekDisplay}
+                    onChange={(e) => {
+                      setGestationalWeek(e.target.value);
+                      setWeekTouched(true);
+                    }}
                     required
                   />
-                  <span className="text-xs text-gray-400">周</span>
+                  <span className="shrink-0 text-xs text-gray-400">周</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="6"
+                    className="input"
+                    placeholder="天"
+                    value={daysDisplay}
+                    onChange={(e) => {
+                      setGestationalDays(e.target.value);
+                      setDaysTouched(true);
+                    }}
+                  />
+                  <span className="shrink-0 text-xs text-gray-400">天</span>
                 </div>
                 {gestation && (
                   <p className="mt-1 flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400">
@@ -294,7 +322,7 @@ export default function BmiFormCard({ onSubmit, loading, initialHeight, initialP
                     max="36"
                     className="input"
                     placeholder={hasBabyBirthday ? "按宝宝生日自动填充" : "例如 2"}
-                    value={postpartumMonths}
+                    value={postpartumMonthsDisplay}
                     onChange={(e) => setPostpartumMonths(e.target.value)}
                     required
                   />

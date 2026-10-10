@@ -744,9 +744,9 @@ django.db.utils.OperationalError: unable to open database file
 
 ---
 
-## 功能版本同步公告：健康中心全系列能力对齐传统版 (v1.54 ~ v1.57.1)
+## 功能版本同步公告：健康中心全系列能力对齐传统版 (v1.54 ~ v1.58)
 
-本仓库（Docker 版）已完成与 [mengya-traditional](https://github.com/18227370901/mengya-traditional.git) 传统版 **v1.54 ~ v1.57.1** 共 6 个版本的全部业务功能同步（部署运维体系保持 Docker 版独立演进不受影响）：
+本仓库（Docker 版）已完成与 [mengya-traditional](https://github.com/18227370901/mengya-traditional.git) 传统版 **v1.54 ~ v1.58** 共 7 个版本的全部业务功能同步（部署运维体系保持 Docker 版独立演进不受影响）：
 
 | 版本 | 能力摘要 |
 |---|---|
@@ -756,10 +756,11 @@ django.db.utils.OperationalError: unable to open database file
 | v1.56 | 健康中心 4-Tab 信息架构重构（妈妈·孕产档案/宝宝·生长档案 WHO P50/疫苗下一针建议/时间轴补录）+ 非孕期阶段 + 搜索引擎三级降级 + SPA no-cache |
 | v1.57 | 数据严谨性（同日唯一 409/覆盖更新/未来日期拦截/宝宝数值软提示）+ 四处列表勾选批删与分页 + vite manualChunks 瘦身（主包 453KB）+ SearXNG 引擎预设 + 食材正则提取 + A4 评估报告导出（打印/PDF）+ CSV 批量导入 + BMI 接口越权漏洞修复 |
 | v1.57.1 | 孕周锚点自动推算贯通前端（无预产期时按首次打卡自动算 孕x周x天，如 05-01 孕1周 → 05-08 自动"孕2周"、05-02 自动"孕1周1天"）+ 分析报告折叠按钮归位区块标题栏（附评估摘要行） |
+| v1.58 | 孕周输入自动填充修复（touched 标记 + 派生显示值消除 effect 填充竞态，推算值真正显示进输入框）+ 打卡弹窗与深度表单统一「周 + 天」双输入框（均可手改；后端 `gestational_days` 用户显式传值优先采纳） |
 
 **同步范围**：后端 `apps/core/`（孕周引擎/医学计算/食谱双通道/SearXNG 客户端/视图与序列化器/权限矩阵）、前端 `frontend/src/`（健康中心全套组件/`utils/gestation.ts`/ui 通用组件/构建产物分包）、`config/urls.py`、`templates/index.html`、`static/assets/`（最新构建产物）；`config/settings.py` 与 `.env.example` 已合并 SearXNG 配置段（`SEARXNG_FORMAT` / `AI_SEARCH_FALLBACK_ENABLED=True`）；Docker 专属运维文件（Dockerfile / docker-compose / bin/ / run.sh 等）零改动。
 
 **注意**：
 - 前端已分包（echarts/react-vendor/router/axios/pdf-tools 独立 chunk，PDF 工具链按需加载），容器重建后 `templates/index.html` 与 `static/assets/` 产物即最新（已随仓库提交，无需本地构建）；
 - 若需容器内自行构建前端，`frontend/package.json` 已含 `jspdf` + `html2canvas` 依赖，执行 `run.sh rebuild` 即可；
-- 详细架构设计见 `Project_System_Design.md` / `.html` 第 10.16 ~ 10.20 章。
+- 详细架构设计见 `Project_System_Design.md` / `.html` 第 10.16 ~ 10.21 章。

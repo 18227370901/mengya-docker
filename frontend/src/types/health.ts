@@ -14,6 +14,8 @@ export interface BmiAnalysisInput {
   waist_circumference_cm?: number;
   stage_type: PregnancyStage;
   gestational_week?: number;
+  /** v1.58：孕x周x天输入——周内天数（0~6；用户显式传值优先于推算值） */
+  gestational_days?: number;
   postpartum_months?: number;
   is_twins: boolean;
   medical_history: string[];

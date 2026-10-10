@@ -2467,7 +2467,9 @@ class HealthBmiAnalysisView(APIView):
                 status=status.HTTP_409_CONFLICT,
             )
         gestational_week = data.get("gestational_week")
-        # v1.58：孕x周x天粒度——validate 透出周内天数（0~6）随记录存储
+        # v1.58：孕x周x天粒度——validate 透出周内天数（0~6）随记录存储；
+        # 周+天输入：用户显式传 gestational_days 时优先采纳（周数仍经双基准校验），未传则用推算值
+        user_input_days = data.get("gestational_days")
         gestational_days = 0
         gestation_check = {"week": None, "days": 0, "basis": "", "auto_filled": False, "hint": ""}
         if stage_type == "pregnancy":
@@ -2490,7 +2492,13 @@ class HealthBmiAnalysisView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
             gestational_week = wk_check["week"]
-            gestational_days = int(wk_check.get("days") or 0)
+            if user_input_days is not None:
+                # 用户输入的天数优先（前端 周+天 双输入框；超期孕40+N 场景仍由推算 days 表达）
+                gestational_days = max(0, min(6, int(user_input_days)))
+            else:
+                gestational_days = int(wk_check.get("days") or 0)
+            # 响应透出最终采纳的天数（供前端提示与历史回显一致）
+            gestation_check["days"] = gestational_days
         else:
             gestational_week = None
 
