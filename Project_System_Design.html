@@ -1918,6 +1918,7 @@ estart: unless-stopped；
   <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.24.2 架构重构与优化落地</h4>
   <ul style="color:#334155;line-height:1.6;">
     <li><strong>时间轴全景多视图体系</strong>：<code>HealthTimelineView</code> 整合纵向时间轴流（指标芯片/AI解读/类型筛选）、统计图表看板（近6月活跃度堆叠柱状图、类型构成环形图）与经典月历总览（保留补录），支持本地偏好记忆与宏观指标卡；</li>
+<li><strong>统计图表生命周期解耦与白屏根治</strong>：将图表封装为独立受控子组件，挂载时初始化与绑定 ResizeObserver，卸载时彻底 dispose 释放，根治视图切换后图表空白缺陷；</li>
     <li><strong>时序图表与表格自适应折叠</strong>：无数据时自动收拢图表留白，变为轻量紧凑引导栏，支持手动折叠控制；</li>
     <li><strong>分析报告默认收起策略</strong>：初始状态严格设为收起（52px单行标题栏），仅在用户主动一键分析时展开直达，整页篇幅适中紧凑。</li>
   </ul>

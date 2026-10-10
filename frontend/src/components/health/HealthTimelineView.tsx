@@ -4,16 +4,13 @@ import {
   Calendar,
   Clock,
   BarChart3,
-  TrendingUp,
   HeartPulse,
   Baby,
   ShieldCheck,
   Filter,
   Sparkles,
   ChevronRight,
-  Activity,
-  FileText,
-  CalendarCheck2,
+  TrendingUp,
 } from "lucide-react";
 import { useThemeStore } from "@/store/themeStore";
 import { gestationLabel } from "@/utils/gestation";
@@ -66,6 +63,219 @@ const TYPE_CONFIG: Record<
   },
 };
 
+/**
+ * 独立的健康统计图表看板子组件
+ * 封装完整的 ECharts 挂载、绘制、自适应与卸载释放生命周期，彻底根除视图切换后的实例悬挂与空白缺陷
+ */
+function HealthChartsBoard({
+  records,
+  stats,
+  onViewTimeline,
+}: {
+  records: HealthRecord[];
+  stats: { total: number; momCount: number; babyCount: number; vaccineCount: number; latestDate: string | null };
+  onViewTimeline: () => void;
+}) {
+  const isDark = useThemeStore((s) => s.theme === "dark");
+  const barChartRef = useRef<HTMLDivElement | null>(null);
+  const pieChartRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const barEl = barChartRef.current;
+    const pieEl = pieChartRef.current;
+    if (!barEl || !pieEl) return;
+
+    const axisLabelColor = isDark ? "#94a3b8" : "#64748b";
+    const axisLineColor = isDark ? "#334155" : "#e2e8f0";
+    const splitLineColor = isDark ? "#1e293b" : "#f1f5f9";
+
+    // 1. 初始化实例
+    const barChart = echarts.init(barEl);
+    const pieChart = echarts.init(pieEl);
+
+    // 2. 计算近 6 个月打卡频次堆叠数据
+    const months: string[] = [];
+    const now = new Date();
+    for (let i = 5; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+    }
+
+    const momMonthly = months.map(() => 0);
+    const babyMonthly = months.map(() => 0);
+    const vacMonthly = months.map(() => 0);
+
+    records.forEach((r) => {
+      const m = r.record_date.slice(0, 7);
+      const idx = months.indexOf(m);
+      if (idx !== -1) {
+        if (r.record_type === "prenatal_exam") momMonthly[idx]++;
+        else if (r.record_type === "growth_measurement") babyMonthly[idx]++;
+        else if (r.record_type === "vaccination" || r.record_type === "vaccine") vacMonthly[idx]++;
+      }
+    });
+
+    // 绘制柱状图
+    barChart.setOption({
+      tooltip: {
+        trigger: "axis",
+        axisPointer: { type: "shadow" },
+        backgroundColor: isDark ? "#1e293b" : "#ffffff",
+        borderColor: axisLineColor,
+        textStyle: { color: isDark ? "#f1f5f9" : "#1e293b" },
+      },
+      legend: {
+        bottom: 0,
+        textStyle: { color: axisLabelColor, fontSize: 11 },
+        data: ["孕期产检", "宝宝生长", "疫苗接种"],
+      },
+      grid: { top: 30, right: 20, bottom: 40, left: 40 },
+      xAxis: {
+        type: "category",
+        data: months,
+        axisLabel: { color: axisLabelColor, fontSize: 11 },
+        axisLine: { lineStyle: { color: axisLineColor } },
+      },
+      yAxis: {
+        type: "value",
+        minInterval: 1,
+        axisLabel: { color: axisLabelColor },
+        splitLine: { lineStyle: { color: splitLineColor } },
+      },
+      series: [
+        {
+          name: "孕期产检",
+          type: "bar",
+          stack: "total",
+          itemStyle: { color: "#ec4899" },
+          data: momMonthly,
+        },
+        {
+          name: "宝宝生长",
+          type: "bar",
+          stack: "total",
+          itemStyle: { color: "#10b981" },
+          data: babyMonthly,
+        },
+        {
+          name: "疫苗接种",
+          type: "bar",
+          stack: "total",
+          itemStyle: { color: "#3b82f6" },
+          data: vacMonthly,
+        },
+      ],
+    });
+
+    // 3. 计算构成环形饼图数据
+    const pieData = [
+      { value: stats.momCount, name: "孕期产检", itemStyle: { color: "#ec4899" } },
+      { value: stats.babyCount, name: "宝宝生长", itemStyle: { color: "#10b981" } },
+      { value: stats.vaccineCount, name: "疫苗接种", itemStyle: { color: "#3b82f6" } },
+    ].filter((d) => d.value > 0);
+
+    // 绘制饼图
+    pieChart.setOption({
+      tooltip: {
+        trigger: "item",
+        backgroundColor: isDark ? "#1e293b" : "#ffffff",
+        borderColor: axisLineColor,
+        textStyle: { color: isDark ? "#f1f5f9" : "#1e293b" },
+        formatter: "{b}: {c} 次 ({d}%)",
+      },
+      legend: {
+        bottom: 0,
+        textStyle: { color: axisLabelColor, fontSize: 11 },
+      },
+      series: [
+        {
+          name: "记录类型",
+          type: "pie",
+          radius: ["42%", "70%"],
+          center: ["50%", "45%"],
+          avoidLabelOverlap: false,
+          itemStyle: {
+            borderRadius: 6,
+            borderColor: isDark ? "#1f2937" : "#fff",
+            borderWidth: 2,
+          },
+          label: { show: false },
+          emphasis: {
+            label: {
+              show: true,
+              fontSize: 12,
+              fontWeight: "bold",
+              color: isDark ? "#f1f5f9" : "#1e293b",
+            },
+          },
+          data: pieData.length > 0 ? pieData : [{ value: 1, name: "暂无记录", itemStyle: { color: "#cbd5e1" } }],
+        },
+      ],
+    });
+
+    // 4. 自适应尺寸监听与首帧重绘保障
+    const observer = new ResizeObserver(() => {
+      barChart.resize();
+      pieChart.resize();
+    });
+    observer.observe(barEl);
+    observer.observe(pieEl);
+
+    // 延时确保浏览器排版流计算完毕
+    const rafId = requestAnimationFrame(() => {
+      barChart.resize();
+      pieChart.resize();
+    });
+
+    // 5. 卸载时彻底断开监听与销毁实例，防止内存泄漏和旧实例留存
+    return () => {
+      cancelAnimationFrame(rafId);
+      observer.disconnect();
+      barChart.dispose();
+      pieChart.dispose();
+    };
+  }, [records, isDark, stats]);
+
+  return (
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {/* 堆叠柱状图：月度打卡频次 */}
+        <div className="card space-y-2 p-4">
+          <div className="flex items-center justify-between border-b border-gray-100 pb-2 dark:border-gray-800">
+            <h3 className="text-sm font-bold text-gray-800 dark:text-gray-100">
+              近 6 个月健康打卡活跃度与类型分布
+            </h3>
+            <span className="text-xs text-gray-400">堆叠柱状图</span>
+          </div>
+          <div ref={barChartRef} style={{ height: 280 }} className="w-full" />
+        </div>
+
+        {/* 环形饼图：记录类型构成 */}
+        <div className="card space-y-2 p-4">
+          <div className="flex items-center justify-between border-b border-gray-100 pb-2 dark:border-gray-800">
+            <h3 className="text-sm font-bold text-gray-800 dark:text-gray-100">
+              健康档案记录类型构成
+            </h3>
+            <span className="text-xs text-gray-400">环形图</span>
+          </div>
+          <div ref={pieChartRef} style={{ height: 280 }} className="w-full" />
+        </div>
+      </div>
+
+      <div className="card p-4 text-xs text-gray-400 flex items-center justify-between">
+        <span>💡 统计图表按全量健康记录动态聚合，切换视图或新增打卡均能实时秒级重绘。</span>
+        <button
+          type="button"
+          onClick={onViewTimeline}
+          className="text-brand-600 hover:text-brand-700 dark:text-brand-400 font-medium"
+        >
+          查看时间轴明细 →
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function HealthTimelineView({
   records,
   currentMonth,
@@ -73,8 +283,6 @@ export default function HealthTimelineView({
   onDayClick,
   onCheckInClick,
 }: HealthTimelineViewProps) {
-  const isDark = useThemeStore((s) => s.theme === "dark");
-
   // 持久化视图偏好，默认首选“时间轴流”
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     try {
@@ -122,168 +330,6 @@ export default function HealthTimelineView({
     });
     return list.sort((a, b) => (a.record_date === b.record_date ? b.id - a.id : a.record_date < b.record_date ? 1 : -1));
   }, [records, filterType]);
-
-  // 3. ECharts 图表容器引用
-  const barChartRef = useRef<HTMLDivElement | null>(null);
-  const pieChartRef = useRef<HTMLDivElement | null>(null);
-  const barInstanceRef = useRef<echarts.ECharts | null>(null);
-  const pieInstanceRef = useRef<echarts.ECharts | null>(null);
-
-  // 初始化与更新统计图表
-  useEffect(() => {
-    if (viewMode !== "charts") return;
-
-    const axisLabelColor = isDark ? "#94a3b8" : "#64748b";
-    const axisLineColor = isDark ? "#334155" : "#e2e8f0";
-    const splitLineColor = isDark ? "#1e293b" : "#f1f5f9";
-
-    // 3.1 柱状图：按近6个月统计各类型打卡频次
-    if (barChartRef.current) {
-      if (!barInstanceRef.current) {
-        barInstanceRef.current = echarts.init(barChartRef.current);
-      }
-      const chart = barInstanceRef.current;
-
-      // 生成最近 6 个月月份标签
-      const months: string[] = [];
-      const now = new Date();
-      for (let i = 5; i >= 0; i--) {
-        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-        months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
-      }
-
-      const momMonthly = months.map(() => 0);
-      const babyMonthly = months.map(() => 0);
-      const vacMonthly = months.map(() => 0);
-
-      records.forEach((r) => {
-        const m = r.record_date.slice(0, 7);
-        const idx = months.indexOf(m);
-        if (idx !== -1) {
-          if (r.record_type === "prenatal_exam") momMonthly[idx]++;
-          else if (r.record_type === "growth_measurement") babyMonthly[idx]++;
-          else if (r.record_type === "vaccination" || r.record_type === "vaccine") vacMonthly[idx]++;
-        }
-      });
-
-      chart.setOption(
-        {
-          tooltip: {
-            trigger: "axis",
-            axisPointer: { type: "shadow" },
-            backgroundColor: isDark ? "#1e293b" : "#ffffff",
-            borderColor: axisLineColor,
-            textStyle: { color: isDark ? "#f1f5f9" : "#1e293b" },
-          },
-          legend: {
-            bottom: 0,
-            textStyle: { color: axisLabelColor, fontSize: 11 },
-            data: ["孕期产检", "宝宝生长", "疫苗接种"],
-          },
-          grid: { top: 30, right: 20, bottom: 40, left: 40 },
-          xAxis: {
-            type: "category",
-            data: months,
-            axisLabel: { color: axisLabelColor, fontSize: 11 },
-            axisLine: { lineStyle: { color: axisLineColor } },
-          },
-          yAxis: {
-            type: "value",
-            minInterval: 1,
-            axisLabel: { color: axisLabelColor },
-            splitLine: { lineStyle: { color: splitLineColor } },
-          },
-          series: [
-            {
-              name: "孕期产检",
-              type: "bar",
-              stack: "total",
-              itemStyle: { color: "#ec4899" },
-              data: momMonthly,
-            },
-            {
-              name: "宝宝生长",
-              type: "bar",
-              stack: "total",
-              itemStyle: { color: "#10b981" },
-              data: babyMonthly,
-            },
-            {
-              name: "疫苗接种",
-              type: "bar",
-              stack: "total",
-              itemStyle: { color: "#3b82f6" },
-              data: vacMonthly,
-            },
-          ],
-        },
-        { notMerge: true }
-      );
-    }
-
-    // 3.2 环形饼图：健康档案记录构成
-    if (pieChartRef.current) {
-      if (!pieInstanceRef.current) {
-        pieInstanceRef.current = echarts.init(pieChartRef.current);
-      }
-      const chart = pieInstanceRef.current;
-      const pieData = [
-        { value: stats.momCount, name: "孕期产检", itemStyle: { color: "#ec4899" } },
-        { value: stats.babyCount, name: "宝宝生长", itemStyle: { color: "#10b981" } },
-        { value: stats.vaccineCount, name: "疫苗接种", itemStyle: { color: "#3b82f6" } },
-      ].filter((d) => d.value > 0);
-
-      chart.setOption(
-        {
-          tooltip: {
-            trigger: "item",
-            backgroundColor: isDark ? "#1e293b" : "#ffffff",
-            borderColor: axisLineColor,
-            textStyle: { color: isDark ? "#f1f5f9" : "#1e293b" },
-            formatter: "{b}: {c} 次 ({d}%)",
-          },
-          legend: {
-            bottom: 0,
-            textStyle: { color: axisLabelColor, fontSize: 11 },
-          },
-          series: [
-            {
-              name: "记录类型",
-              type: "pie",
-              radius: ["42%", "70%"],
-              center: ["50%", "45%"],
-              avoidLabelOverlap: false,
-              itemStyle: {
-                borderRadius: 6,
-                borderColor: isDark ? "#1f2937" : "#fff",
-                borderWidth: 2,
-              },
-              label: { show: false },
-              emphasis: {
-                label: {
-                  show: true,
-                  fontSize: 12,
-                  fontWeight: "bold",
-                  color: isDark ? "#f1f5f9" : "#1e293b",
-                },
-              },
-              data: pieData.length > 0 ? pieData : [{ value: 1, name: "暂无记录", itemStyle: { color: "#cbd5e1" } }],
-            },
-          ],
-        },
-        { notMerge: true }
-      );
-    }
-
-    const handleResize = () => {
-      barInstanceRef.current?.resize();
-      pieInstanceRef.current?.resize();
-    };
-    window.addEventListener("resize", handleResize);
-    return () => {
-      window.removeEventListener("resize", handleResize);
-    };
-  }, [viewMode, records, isDark, stats]);
 
   return (
     <div className="space-y-5">
@@ -565,44 +611,13 @@ export default function HealthTimelineView({
         </div>
       )}
 
-      {/* 视图 2：统计图表看板 (Charts) */}
+      {/* 视图 2：统计图表看板 (Charts) - 独立受控组件，随挂载完整重绘 */}
       {viewMode === "charts" && (
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            {/* 堆叠柱状图：月度打卡频次 */}
-            <div className="card space-y-2 p-4">
-              <div className="flex items-center justify-between border-b border-gray-100 pb-2 dark:border-gray-800">
-                <h3 className="text-sm font-bold text-gray-800 dark:text-gray-100">
-                  近 6 个月健康打卡活跃度与类型分布
-                </h3>
-                <span className="text-xs text-gray-400">堆叠柱状图</span>
-              </div>
-              <div ref={barChartRef} style={{ height: 280 }} className="w-full" />
-            </div>
-
-            {/* 环形饼图：记录类型构成 */}
-            <div className="card space-y-2 p-4">
-              <div className="flex items-center justify-between border-b border-gray-100 pb-2 dark:border-gray-800">
-                <h3 className="text-sm font-bold text-gray-800 dark:text-gray-100">
-                  健康档案记录类型构成
-                </h3>
-                <span className="text-xs text-gray-400">环形图</span>
-              </div>
-              <div ref={pieChartRef} style={{ height: 280 }} className="w-full" />
-            </div>
-          </div>
-
-          <div className="card p-4 text-xs text-gray-400 flex items-center justify-between">
-            <span>💡 统计图表按全量健康记录动态聚合更新，完成新打卡后图表自动联动重绘。</span>
-            <button
-              type="button"
-              onClick={() => handleViewChange("timeline")}
-              className="text-brand-600 hover:text-brand-700 dark:text-brand-400 font-medium"
-            >
-              查看时间轴明细 →
-            </button>
-          </div>
-        </div>
+        <HealthChartsBoard
+          records={records}
+          stats={stats}
+          onViewTimeline={() => handleViewChange("timeline")}
+        />
       )}
 
       {/* 视图 3：经典日历总览 (Calendar) */}

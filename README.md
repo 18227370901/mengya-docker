@@ -806,6 +806,7 @@ django.db.utils.OperationalError: unable to open database file
    - **统计图表看板 (Charts)**：引入月度打卡活跃度堆叠柱状图与记录类型构成环形饼图，提供宏观健康洞察。
    - **经典日历总览 (Calendar)**：100% 完整保留原有 `HealthCalendar` 网格视图与点击补录能力。
    - **顶部宏观统计指标与视图切换器**：呈现 4 项统计芯片，支持时间轴流/统计图表/日历总览三选一自由切换并持久化本地偏好。
+   - **统计图表独立生命周期解耦与白屏根治**：将 ECharts 统计看板封装为独立受控子组件 `HealthChartsBoard`，组件挂载时初始化并绑定 `ResizeObserver` 尺寸监听与首帧重绘，组件卸载时立即 `dispose()` 释放实例，彻底根除视图切换后因旧实例悬空导致的图表空白问题。
 2. **时序看板与表格清空后自适应折叠 (`BmiTimeSeriesBoard.tsx` & `BmiHistoryTable.tsx`)**：
    - 无数据或清空后自动收拢 320px 空白图表，转为轻量引导卡，根除大面积空白占用；支持手动折叠控制。
 3. **分析报告默认收起策略 (`BmiAnalysisView.tsx`)**：
