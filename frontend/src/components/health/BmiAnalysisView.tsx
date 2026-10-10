@@ -13,7 +13,14 @@ import LifestyleCareCard from "./LifestyleCareCard";
 import HealthReportExport from "./HealthReportExport";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 
-export default function BmiAnalysisView() {
+interface BmiAnalysisViewProps {
+  /** v1.59：外部刷新触发令牌（健康打卡弹窗/CSV导入/外层变动时联动刷新） */
+  refreshTrigger?: number;
+  /** v1.59：内部变更回调（分析打卡/删除/批量删除后通知外层刷新 HealthPage.records） */
+  onRecordChanged?: () => void;
+}
+
+export default function BmiAnalysisView({ refreshTrigger, onRecordChanged }: BmiAnalysisViewProps = {}) {
   const [loading, setLoading] = useState<boolean>(false);
   const [result, setResult] = useState<BmiAnalysisResult | null>(null);
   const [toast, setToast] = useState<string>("");
@@ -46,7 +53,7 @@ export default function BmiAnalysisView() {
 
   useEffect(() => {
     loadTimeseries();
-  }, [loadTimeseries]);
+  }, [loadTimeseries, refreshTrigger]);
 
   const handleAnalyze = async (data: BmiAnalysisInput, overwrite = false) => {
     setLoading(true);
@@ -59,6 +66,7 @@ export default function BmiAnalysisView() {
       } else {
         loadTimeseries();
       }
+      onRecordChanged?.();
       // v1.55：透出孕周引擎自动校准与基线初始化提示；v1.57：区分首次归档与覆盖当日记录
       const hints: string[] = [
         res?.record_action === "updated"
@@ -76,7 +84,7 @@ export default function BmiAnalysisView() {
       setReportCollapsed(false);
     } catch (err: any) {
       // v1.57：同日重复打卡 409 → 弹出覆盖确认弹窗（保留原 payload，确认后携 overwrite 重发）
-      const conflict = err?.data as SameDayConflictPayload | undefined;
+      const conflict = (err?.data || err?.response?.data?.data) as SameDayConflictPayload | undefined;
       if (conflict?.conflict && conflict?.overwrite_supported) {
         setConflictInfo(conflict);
         setPendingPayload(data);
@@ -96,6 +104,7 @@ export default function BmiAnalysisView() {
       await healthApi.remove(id);
       showToast("打卡记录已删除，图表看板已联动刷新");
       await loadTimeseries();
+      onRecordChanged?.();
     } catch (err: any) {
       showToast(err.message || "删除失败，请稍后重试");
     } finally {
@@ -112,6 +121,7 @@ export default function BmiAnalysisView() {
       showToast(err?.message || "批量删除失败，请稍后重试");
     } finally {
       await loadTimeseries();
+      onRecordChanged?.();
     }
   };
 

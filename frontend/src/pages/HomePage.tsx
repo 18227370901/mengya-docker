@@ -179,13 +179,13 @@ export default function HomePage() {
 
       {/* 未设置阶段时的引导卡片 */}
       {stage?.type === "unknown" && (
-        <section className="card flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-5 border-2 border-dashed border-brand-200 bg-brand-50/50">
+        <section className="card flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-5 border-2 border-dashed border-brand-200 bg-brand-50/50 dark:border-brand-900/60 dark:bg-brand-950/30">
           <div className="flex items-center gap-3">
             <div className="rounded-2xl bg-brand-500/10 p-3 text-brand-600">
               <CalendarDays className="h-6 w-6" />
             </div>
             <div>
-              <p className="font-semibold text-gray-800">请设置预产期或宝宝生日</p>
+              <p className="font-semibold text-gray-800 dark:text-gray-100">请设置预产期或宝宝生日</p>
               <p className="text-xs text-gray-500">设置后将开启个性化孕期周历、每日胎教故事及专属商品推荐</p>
             </div>
           </div>
@@ -204,14 +204,14 @@ export default function HomePage() {
         <section className="card p-5">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <div className="flex min-w-16 px-2.5 py-2 flex-col items-center justify-center rounded-2xl bg-brand-50 text-center">
+              <div className="flex min-w-16 px-2.5 py-2 flex-col items-center justify-center rounded-2xl bg-brand-50 text-center dark:bg-brand-950/60">
                 <span className="text-base sm:text-lg font-bold text-brand-600 whitespace-nowrap">
                   {stage?.week_days_text ? stage.week_days_text : `孕${currentWeek}周`}
                 </span>
               </div>
               <div>
                 <p className="text-sm text-gray-400">宝宝现在大约</p>
-                <p className="text-lg font-semibold text-gray-800">{fetusSize}</p>
+                <p className="text-lg font-semibold text-gray-800 dark:text-gray-100">{fetusSize}</p>
                 <p className="mt-0.5 text-xs text-gray-400">
                   {stage?.week_days_text || `孕${currentWeek}周`} · {stage?.trimester || (currentWeek <= 12 ? "孕早期" : currentWeek <= 27 ? "孕中期" : "孕晚期")}
                   {stage?.days_to_due !== undefined ? ` · 距预产期 ${stage.days_to_due} 天` : ` · 距预产期约 ${Math.max(0, 40 - currentWeek)} 周`}
@@ -221,21 +221,21 @@ export default function HomePage() {
             {(user?.is_staff || hasPermission("menu_timeline")) && (
               <Link
                 to="/weekly"
-                className="flex items-center gap-1 rounded-xl bg-brand-50 px-3 py-2 text-sm font-medium text-brand-600 transition hover:bg-brand-100"
+                className="flex items-center gap-1 rounded-xl bg-brand-50 px-3 py-2 text-sm font-medium text-brand-600 transition hover:bg-brand-100 dark:bg-brand-950/60 dark:text-brand-300 dark:hover:bg-brand-900/60"
               >
                 本周详情 <ChevronRight className="h-4 w-4" />
               </Link>
             )}
           </div>
           {(user?.is_staff || hasPermission("menu_timeline")) && weekItems.length > 0 && (
-            <div className="mt-4 border-t border-orange-50 pt-3">
+            <div className="mt-4 border-t border-orange-50 pt-3 dark:border-gray-800">
               <p className="mb-2 text-xs font-medium text-gray-400">本周知识点</p>
               <div className="flex flex-wrap gap-2">
                 {weekItems.slice(0, 4).map((item) => (
                   <Link
                     key={item.id}
                     to={`/timeline/${item.id}`}
-                    className="rounded-lg bg-gray-50 px-3 py-1.5 text-xs text-gray-600 transition hover:bg-brand-50 hover:text-brand-600"
+                    className="rounded-lg bg-gray-50 px-3 py-1.5 text-xs text-gray-600 transition hover:bg-brand-50 hover:text-brand-600 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-brand-950/60 dark:hover:text-brand-300"
                   >
                     {item.title}
                   </Link>
@@ -251,11 +251,11 @@ export default function HomePage() {
         {visibleQuickEntries.map((entry) => (
           <Link key={entry.to} to={entry.to} className="card hover:shadow-md transition">
             <div className="flex items-center gap-3">
-              <div className="rounded-xl bg-brand-50 p-2.5">
+              <div className="rounded-xl bg-brand-50 p-2.5 dark:bg-brand-950/60">
                 <entry.icon className="h-6 w-6 text-brand-500" />
               </div>
               <div>
-                <p className="font-medium text-gray-800">{entry.label}</p>
+                <p className="font-medium text-gray-800 dark:text-gray-100">{entry.label}</p>
                 <p className="text-xs text-gray-400">{entry.desc}</p>
               </div>
             </div>
@@ -267,7 +267,7 @@ export default function HomePage() {
       {(user?.is_staff || hasPermission("menu_timeline")) && (
         <section>
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-lg font-bold text-gray-800">本周重点</h2>
+            <h2 className="text-lg font-bold text-gray-800 dark:text-gray-100">本周重点</h2>
             <Link to="/timeline" className="flex items-center text-sm text-brand-500 hover:underline">
               全部时间轴 <ArrowRight className="ml-1 h-4 w-4" />
             </Link>
@@ -285,7 +285,7 @@ export default function HomePage() {
                     <span className="tag">{item.category_label}</span>
                     {item.is_essential && <span className="text-xs text-brand-500">必读</span>}
                   </div>
-                  <h3 className="font-medium text-gray-800">{item.title}</h3>
+                  <h3 className="font-medium text-gray-800 dark:text-gray-100">{item.title}</h3>
                   <p className="mt-1 line-clamp-2 text-sm text-gray-500">{item.content}</p>
                 </Link>
               ))}
@@ -298,7 +298,7 @@ export default function HomePage() {
       {(user?.is_staff || hasPermission("menu_products")) && (
         <section>
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-lg font-bold text-gray-800">高分推荐</h2>
+            <h2 className="text-lg font-bold text-gray-800 dark:text-gray-100">高分推荐</h2>
             <Link to="/products" className="flex items-center text-sm text-brand-500 hover:underline">
               全部商品 <ArrowRight className="ml-1 h-4 w-4" />
             </Link>

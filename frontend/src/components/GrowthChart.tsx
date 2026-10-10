@@ -9,7 +9,7 @@ interface GrowthPoint {
   head?: number;
 }
 
-/** v1.56 P1-B：WHO 0~3岁男童生长标准 P50 参考值（月龄 → 身高cm / 体重kg / 头围cm） */
+/** v1.56/v1.59：WHO 0~3岁男童生长标准 P50 参考值（月龄 → 身高cm / 体重kg / 头围cm） */
 const WHO_P50_BOY = [
   { m: 0, height: 49.9, weight: 3.3, head: 34.5 },
   { m: 1, height: 54.7, weight: 4.5, head: 37.3 },
@@ -26,10 +26,27 @@ const WHO_P50_BOY = [
   { m: 36, height: 96.1, weight: 14.3, head: 49.5 },
 ];
 
-/** 按月龄线性插值获取 WHO P50 参考值 */
-function whoP50(monthAge: number, key: "height" | "weight" | "head"): number | null {
+/** v1.59：WHO 0~3岁女童生长标准 P50 参考值（月龄 → 身高cm / 体重kg / 头围cm） */
+const WHO_P50_GIRL = [
+  { m: 0, height: 49.1, weight: 3.2, head: 33.9 },
+  { m: 1, height: 53.7, weight: 4.2, head: 36.5 },
+  { m: 2, height: 57.1, weight: 5.1, head: 38.3 },
+  { m: 3, height: 59.8, weight: 5.8, head: 39.5 },
+  { m: 4, height: 62.1, weight: 6.4, head: 40.6 },
+  { m: 5, height: 64.0, weight: 6.9, head: 41.5 },
+  { m: 6, height: 65.7, weight: 7.3, head: 42.2 },
+  { m: 9, height: 70.1, weight: 8.2, head: 44.0 },
+  { m: 12, height: 74.0, weight: 8.9, head: 45.0 },
+  { m: 18, height: 80.7, weight: 10.2, head: 46.4 },
+  { m: 24, height: 86.4, weight: 11.5, head: 47.2 },
+  { m: 30, height: 90.7, weight: 12.7, head: 47.9 },
+  { m: 36, height: 95.1, weight: 13.9, head: 48.5 },
+];
+
+/** 按月龄线性插值获取 WHO P50 参考值（支持男童/女童基线） */
+function whoP50(monthAge: number, key: "height" | "weight" | "head", gender: "boy" | "girl" = "boy"): number | null {
   if (monthAge < 0) return null;
-  const table = WHO_P50_BOY;
+  const table = gender === "girl" ? WHO_P50_GIRL : WHO_P50_BOY;
   if (monthAge <= table[0].m) return table[0][key];
   if (monthAge >= table[table.length - 1].m) return table[table.length - 1][key];
   for (let i = 0; i < table.length - 1; i++) {
@@ -43,16 +60,19 @@ function whoP50(monthAge: number, key: "height" | "weight" | "head"): number | n
   return null;
 }
 
-/** 生长曲线折线图（体重/身高/头围 + v1.56 WHO P50 参考线） */
+/** 生长曲线折线图（双Y轴：左轴长度cm，右轴体重kg；支持男童/女童WHO P50参考线） */
 export default function GrowthChart({
   points,
-  height = 280,
+  height = 300,
   birthDate,
+  gender = "boy",
 }: {
   points: GrowthPoint[];
   height?: number;
-  /** v1.56：宝宝生日（用于对齐 WHO 参考线的月龄坐标） */
+  /** 宝宝生日（用于对齐 WHO 参考线的月龄坐标） */
   birthDate?: string;
+  /** 宝宝性别：boy 男童 / girl 女童（对齐专属WHO标准曲线） */
+  gender?: "boy" | "girl";
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const { isDark } = useThemeStore();
@@ -80,10 +100,11 @@ export default function GrowthChart({
 
     const series: echarts.SeriesOption[] = [];
     const define = [
-      { key: "weight" as const, name: "体重(kg)", color: "#f97316", whoColor: "rgba(249,115,22,0.55)" },
-      { key: "height" as const, name: "身高(cm)", color: "#38bdf8", whoColor: "rgba(56,189,248,0.55)" },
-      { key: "head" as const, name: "头围(cm)", color: "#a78bfa", whoColor: "rgba(167,139,250,0.55)" },
+      { key: "weight" as const, name: "体重(kg)", color: "#f97316", whoColor: "rgba(249,115,22,0.55)", yAxisIndex: 1 },
+      { key: "height" as const, name: "身高(cm)", color: "#38bdf8", whoColor: "rgba(56,189,248,0.55)", yAxisIndex: 0 },
+      { key: "head" as const, name: "头围(cm)", color: "#a78bfa", whoColor: "rgba(167,139,250,0.55)", yAxisIndex: 0 },
     ];
+
     for (const d of define) {
       const values = sorted.map((p) => p[d.key] ?? null);
       if (values.some((v) => v !== null)) {
@@ -91,6 +112,7 @@ export default function GrowthChart({
           name: d.name,
           type: "line",
           smooth: true,
+          yAxisIndex: d.yAxisIndex,
           data: values,
           lineStyle: { color: d.color, width: 3 },
           itemStyle: { color: d.color },
@@ -98,12 +120,13 @@ export default function GrowthChart({
           z: 2,
         });
       }
-      // v1.56 P1-B：WHO P50 参考线（需宝宝生日）
-      const whoValues = monthAges.map((m) => (m != null ? whoP50(m, d.key) : null));
+      // WHO P50 参考线（需宝宝生日）
+      const whoValues = monthAges.map((m) => (m != null ? whoP50(m, d.key, gender) : null));
       if (birthDate && whoValues.some((v) => v !== null)) {
         series.push({
           name: `${d.name} · WHO P50 参考`,
           type: "line",
+          yAxisIndex: d.yAxisIndex,
           data: whoValues,
           smooth: true,
           lineStyle: { color: d.whoColor, width: 1.5, type: "dashed" },
@@ -121,23 +144,48 @@ export default function GrowthChart({
         backgroundColor: isDark ? "#1e293b" : "#ffffff",
         borderColor: isDark ? "#334155" : "#e2e8f0",
         textStyle: { color: isDark ? "#f1f5f9" : "#1e293b" },
+        formatter: (params: any) => {
+          if (!Array.isArray(params) || params.length === 0) return "";
+          let tip = `<div style="font-weight:700;margin-bottom:4px;font-size:12px;">${params[0].axisValue}</div>`;
+          params.forEach((item: any) => {
+            const val = item.value;
+            if (val === null || val === undefined) return;
+            const unit = item.seriesName.includes("体重") ? "kg" : "cm";
+            tip += `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;font-size:11px;margin:2px 0;">
+              <span>${item.marker} ${item.seriesName}</span>
+              <span style="font-weight:600;">${val} ${unit}</span>
+            </div>`;
+          });
+          return tip;
+        },
       },
       legend: {
         bottom: 0,
         textStyle: { color: isDark ? "#cbd5e1" : "#666", fontSize: 11 },
       },
-      grid: { top: 20, right: 20, bottom: 50, left: 40 },
+      grid: { top: 25, right: 45, bottom: 50, left: 45 },
       xAxis: {
         type: "category",
         data: dates,
         axisLabel: { color: isDark ? "#94a3b8" : "#888" },
         axisLine: { lineStyle: { color: isDark ? "#334155" : "#e5e7eb" } },
       },
-      yAxis: {
-        type: "value",
-        axisLabel: { color: isDark ? "#94a3b8" : "#888" },
-        splitLine: { lineStyle: { color: isDark ? "#1e293b" : "#f0f0f0" } },
-      },
+      yAxis: [
+        {
+          type: "value",
+          name: "长度 (cm)",
+          nameTextStyle: { color: isDark ? "#94a3b8" : "#888", fontSize: 11 },
+          axisLabel: { color: isDark ? "#94a3b8" : "#888", formatter: "{value}" },
+          splitLine: { lineStyle: { color: isDark ? "#1e293b" : "#f0f0f0" } },
+        },
+        {
+          type: "value",
+          name: "体重 (kg)",
+          nameTextStyle: { color: isDark ? "#94a3b8" : "#888", fontSize: 11 },
+          axisLabel: { color: isDark ? "#94a3b8" : "#888", formatter: "{value}" },
+          splitLine: { show: false },
+        },
+      ],
       series,
     });
     const onResize = () => chart.resize();
@@ -146,14 +194,14 @@ export default function GrowthChart({
       window.removeEventListener("resize", onResize);
       chart.dispose();
     };
-  }, [sorted, monthAges, birthDate, isDark]);
+  }, [sorted, monthAges, birthDate, gender, isDark]);
 
   return (
     <div>
       <div ref={ref} style={{ height }} className="w-full" />
       {birthDate && (
-        <p className="mt-1 text-right text-[11px] text-gray-400">
-          虚线为 WHO 0-5 岁男童 P50 参考值（按宝宝月龄对齐），仅供参考
+        <p className="mt-1 text-right text-[11px] text-gray-400 dark:text-gray-500">
+          虚线为 WHO 0-3 岁{gender === "girl" ? "女童" : "男童"} P50 参考值（双Y轴：左轴长度/头围 cm，右轴体重 kg），仅供参考
         </p>
       )}
     </div>

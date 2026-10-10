@@ -1868,5 +1868,20 @@ estart: unless-stopped；
   </ul>
 </div>
 
+
+<div style="background:#fff;border-radius:12px;padding:24px;margin-bottom:24px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+  <h3 style="color:#0f172a;font-size:18px;margin-top:0;border-bottom:2px solid #f97316;padding-bottom:8px;">10.22 全面复查闭环重构与系统体验深度优化 (v1.59 同步)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.22.1 业务背景与复查问题识别</h4>
+  <p style="color:#475569;font-size:14px;line-height:1.6;">在 v1.58 孕周推算与双输入落地后，对系统代码和运行效果做全面二次复查，针对发现的 6 大核心优化点进行闭环修复与架构精简：</p>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>健康日历记录类型脱节与未来日期异常</strong>：<code>HealthCalendar</code> 兼容 <code>vaccination</code> 与历史 <code>vaccine</code> 类型，恢复疫苗名称与蓝色徽章渲染；增加未来日期禁用判定与样式置灰，禁止点击未来日期补录以防后端 400 校验拦截。</li>
+    <li><strong>宝宝生长曲线双Y轴体系与女童WHO标准</strong>：内置 <code>WHO_P50_GIRL</code> 女童生长标准参考线；改用双 Y 轴架构（左轴长度/头围 cm，右轴体重 kg），彻底根治体重曲线被压扁问题；Tooltip 动态带出单位。</li>
+    <li><strong>主导航顶栏底栏一键直达</strong>：<code>ALL_navItems</code> 正式纳入「健康中心」（<code>/health</code>，<code>menu_health</code>）。</li>
+    <li><strong>妈妈孕产档案单表融合与折叠详情</strong>：后端 <code>_build_bmi_timeseries</code> 补齐 <code>ai_analysis</code> 字段；<code>BmiHistoryTable</code> 增加详情折叠展开行展示备注与 AI 临床解读并支持一键复制；移除底部重复渲染的 <code>momRecords</code> 卡片流，根除 &gt;3000px 冗余垂直滚动。</li>
+    <li><strong>跨组件双向数据联动与409覆盖完善</strong>：<code>BmiAnalysisView</code> 接入 <code>refreshTrigger</code> 与 <code>onRecordChanged</code>，实现打卡/导入弹窗与看板双向即时联动；完善 409 异常提取逻辑；清理 <code>services.ts</code> 中误放于 <code>shoppingApi</code> 的冗余 <code>analyzeBmi</code>。</li>
+    <li><strong>多页面暗黑模式 (Dark Mode) 全面对齐</strong>：<code>HomePage</code>、<code>ProductListPage</code>、<code>ProductCard</code>、<code>HealthCalendar</code> 补齐深色模式样式类，消除暗色文字不可读异常。</li>
+  </ul>
+</div>
+
 </body>
 </html>

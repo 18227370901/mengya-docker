@@ -1,8 +1,9 @@
-import { useMemo, useState } from "react";
-import { ClipboardList, Trash2 } from "lucide-react";
+import { Fragment, useMemo, useState } from "react";
+import { ClipboardList, Trash2, ChevronDown, ChevronUp, FileText, Sparkles } from "lucide-react";
 import type { BmiTimeSeriesRecord } from "@/types/health";
 import { gestationLabel } from "@/utils/gestation";
 import { useAuthStore } from "@/store/authStore";
+import CopyButton from "@/components/CopyButton";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import PaginationBar, { useListPagination } from "@/components/ui/PaginationBar";
 
@@ -49,6 +50,8 @@ export default function BmiHistoryTable({ records, loading, onDelete, onBatchDel
   const [batchConfirm, setBatchConfirm] = useState(false);
   const [batchDeleting, setBatchDeleting] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
+  // v1.59：展开打卡详情（备注 + AI 临床解读）
+  const [expandedIds, setExpandedIds] = useState<Set<number>>(new Set());
 
   const sortDesc = useMemo(
     () => (a: BmiTimeSeriesRecord, b: BmiTimeSeriesRecord) =>
@@ -79,6 +82,15 @@ export default function BmiHistoryTable({ records, loading, onDelete, onBatchDel
 
   const toggleSelect = (id: number) => {
     setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleExpand = (id: number) => {
+    setExpandedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
@@ -122,7 +134,7 @@ export default function BmiHistoryTable({ records, loading, onDelete, onBatchDel
               测量打卡历史数据表
             </h3>
             <p className="text-xs text-gray-400">
-              支持按天回溯历史打卡 · 勾选支持单选/多选/全选批量删除 · 删除后时序图表看板将自动联动刷新
+              支持按天回溯历史打卡 · 点击「详情」展开备注与AI解读 · 勾选支持批量删除 · 删除后图表自动刷新
             </p>
           </div>
         </div>
@@ -158,7 +170,7 @@ export default function BmiHistoryTable({ records, loading, onDelete, onBatchDel
       ) : (
         <>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[820px] text-left text-xs">
+            <table className="w-full min-w-[860px] text-left text-xs">
               <thead>
                 <tr className="border-b border-gray-100 text-[11px] uppercase text-gray-400 dark:border-gray-800">
                   {canDelete && (
@@ -180,6 +192,7 @@ export default function BmiHistoryTable({ records, loading, onDelete, onBatchDel
                   <th className="px-3 py-2.5 font-semibold">腹围 (cm)</th>
                   <th className="px-3 py-2.5 font-semibold">增量 (Δ kg)</th>
                   <th className="px-3 py-2.5 font-semibold">达标状态</th>
+                  <th className="w-16 px-2 py-2.5 text-center font-semibold">明细</th>
                   {canDelete && <th className="px-3 py-2.5 text-right font-semibold">操作</th>}
                 </tr>
               </thead>
@@ -187,96 +200,149 @@ export default function BmiHistoryTable({ records, loading, onDelete, onBatchDel
                 {pageItems.map((r) => {
                   const isBaseline = r.id === baselineId;
                   const isDeleting = deletingId === r.id;
+                  const isSelected = selected.has(r.id);
+                  const isExpanded = expandedIds.has(r.id);
+                  const hasDetails = !!(r.note || (r as any).ai_analysis);
+
                   return (
-                    <tr
-                      key={r.id}
-                      className={`border-b border-gray-50 transition hover:bg-orange-50/40 dark:border-gray-800/60 dark:hover:bg-gray-800/40 ${
-                        selected.has(r.id) ? "bg-orange-50/60 dark:bg-gray-800/60" : ""
-                      }`}
-                    >
-                      {canDelete && (
-                        <td className="px-3 py-2.5">
-                          <input
-                            type="checkbox"
-                            checked={selected.has(r.id)}
-                            onChange={() => toggleSelect(r.id)}
-                            className="h-3.5 w-3.5 cursor-pointer rounded border-gray-300 accent-orange-500"
-                            aria-label={`选择 ${r.record_date} 记录`}
-                          />
-                        </td>
-                      )}
-                      <td className="whitespace-nowrap px-3 py-2.5 font-medium text-gray-700 dark:text-gray-200">
-                        {r.record_date}
-                      </td>
-                      <td className="whitespace-nowrap px-3 py-2.5 text-gray-600 dark:text-gray-400">
-                        {r.stage === "general"
-                          ? "非孕期"
-                          : r.stage === "postpartum"
-                          ? r.postpartum_months != null
-                            ? `产后 ${r.postpartum_months} 个月`
-                            : "产后恢复"
-                          : r.gestational_week
-                          ? gestationLabel(r.gestational_week, r.gestational_days)
-                          : r.stage === "pregnancy"
-                          ? "孕期"
-                          : r.record_type === "prenatal_exam"
-                          ? r.gestational_week
-                            ? gestationLabel(r.gestational_week, r.gestational_days)
-                            : "孕期"
-                          : "—"}
-                      </td>
-                      <td className="px-3 py-2.5 text-gray-600 dark:text-gray-400">
-                        {r.height ?? "—"}
-                      </td>
-                      <td className="px-3 py-2.5 font-semibold text-gray-800 dark:text-gray-100">
-                        {r.weight}
-                      </td>
-                      <td className="px-3 py-2.5 text-gray-600 dark:text-gray-400">
-                        {r.bmi ?? "—"}
-                      </td>
-                      <td className="px-3 py-2.5 text-gray-600 dark:text-gray-400">
-                        {r.waist_circumference ?? "—"}
-                      </td>
-                      <td className="px-3 py-2.5 text-gray-600 dark:text-gray-400">
-                        {isBaseline ? (
-                          <span className="text-gray-400">基准</span>
-                        ) : (
-                          <span
-                            className={
-                              r.delta_kg > 0.9
-                                ? "font-semibold text-red-500"
-                                : r.delta_kg > 0.6
-                                ? "font-semibold text-amber-500"
-                                : r.delta_kg < -0.5
-                                ? "font-semibold text-indigo-500"
-                                : "font-semibold text-emerald-600 dark:text-emerald-400"
-                            }
-                          >
-                            {r.delta_kg > 0 ? "+" : ""}
-                            {r.delta_kg}
-                          </span>
+                    <Fragment key={r.id}>
+                      <tr
+                        className={`border-b border-gray-50 transition hover:bg-orange-50/40 dark:border-gray-800/60 dark:hover:bg-gray-800/40 ${
+                          isSelected ? "bg-orange-50/60 dark:bg-gray-800/60" : ""
+                        }`}
+                      >
+                        {canDelete && (
+                          <td className="px-3 py-2.5">
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => toggleSelect(r.id)}
+                              className="h-3.5 w-3.5 cursor-pointer rounded border-gray-300 accent-orange-500"
+                              aria-label={`选择 ${r.record_date} 打卡`}
+                            />
+                          </td>
                         )}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <GainStatusBadge status={r.gain_status} />
-                      </td>
-                      {canDelete && (
-                        <td className="px-3 py-2.5 text-right">
-                          {isDeleting ? (
-                            <span className="text-[11px] text-gray-400">删除中…</span>
+                        <td className="px-3 py-2.5 font-medium text-gray-700 dark:text-gray-200">
+                          {r.record_date}
+                        </td>
+                        <td className="px-3 py-2.5 text-gray-600 dark:text-gray-400">
+                          {r.stage === "general"
+                            ? "非孕期"
+                            : r.stage === "postpartum"
+                            ? r.postpartum_months != null
+                              ? `产后 ${r.postpartum_months} 个月`
+                              : "产后恢复"
+                            : r.gestational_week
+                            ? gestationLabel(r.gestational_week, r.gestational_days)
+                            : r.stage === "pregnancy"
+                            ? "孕期"
+                            : r.record_type === "prenatal_exam"
+                            ? r.gestational_week
+                              ? gestationLabel(r.gestational_week, r.gestational_days)
+                              : "孕期"
+                            : "—"}
+                        </td>
+                        <td className="px-3 py-2.5 text-gray-600 dark:text-gray-400">
+                          {r.height ?? "—"}
+                        </td>
+                        <td className="px-3 py-2.5 font-semibold text-gray-800 dark:text-gray-100">
+                          {r.weight}
+                        </td>
+                        <td className="px-3 py-2.5 text-gray-600 dark:text-gray-400">
+                          {r.bmi ?? "—"}
+                        </td>
+                        <td className="px-3 py-2.5 text-gray-600 dark:text-gray-400">
+                          {r.waist_circumference ?? "—"}
+                        </td>
+                        <td className="px-3 py-2.5 text-gray-600 dark:text-gray-400">
+                          {isBaseline ? (
+                            <span className="text-gray-400">基准</span>
                           ) : (
-                            <button
-                              type="button"
-                              onClick={() => setConfirmId(r.id)}
-                              className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium text-gray-400 transition hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/40"
+                            <span
+                              className={
+                                r.delta_kg > 0.9
+                                  ? "font-semibold text-red-500"
+                                  : r.delta_kg > 0.6
+                                  ? "font-semibold text-amber-500"
+                                  : r.delta_kg < -0.5
+                                  ? "font-semibold text-indigo-500"
+                                  : "font-semibold text-emerald-600 dark:text-emerald-400"
+                              }
                             >
-                              <Trash2 className="h-3.5 w-3.5" />
-                              删除
-                            </button>
+                              {r.delta_kg > 0 ? "+" : ""}
+                              {r.delta_kg}
+                            </span>
                           )}
                         </td>
+                        <td className="px-3 py-2.5">
+                          <GainStatusBadge status={r.gain_status} />
+                        </td>
+                        <td className="px-2 py-2.5 text-center">
+                          {hasDetails ? (
+                            <button
+                              type="button"
+                              onClick={() => toggleExpand(r.id)}
+                              className="inline-flex items-center gap-0.5 rounded-lg px-2 py-1 text-[11px] font-medium text-brand-600 hover:bg-brand-50 dark:text-brand-400 dark:hover:bg-brand-950/40 transition"
+                              title={isExpanded ? "收起详情" : "查看打卡备注与AI医学解读"}
+                            >
+                              {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                              <span>{isExpanded ? "收起" : "详情"}</span>
+                            </button>
+                          ) : (
+                            <span className="text-gray-300 dark:text-gray-600">—</span>
+                          )}
+                        </td>
+                        {canDelete && (
+                          <td className="px-3 py-2.5 text-right">
+                            {isDeleting ? (
+                              <span className="text-[11px] text-gray-400">删除中…</span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => setConfirmId(r.id)}
+                                className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium text-gray-400 transition hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/40"
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                                删除
+                              </button>
+                            )}
+                          </td>
+                        )}
+                      </tr>
+                      {isExpanded && hasDetails && (
+                        <tr className="border-b border-orange-100/60 bg-orange-50/30 dark:border-gray-800/80 dark:bg-gray-800/40">
+                          <td colSpan={canDelete ? 11 : 10} className="px-4 py-3">
+                            <div className="space-y-2 rounded-xl border border-orange-100/80 bg-white p-3 shadow-2xs dark:border-gray-800 dark:bg-gray-900">
+                              <div className="flex items-center gap-2 text-xs font-semibold text-gray-700 dark:text-gray-200">
+                                <FileText className="h-3.5 w-3.5 text-brand-500" />
+                                <span>{r.record_date} 打卡明细记录</span>
+                              </div>
+                              {r.note && (
+                                <div className="rounded-lg bg-gray-50 p-2.5 text-xs text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                                  <div className="mb-1 flex items-center justify-between">
+                                    <span className="font-semibold text-gray-500 dark:text-gray-400">打卡备注：</span>
+                                    <CopyButton text={r.note} label="复制" />
+                                  </div>
+                                  <p className="whitespace-pre-wrap">{r.note}</p>
+                                </div>
+                              )}
+                              {(r as any).ai_analysis && (
+                                <div className="rounded-lg border border-amber-200/60 bg-amber-50/70 p-2.5 text-xs text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-200">
+                                  <div className="mb-1 flex items-center justify-between">
+                                    <span className="flex items-center gap-1 font-semibold">
+                                      <Sparkles className="h-3.5 w-3.5 text-amber-500" />
+                                      AI 临床解读：
+                                    </span>
+                                    <CopyButton text={(r as any).ai_analysis} label="复制" />
+                                  </div>
+                                  <p className="whitespace-pre-wrap">{(r as any).ai_analysis}</p>
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
                       )}
-                    </tr>
+                    </Fragment>
                   );
                 })}
               </tbody>
@@ -294,7 +360,7 @@ export default function BmiHistoryTable({ records, loading, onDelete, onBatchDel
         </>
       )}
 
-      {/* v1.57 单条删除确认弹窗（替换原表格内两段式按钮） */}
+      {/* v1.57 单条删除确认弹窗 */}
       <ConfirmDialog
         isOpen={confirmId !== null}
         title="删除这条打卡记录？"

@@ -764,3 +764,15 @@ django.db.utils.OperationalError: unable to open database file
 - 前端已分包（echarts/react-vendor/router/axios/pdf-tools 独立 chunk，PDF 工具链按需加载），容器重建后 `templates/index.html` 与 `static/assets/` 产物即最新（已随仓库提交，无需本地构建）；
 - 若需容器内自行构建前端，`frontend/package.json` 已含 `jspdf` + `html2canvas` 依赖，执行 `run.sh rebuild` 即可；
 - 详细架构设计见 `Project_System_Design.md` / `.html` 第 10.16 ~ 10.21 章。
+
+---
+
+## 19. v1.59 全面复查闭环重构与系统体验深度优化 (Docker 同步)
+
+### 19.1 核心优化清单
+1. **健康日历记录类型与未来日期修复 (`HealthCalendar.tsx`)**：兼容 `vaccination`/`vaccine`，恢复疫苗名称徽章；禁用未来日期打卡补录，杜绝 400 异常；补全 dark mode 样式。
+2. **宝宝生长曲线双Y轴与女童WHO标准 (`GrowthChart.tsx`)**：内置 `WHO_P50_GIRL`；双 Y 轴架构（长度 cm / 体重 kg），根除压扁变形；Tooltip 带单位；头部支持男/女童切换。
+3. **主导航顶栏底栏一键直达 (`MainLayout.tsx`)**：`ALL_navItems` 正式纳入「健康中心」(`/health`)。
+4. **妈妈孕产档案单表融合与折叠详情 (`BmiHistoryTable.tsx` & `views.py`)**：后端补齐 `ai_analysis`；表格增加折叠行展开打卡备注与 AI 临床解读；移除底部重复渲染的 `momRecords` 卡片流。
+5. **跨组件双向数据联动与409覆盖完善 (`BmiAnalysisView.tsx` & `HealthPage.tsx`)**：接入 `refreshTrigger` 与 `onRecordChanged`；完善 409 异常提取；清理 `shoppingApi` 冗余代码。
+6. **多页面深色模式 (Dark Mode) 全面对齐**：`HomePage`、`ProductListPage`、`ProductCard`、`HealthCalendar` 补齐深色样式。

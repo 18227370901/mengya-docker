@@ -54,7 +54,7 @@ export default function ProductCard({
 
   return (
     <Link to={`/products/${product.id}`} className="card group relative hover:shadow-md transition">
-      <div className="relative mb-3 aspect-[4/3] overflow-hidden rounded-xl bg-warm">
+      <div className="relative mb-3 aspect-[4/3] overflow-hidden rounded-xl bg-warm dark:bg-gray-800">
         <img
           src={product.image_url || "https://picsum.photos/seed/fallback/400/300"}
           alt={product.name}
@@ -82,14 +82,14 @@ export default function ProductCard({
           <Heart className={`h-4 w-4 ${favorited ? "fill-pink-500" : ""}`} />
         </button>
       </div>
-      <h3 className="line-clamp-1 font-medium text-gray-800">{product.name}</h3>
+      <h3 className="line-clamp-1 font-medium text-gray-800 dark:text-gray-100">{product.name}</h3>
       <p className="mt-0.5 text-sm text-gray-400">{product.brand}</p>
       <div className="mt-2 flex items-center justify-between">
         <span className="flex items-center gap-1 text-brand-500">
           <Star className="h-4 w-4 fill-current" />
           {product.overall_rating?.toFixed(1) ?? "-"}
         </span>
-        <span className="text-sm font-semibold text-gray-800">
+        <span className="text-sm font-semibold text-gray-800 dark:text-gray-100">
           {product.price_info?.range ? `${product.price_info.range}元` : ""}
         </span>
       </div>

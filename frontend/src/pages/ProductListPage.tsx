@@ -78,7 +78,7 @@ export default function ProductListPage() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-gray-800">商品库</h1>
+          <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">商品库</h1>
           <p className="mt-1 text-sm text-gray-400">14 大类 · 真实品牌数据 · 五维评分</p>
         </div>
         <input className="input max-w-xs" placeholder="搜索商品…" value={q} onChange={(e) => setQ(e.target.value)} />

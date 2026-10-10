@@ -1,4 +1,4 @@
-import { Baby, Bell, Bot, Calendar, Heart, Home, LogOut, Moon, Search, ShoppingBag, Sprout, Sun, User } from "lucide-react";
+import { Baby, Bell, Bot, Calendar, Heart, HeartPulse, Home, LogOut, Moon, Search, ShoppingBag, Sprout, Sun, User } from "lucide-react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/store/authStore";
 import { useThemeStore } from "@/store/themeStore";
@@ -6,6 +6,7 @@ import { useThemeStore } from "@/store/themeStore";
 const ALL_navItems = [
   { to: "/", label: "首页", icon: Home, perm: "menu_home" },
   { to: "/timeline", label: "时间轴", icon: Calendar, perm: "menu_timeline" },
+  { to: "/health", label: "健康中心", icon: HeartPulse, perm: "menu_health" },
   { to: "/products", label: "商品库", icon: Search, perm: "menu_products" },
   { to: "/ai-assistant", label: "AI助手", icon: Bot, perm: "menu_ai_assistant" },
   { to: "/profile", label: "我的", icon: User },

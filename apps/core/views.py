@@ -2367,6 +2367,7 @@ def _build_bmi_timeseries(user):
                 "is_twins": bool(items.get("is_twins", False)),
                 "postpartum_months": items.get("postpartum_months"),
                 "note": r.note,
+                "ai_analysis": r.ai_analysis,
             })
     except Exception:
         pass

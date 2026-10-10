@@ -15,8 +15,6 @@ export const shoppingApi = {
     api.post<ApiResponse<null>>(`/shopping-lists/${listId}/toggle_check/`, { item_id: itemId }).then((r) => r.data.data),
 
   remove: (id: number) => api.delete<ApiResponse<null>>(`/shopping-lists/${id}/`).then((r) => r.data.data),
-  analyzeBmi: (data: BmiAnalysisInput) =>
-    api.post<ApiResponse<BmiAnalysisResult>>("/health/bmi-analysis/", data).then((r) => r.data.data),
 
   fromTemplate: (data: { name?: string; owner?: string; categories?: string[]; item_ids?: number[]; season?: string; delivery_method?: string }) =>
     api.post<ApiResponse<ShoppingList>>("/shopping-lists/from_template/", data).then((r) => r.data.data),
