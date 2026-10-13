@@ -34,8 +34,13 @@ interface UnifiedHealthCheckInProps {
   onSaved: (archiveHint: string, analysisResult?: BmiAnalysisResult | null) => void;
   /** v1.56：预填测量日期（健康时间轴点击日期补录入口） */
   initialDate?: string;
+  /** 初始记录类型（由外层页面根据子页面上下文联动传入） */
+  initialMode?: CheckInMode;
+  /** 历史打卡基线身高（自动继承；无历史时首次必填） */
+  initialHeight?: number | null;
   /** v1.58：孕周锚点（首次孕期打卡的 日期+孕周；无预产期时自动推算 孕x周x天） */
   gestationAnchor?: GestationAnchor | null;
+  onModeChange?: (mode: CheckInMode) => void;
 }
 
 /** 依据宝宝生日自动推算天数差 */
@@ -46,15 +51,21 @@ function daysBetween(fromDate: string, toDate: string): number | null {
   return Math.max(0, Math.floor((to.getTime() - from.getTime()) / 86400000));
 }
 
-export default function UnifiedHealthCheckIn({ isOpen, onClose, onSaved, initialDate, gestationAnchor }: UnifiedHealthCheckInProps) {
+export default function UnifiedHealthCheckIn({ isOpen, onClose, onSaved, initialDate, initialMode, initialHeight, gestationAnchor, onModeChange }: UnifiedHealthCheckInProps) {
   const { user } = useAuthStore();
   const hasDueDate = !!user?.due_date;
   const hasBabyBirthday = !!user?.baby_birthday;
   // v1.58：无预产期但有首次打卡锚点时，孕周同样自动推算（不强制手填）
   const hasAutoBasis = hasDueDate || !!gestationAnchor;
 
-  const [mode, setMode] = useState<CheckInMode>("mom_pregnancy");
+  const [mode, setInternalMode] = useState<CheckInMode>("mom_pregnancy");
+
+  const setMode = (m: CheckInMode) => {
+    setInternalMode(m);
+    onModeChange?.(m);
+  };
   const [recordDate, setRecordDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [height, setHeight] = useState(() => (initialHeight ? String(initialHeight) : ""));
   const [weight, setWeight] = useState("");
   const [waist, setWaist] = useState("");
   const [manualWeek, setManualWeek] = useState("");
@@ -77,11 +88,13 @@ export default function UnifiedHealthCheckIn({ isOpen, onClose, onSaved, initial
   }>(null);
   const todayStr = new Date().toISOString().slice(0, 10);
 
-  // 档案智能默认：孕期用户默认孕期打卡；已出生宝宝档案默认宝宝测量；其余（备孕/日常）默认非孕期
+  // 档案智能默认：优先遵从外层子页面传入的 initialMode；未指定时孕期用户默认孕期打卡；已出生宝宝默认宝宝测量
   useEffect(() => {
     if (!isOpen) return;
     setErrorMsg("");
-    if (user?.is_pregnant) {
+    if (initialMode) {
+      setMode(initialMode);
+    } else if (user?.is_pregnant) {
       setMode("mom_pregnancy");
     } else if (user?.baby_birthday) {
       setMode("baby");
@@ -89,6 +102,7 @@ export default function UnifiedHealthCheckIn({ isOpen, onClose, onSaved, initial
       setMode("mom_general");
     }
     setRecordDate(initialDate || new Date().toISOString().slice(0, 10));
+    setHeight(initialHeight ? String(initialHeight) : "");
     setWeight("");
     setWaist("");
     setManualWeek("");
@@ -99,7 +113,13 @@ export default function UnifiedHealthCheckIn({ isOpen, onClose, onSaved, initial
     setBabyWeight("");
     setBabyHead("");
     setNote("");
-  }, [isOpen, user?.is_pregnant, user?.baby_birthday, initialDate]);
+  }, [isOpen, initialMode, user?.is_pregnant, user?.baby_birthday, initialDate, initialHeight]);
+
+  useEffect(() => {
+    if (isOpen && initialHeight && (!height || height === "")) {
+      setHeight(String(initialHeight));
+    }
+  }, [isOpen, initialHeight]);
 
   // v1.58 孕周双基准自动推算（与后端一致）：预产期 280 天模型 > 首次打卡锚点线性外推；
   const gestation = useMemo(() => {
@@ -213,6 +233,12 @@ export default function UnifiedHealthCheckIn({ isOpen, onClose, onSaved, initial
         setErrorMsg("请填写本次实测体重 (kg)");
         return;
       }
+      const effectiveHeight = height || (initialHeight ? String(initialHeight) : "");
+      const h = parseFloat(effectiveHeight);
+      if (!effectiveHeight || Number.isNaN(h) || h < 100 || h > 220) {
+        setErrorMsg("请填写身高（100~220 cm，首次打卡需录入一次，之后将自动继承）");
+        return;
+      }
       if (momMode && !hasAutoBasis && !manualWeek) {
         setErrorMsg("您还未设置预产期，请手动填写本次打卡的孕周");
         return;
@@ -254,6 +280,7 @@ export default function UnifiedHealthCheckIn({ isOpen, onClose, onSaved, initial
           stage_type: isPostpartumMode ? "postpartum" : isGeneralMode ? "general" : "pregnancy",
           record_date: recordDate,
           current_weight_kg: w,
+          height_cm: parseFloat(height || (initialHeight ? String(initialHeight) : "")),
           waist_circumference_cm: waist ? Number(waist) : undefined,
           medical_history: [],
           is_twins: false,
@@ -300,6 +327,7 @@ export default function UnifiedHealthCheckIn({ isOpen, onClose, onSaved, initial
             stage_type: isPostpartumMode ? "postpartum" : isGeneralMode ? "general" : "pregnancy",
             record_date: recordDate,
             current_weight_kg: w,
+            height_cm: parseFloat(height || (initialHeight ? String(initialHeight) : "")),
             waist_circumference_cm: waist ? Number(waist) : undefined,
             medical_history: [],
             is_twins: false,
@@ -544,7 +572,33 @@ export default function UnifiedHealthCheckIn({ isOpen, onClose, onSaved, initial
                     )}
                   </div>
                 )}
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                  <div>
+                    <label className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+                      <span>
+                        身高 (cm) {!initialHeight && !height ? <span className="font-bold text-red-500">*</span> : null}
+                      </span>
+                      {height || initialHeight ? (
+                        <span className="text-[10px] text-emerald-600 dark:text-emerald-400">已带入历史值</span>
+                      ) : (
+                        <span className="text-[10px] text-amber-500">首次必填</span>
+                      )}
+                    </label>
+                    <div className="relative">
+                      <Ruler className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                      <input
+                        type="number"
+                        step="0.1"
+                        min={100}
+                        max={220}
+                        className="input pl-9 font-medium"
+                        placeholder="例如 165"
+                        value={height}
+                        onChange={(e) => setHeight(e.target.value)}
+                        required={!initialHeight && !height}
+                      />
+                    </div>
+                  </div>
                   <div>
                     <label className="text-xs text-gray-500 dark:text-gray-400">本次体重 (kg) *</label>
                     <div className="relative">
@@ -577,7 +631,9 @@ export default function UnifiedHealthCheckIn({ isOpen, onClose, onSaved, initial
                   </div>
                 </div>
                 <p className="text-[11px] text-gray-400">
-                  身高与孕前体重将自动继承上次打卡基线，无需重复填写
+                  {height || initialHeight
+                    ? `已带入历史身高（${height || initialHeight} cm），支持校准修改；后续打卡自动继承`
+                    : "首次打卡需录入一次身高（用于计算 BMI 与合理增重），之后将自动继承"}
                 </p>
               </div>
             ) : (

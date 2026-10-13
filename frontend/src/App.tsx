@@ -98,12 +98,14 @@ import GenerateShoppingListPage from "./pages/GenerateShoppingListPage";
 import BabyShoppingDetailPage from "./pages/BabyShoppingDetailPage";
 import HealthPage from "./pages/HealthPage";
 import AIAssistantPage from "./pages/AIAssistantPage";
+import WeatherPage from "./pages/WeatherPage";
 import ProfilePage from "./pages/ProfilePage";
 import AIConfigPage from "./pages/AIConfigPage";
 import RegistrationManagePage from "./pages/RegistrationManagePage";
 import ProductAdminPage from "./pages/ProductAdminPage";
 import UserManagePage from "./pages/UserManagePage";
 import AuditLogPage from "./pages/AuditLogPage";
+import DailyTipsManagePage from "./pages/DailyTipsManagePage";
 import BrandListPage from "./pages/BrandListPage";
 import BrandDetailPage from "./pages/BrandDetailPage";
 import PregnancyWeeklyPage from "./pages/PregnancyWeeklyPage";
@@ -141,12 +143,14 @@ export default function App() {
         <Route path="/shopping-list/:id" element={<PermissionGuard perm="menu_shopping_list"><ShoppingListDetailPage /></PermissionGuard>} />
         <Route path="/health" element={<PermissionGuard perm="menu_health"><HealthPage /></PermissionGuard>} />
         <Route path="/ai-assistant" element={<PermissionGuard perm="menu_ai_assistant"><AIAssistantPage /></PermissionGuard>} />
+        <Route path="/weather" element={<PermissionGuard perm="menu_weather"><WeatherPage /></PermissionGuard>} />
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/settings/ai" element={<AIConfigPage />} />
         <Route path="/admin/registration" element={<AdminGuard><RegistrationManagePage /></AdminGuard>} />
         <Route path="/admin/products" element={<AdminGuard><ProductAdminPage /></AdminGuard>} />
         <Route path="/admin/users" element={<AdminGuard><UserManagePage /></AdminGuard>} />
         <Route path="/admin/audit-logs" element={<AdminGuard><AuditLogPage /></AdminGuard>} />
+        <Route path="/admin/daily-tips" element={<AdminGuard><DailyTipsManagePage /></AdminGuard>} />
         <Route path="/brands" element={<BrandListPage />} />
         <Route path="/brands/:id" element={<BrandDetailPage />} />
         <Route path="/fetal-stories" element={<PermissionGuard perm="menu_fetal_stories"><FetalStoryPage /></PermissionGuard>} />

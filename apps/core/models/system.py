@@ -31,6 +31,7 @@ class SystemSetting(models.Model):
     forgot_password_max_attempts = models.IntegerField(default=5, verbose_name="找回密码密保最大尝试次数")
     admin_session_timeout_minutes = models.IntegerField(default=30, verbose_name="管理员登录无操作超时时长（分钟，0表示不超时）")
     audit_retention_days = models.IntegerField(default=90, verbose_name="审计日志保留天数（0=永久）")
+    daily_tip_display_count = models.IntegerField(default=5, verbose_name="今日关怀锦囊前台展示条数限制（0为不限制）")
     # 普通用户功能与菜单权限配置（JSON字典，颗粒度覆盖菜单及增删改查）
     default_user_permissions = models.JSONField(default=dict, blank=True, verbose_name="普通用户默认功能与菜单权限")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")

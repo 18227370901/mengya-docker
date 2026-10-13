@@ -358,7 +358,7 @@ export default function ProfilePage() {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               <div>
                 <label className="label text-xs">{babyForm.status === "pregnant" ? "预估性别" : "性别"}</label>
                 <select className="input" value={babyForm.gender} onChange={(e) => setBabyForm((f) => ({ ...f, gender: e.target.value }))}>
@@ -817,6 +817,14 @@ export default function ProfilePage() {
               <span className="text-xs font-medium text-gray-600">注册管理</span>
               <span className="text-[10px] text-gray-400">注册模式/邀请链接</span>
             </button>
+            <button
+              className="flex flex-col items-center gap-1.5 rounded-xl border border-gray-100 py-4 hover:border-brand-200 hover:bg-brand-50/50 transition"
+              onClick={() => navigate("/admin/daily-tips")}
+            >
+              <Sparkles className="h-5 w-5 text-amber-500" />
+              <span className="text-xs font-medium text-gray-600">关怀贴士管理</span>
+              <span className="text-[10px] text-gray-400">今日小锦囊/展示设置</span>
+            </button>
           </div>
         </section>
       )}
@@ -947,7 +955,7 @@ export default function ProfilePage() {
           </div>
         </div>
       )}
-      <SetStageModal isOpen={showStageModal} onClose={() => setShowStageModal(false)} />
+      <SetStageModal isOpen={showStageModal} onClose={() => setShowStageModal(false)} onSuccess={() => { authApi.babies().then(setBabies).catch(() => {}); }} />
     </div>
   );
 }

@@ -1948,5 +1948,97 @@ estart: unless-stopped；
   </ul>
 </div>
 
+
+<div style="background:#fff;border-radius:12px;padding:24px;margin-bottom:24px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+  <h3 style="color:#0f172a;font-size:18px;margin-top:0;border-bottom:2px solid #0284c7;padding-bottom:8px;">10.26 天气万年历全景融合、首页走秒天气横幅与 AI 模型列表手动拉取 (v1.63)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.26.1 业务背景与问题复盘</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>生活气象与历法关怀缺失</strong>：原系统缺乏直观的时钟、干支农历、节气与法定节假日调休指引；</li>
+    <li><strong>历法功能概念重复</strong>：日历与万年历割裂分散，采用方案 A 实施统一视图深度重构，融合 1900~2100 年寿星天文历与 15 天天气预报；</li>
+    <li><strong>严格排除无关专有业务</strong>：彻底剔除源项目中与母婴平台定位不符的「在次日举办宴席」功能；</li>
+    <li><strong>模型配置效率低</strong>：大模型对接缺少可用模型探测，新增 OpenAI 兼容 <code>/models</code> 接口手动拉取与点选回填。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.26.2 架构重构与优化落地</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>服务解耦与双重缓存</strong>：新增 <code>holiday_service.py</code>（Timor.tech 国务院公报 + 磁盘/内存缓存 + 离线兜底）与 <code>weather_service.py</code>（Open-Meteo 15 天预报与 US AQI 空气质量），禁代理直连优先防挂死；</li>
+    <li><strong>全链路 RBAC 联动</strong>：注册 <code>menu_weather</code>（菜单与路由守卫）及 <code>ai_fetch_models</code>（按钮级权限），后端 API 抛 403 阻断，前端路由拦截、导航隐藏与按钮显隐深度联动；</li>
+    <li><strong>统一万年历与天气视图</strong>：支持全国 34 省/476 市/2875 区县级联坐标直查，首屏实况大卡、15 天高低温 ECharts 趋势图、班休角标日历网格与综合详情卡；</li>
+    <li><strong>AI 模型拉取助手</strong>：支持一键探测 <code>{base_url}/models</code>，异常友好提示，标签式快捷回填。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.26.3 验证结论</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li>首页时钟与气象卡秒级同步；天气万年历预报与空气质量精确呈现；无权限账号菜单/路由/按钮 100% 阻断，有权限即刻通行；前后端构建与测试 0 报错。</li>
+  </ul>
+</div>
+
+<div style="background:#fff;border-radius:12px;padding:24px;margin-bottom:24px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+  <h3 style="color:#0f172a;font-size:18px;margin-top:0;border-bottom:2px solid #10b981;padding-bottom:8px;">10.27 天气页面白屏根治、健壮性治理与首页天气宝宝卡一体化重构 (v1.64)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.27.1 业务背景与问题复盘</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>React 18 Object-as-Child 致命渲染崩溃（白屏根因）</strong>：后端 <code>weather_service.py</code> 中返回字典的 <code>'city'</code> 字段误填入地理编码对象字典 <code>{'name': '...', ...}</code>，前端 JSX 在渲染 <code>{weatherData?.city}</code> 时被 React 18 判定为 Object 子节点抛出致命异常，导致整页 React 组件树被卸载而白屏；</li>
+    <li><strong>脏缓存放大与地名 404</strong>：<code>localStorage</code> 写入 <code>"[object Object]"</code> 脏串引发恶性自放大；GeoNames 中文库不收录含“市/区/县”的地名导致用户常见搜索 404；级联区县缺失坐标时静默失效；</li>
+    <li><strong>首页双卡片纵向冗余</strong>：首屏纵向堆叠天气卡与宝宝阶段卡（合计占用 410px+），问候语重复，将核心发育周历与快捷入口挤压至第二屏。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.27.2 架构重构与优化落地</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>字符串与对象严格解耦</strong>：后端 <code>_build_result</code> 强制提取纯字符串 <code>city_name</code>，完整字典移至 <code>location</code>；前端 <code>displayCity</code> 多级防御性提取，杜绝非字符串直传 JSX；</li>
+    <li><strong>智能多级地名清洗容错</strong>：在 <code>geocode_city</code> 中扩展自动剥离“特别行政区/省/市/区/县”规范化规则，支持全称/简称/区县名 100% 成功命中；级联查询区县无坐标时自动向上回退市级、省级坐标保底；</li>
+    <li><strong>ECharts 生命周期与错误兜底</strong>：捕获图表更新异常，增加组件卸载释放与错误时“重置为默认城市 (成都)”一键恢复按钮；</li>
+    <li><strong>首页全景关怀横幅一体化重构</strong>：将宝宝身份、阶段修改胶囊按钮及关怀寄语无缝内嵌至 <code>HomeWeatherBanner</code> 顶部；移除下方独立大卡，首屏纵向空间<strong>净节省超过 180px</strong>，孕周发育卡与快捷入口进入第一屏黄金视域。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.27.3 验证结论</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li>天气页面搜索“成都”、“成都市”、“双流区”、“北京”与级联选择均 100% 成功渲染无白屏；首页横幅视觉协调、操作无感；单终端会话与 RBAC 权限联动全绿通过。</li>
+  </ul>
+</div>
+
+<div style="background:#fff;border-radius:12px;padding:24px;margin-bottom:24px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+  <h3 style="color:#0f172a;font-size:18px;margin-top:0;border-bottom:2px solid #f59e0b;padding-bottom:8px;">10.28 首页关怀小锦囊管理员后台、阶段自适应与气象按需级联直查 (v1.65)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.28.1 业务背景与问题复盘</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>首页引导大卡片中间留白与内容单薄</strong>：原横幅中栏存在大面积视觉空白，新增【今日关怀小锦囊 · 专属贴士卡】，并提供管理员专属配置后台，支持系统内置与自定义提示信息维护；</li>
+    <li><strong>育儿阶段匹配错位</strong>：宝宝成长至幼儿期（如 2 岁 8 个月）时，因原逻辑含有“个月”被误识别为婴儿期并展示婴儿期贴士；或配置贴士后首页未联动；</li>
+    <li><strong>气象页面请求过频与级联受限</strong>：原天气页进入即自动发请求消耗流量；级联选择器强制选至区县，无法单独查询省或地级市天气；</li>
+    <li><strong>AI 模型列表无法折叠</strong>：点击获取模型列表后候选标签铺满页面且无法折叠，严重挤压表单布局；</li>
+    <li><strong>阶段设置倒计时跳回</strong>：设置孕育阶段停留 5~10 秒被后台轮询浅比较虚假重置导致设置失效。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.28.2 架构重构与优化落地</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>今日关怀小锦囊全链路设计 (`DailyTip` & `DailyTipsManagePage`)</strong>：新增 <code>DailyTip</code> 模型与 <code>DailyTipService</code>，内置 18+ 条覆盖全生命阶段科学锦囊；管理员后台提供增删改查、单选/多选/全选批量启停与删除、全局展示条数配置与分页；</li>
+    <li><strong>首页横幅三栏重塑与阶段优先级纠偏 (`HomeWeatherBanner.tsx`)</strong>：重塑为 5:4:3 三栏响应式网格，中栏承载关怀小锦囊；将幼儿期（<code>toddler</code>）判定条件置于婴儿期前，100% 精准匹配幼儿期贴士；右侧气象微卡优先拉取用户最近一次查询城市，无权限时自动降级展示管理员预设天气并友好提示；</li>
+    <li><strong>天气页按需查询与独立分级直查 (`WeatherPage.tsx`)</strong>：进入天气页默认仅展示本地离线万年历与节气班休，用户点击【查询天气】方触发远程请求；级联支持单独查省、省+市或区县；</li>
+    <li><strong>AI 模型列表收起/展开与自动折叠 (`AIConfigPage.tsx`)</strong>：拉取后提供精简收起条与展开面板，<strong>点击选中任意模型后自动回填并立即触发列表折叠收起</strong>；</li>
+    <li><strong>阶段设置防抖与状态锁 (`authStore.ts` & `SetStageModal.tsx`)</strong>：引入互斥锁与深层结构比较，杜绝虚假刷新导致的阶段回滚。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.28.3 验证效果</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li>首页横幅三栏布局紧凑协调，2 岁 8 个月宝宝精确展示幼儿期成长锦囊；管理员后台启停与展示条数秒级同步；天气页按需查询免请求浪费；AI 模型列表选中自动折叠。</li>
+  </ul>
+</div>
+
+<div style="background:#fff;border-radius:12px;padding:24px;margin-bottom:24px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+  <h3 style="color:#0f172a;font-size:18px;margin-top:0;border-bottom:2px solid #8b5cf6;padding-bottom:8px;">10.29 健康中心打卡与深度 BMI 全维度智能联动、基线双向自动继承与 CSV 导入防呆治理 (v1.66)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.29.1 业务背景与问题复盘</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>健康打卡与子页面脱节</strong>：在宝宝生长、产后恢复或备孕页面点击健康打卡，弹窗始终停留在孕期产检；不相关页面（疫苗、时间轴、日历）也展示打卡按钮造成误导；</li>
+    <li><strong>深度 BMI 与打卡缺乏双向同步</strong>：深度表单选择全孕期时打卡弹窗未联动，打卡弹窗切换产后恢复时深度表单亦未同步；</li>
+    <li><strong>身高/基线体重断连与“留空自动继承”占位符痛点</strong>：打卡弹窗录入身高后深度分析表单未继承，反之亦然；输入框显示灰色的“留空自动继承”占位符，用户要求必须直接呈现先前录入的实测数值且可自由编辑；</li>
+    <li><strong>已有打卡数据但当前测算 BMI 与孕前基线无数据展示</strong>：单次打卡未显式填身高时后端将该条高度置空，导致前端状态卡因缺少身高熔断全空，且孕前 BMI 计算脱靶；</li>
+    <li><strong>CSV 导入列错位与阶段冲突</strong>：省略腹围列时阶段关键字被误识别为腹围；导入类型与当前宝宝档案类型冲突时缺乏交互提示；孕期导入缺少自动计算孕周（周+天）。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.29.2 架构重构与优化落地</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>全链路双向智能联动 (`HealthPage.tsx` & `UnifiedHealthCheckIn.tsx`)</strong>：打卡与导入按钮仅在 <code>tab === "mom" || tab === "growth"</code> 时渲染；点击打卡时根据激活页面与 <code>bmiStageType</code> 智能预选对应模式；深度表单阶段与打卡记录类型实时双向互锁；</li>
+    <li><strong>全时序基线继承与直接数值回显 (`_build_bmi_timeseries` & `BmiFormCard.tsx`)</strong>：后端逆序检索历史最新身高与孕前基线贯通补齐至时序每条记录；前端监听基线变化直接向输入框填入真实数值（<code>value="165"</code>），占位符替换为 <code>例如 165</code> 与 <code>例如 52.0</code>（彻底移除“留空自动继承”），保留 100% 自由编辑；</li>
+    <li><strong>状态卡解耦容错 (`BmiAnalysisView.tsx`)</strong>：重构 <code>bmiStatus</code>，逆序扫描时序记录与外层兜底高度，稳定输出实测当前 BMI 与孕前基线 BMI 双指标及 WS/T 801-2022 分级胶囊；</li>
+    <li><strong>导入数据按钮按页面智能分流 (`CsvImportModal.tsx`)</strong>：接入 <code>initialTarget</code> 属性，妈妈页面默认展示“妈妈体重打卡”，宝宝页面默认展示“宝宝生长测量”；</li>
+    <li><strong>CSV 批量导入防呆与智能仲裁</strong>：引入 <code>isStageKeyword</code> 正则杜绝省略腹围列错位；阶段与宝宝档案不一致时提供内联选择卡片明确归档路径；孕期导入未填周数时自动计算孕周（周+天）。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.29.3 验证结论</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li>打卡弹窗与深度分析表单实现无缝双向互锁，身高与孕前体重直接回显实测值且可任意修改；状态卡双指标稳定呈现；导入数据目标智能跟随当前 Tab，CSV 批量导入全场景高韧性通过。</li>
+  </ul>
+</div>
+
 </body>
 </html>

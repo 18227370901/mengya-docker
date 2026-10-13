@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { Baby, Calendar, Heart, Loader2, Sparkles, X } from "lucide-react";
 import { authApi } from "@/api/auth";
 import { calculateBabyAge, calculatePregnancyProgress } from "@/utils/stage";
@@ -23,18 +23,23 @@ export default function SetStageModal({ isOpen, onClose, onSuccess }: SetStageMo
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
-  // 每次打开弹窗或 user 变更时，根据当前最新 user 数据动态同步
+  const prevIsOpenRef = useRef(false);
+
+  // 仅在弹窗从关闭变为打开的那一刻，根据当前最新 user 数据同步表单初始状态
+  // 弹窗处于打开状态时，切勿因后台定时轮询覆盖重置用户正在编辑的日期或标签页
   useEffect(() => {
-    if (isOpen) {
-      const isPreg = user?.is_pregnant ?? (Boolean(user?.due_date) && !user?.baby_birthday);
-      setTab(isPreg ? "pregnant" : (user?.baby_birthday ? "born" : "pregnant"));
-      setDueDate(user?.due_date || "");
-      setBirthday(user?.baby_birthday || "");
+    if (isOpen && !prevIsOpenRef.current) {
+      const currentUser = useAuthStore.getState().user || user;
+      const isPreg = currentUser?.is_pregnant ?? (Boolean(currentUser?.due_date) && !currentUser?.baby_birthday);
+      setTab(isPreg ? "pregnant" : (currentUser?.baby_birthday ? "born" : "pregnant"));
+      setDueDate(currentUser?.due_date || "");
+      setBirthday(currentUser?.baby_birthday || "");
       setBabyName("");
       setGender("secret");
       setError("");
     }
-  }, [isOpen, user]);
+    prevIsOpenRef.current = isOpen;
+  }, [isOpen]);
 
   if (!isOpen) return null;
 

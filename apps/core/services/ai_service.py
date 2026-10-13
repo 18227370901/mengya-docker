@@ -553,3 +553,70 @@ def ai_evaluate_product(product, user=None) -> dict:
         "product_id": product.id,
         "product_name": f"{product.brand} {product.name}",
     }
+
+
+# ==================== 获取可用模型列表 (OpenAI 兼容接口) ====================
+import requests
+
+AI_HTTP_TIMEOUT = (5, 10)
+
+def _ai_http_get(url, headers=None):
+    """AI 网关 GET（requests 版）：1 禁代理直连；2 失败回落系统代理重试一次"""
+    try:
+        return requests.get(url, headers=headers, timeout=AI_HTTP_TIMEOUT,
+                             proxies={"http": None, "https": None})
+    except (requests.Timeout, requests.RequestException):
+        pass
+    return requests.get(url, headers=headers, timeout=AI_HTTP_TIMEOUT)
+
+
+def fetch_model_list(api_key: str, base_url: str) -> dict:
+    """调用 {base_url}/models 获取可用模型列表（OpenAI 兼容接口）"""
+    if not api_key:
+        return {"success": False, "models": [], "message": "API Key 为空，请先填写", "detail": ""}
+
+    base = normalize_base_url(base_url) if base_url else "https://api.openai.com/v1"
+    models_url = base.rstrip("/") + "/models"
+
+    try:
+        resp = _ai_http_get(models_url, headers={"Authorization": "Bearer " + api_key})
+    except requests.Timeout:
+        return {"success": False, "models": [], "message": "请求模型列表超时，请检查 Base URL 与网络", "detail": "timeout"}
+    except requests.RequestException as e:
+        return {"success": False, "models": [], "message": "无法连接模型列表接口，请检查 Base URL 与网络", "detail": str(e)[:300]}
+
+    try:
+        data = resp.json()
+    except ValueError:
+        return {"success": False, "models": [],
+                "message": "接口返回的不是有效 JSON（可能不是 OpenAI 兼容的 /models 接口）",
+                "detail": resp.text[:300]}
+
+    if resp.status_code in (401, 403):
+        return {"success": False, "models": [],
+                "message": f"API Key 无效或无权访问模型列表（HTTP {resp.status_code}）",
+                "detail": resp.text[:300]}
+
+    if resp.status_code != 200:
+        err_obj = data.get("error") or {}
+        if isinstance(err_obj, dict):
+            reason = err_obj.get("message") or data.get("reason") or f"HTTP {resp.status_code}"
+        else:
+            reason = data.get("reason") or f"HTTP {resp.status_code}"
+        return {"success": False, "models": [],
+                "message": f"模型列表接口返回错误：{reason}",
+                "detail": resp.text[:300]}
+
+    models = []
+    for item in data.get("data") or []:
+        if isinstance(item, dict) and item.get("id"):
+            models.append(str(item["id"]))
+
+    if not models:
+        return {"success": False, "models": [],
+                "message": "模型列表接口返回的模型列表为空",
+                "detail": resp.text[:300]}
+
+    return {"success": True, "models": models,
+            "message": f"成功获取 {len(models)} 个可用模型",
+            "detail": ""}

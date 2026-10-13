@@ -39,6 +39,14 @@ def get_expected_week(user, record_date: date) -> Optional[Dict[str, Any]]:
 
     # ===== 基准1：预产期（最高优先级，医学 280 天模型）=====
     due_date = getattr(user, "due_date", None)
+    if not due_date:
+        try:
+            from apps.core.models.baby import BabyProfile
+            unborn_baby = BabyProfile.objects.filter(user=user, is_born=False).order_by("-is_primary", "-id").first()
+            if unborn_baby and unborn_baby.birthday:
+                due_date = unborn_baby.birthday
+        except Exception:
+            pass
     if due_date:
         try:
             lmp = due_date - timedelta(days=FULL_PREGNANCY_DAYS)

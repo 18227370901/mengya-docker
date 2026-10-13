@@ -34,6 +34,7 @@ services:
       - ./templates:/app/templates
       - ./static:/app/static
       - ./wait_for_db.py:/app/wait_for_db.py
+      - ./data:/app/data
     # 宿主机直接暴露 FRONTEND_PORT（默认 5174），直达 Django 一体化服务（同时提供 API 与前端 SPA 静态页面）
     ports:
       - "${FRONTEND_PORT:-5174}:8000"
@@ -81,6 +82,7 @@ services:
       - ./templates:/app/templates
       - ./static:/app/static
       - ./wait_for_db.py:/app/wait_for_db.py
+      - ./data:/app/data
     depends_on:
       - backend
     command: sh -c "python wait_for_db.py; celery -A config worker -l info --pool=solo"

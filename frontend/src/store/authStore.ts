@@ -91,7 +91,28 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           curStage.trimester === newStage.trimester &&
           curStage.period === newStage.period);
       const nextStage = isStageEqual ? curStage : newStage;
-      set({ user: { ...data.user, permissions: perms }, stage: nextStage, permissions: perms, loading: false });
+      const curUser = get().user;
+      const newUser = data.user;
+      const curPerms = get().permissions;
+      const isPermsEqual = JSON.stringify(curPerms) === JSON.stringify(perms);
+      const nextPerms = isPermsEqual ? curPerms : perms;
+      const isUserEqual =
+        !!curUser &&
+        !!newUser &&
+        curUser.id === newUser.id &&
+        curUser.phone === newUser.phone &&
+        curUser.nickname === newUser.nickname &&
+        curUser.role === newUser.role &&
+        curUser.avatar === newUser.avatar &&
+        curUser.due_date === newUser.due_date &&
+        curUser.baby_birthday === newUser.baby_birthday &&
+        curUser.is_pregnant === newUser.is_pregnant &&
+        curUser.is_staff === newUser.is_staff &&
+        curUser.is_active === newUser.is_active &&
+        curUser.ai_authorized === newUser.ai_authorized &&
+        isPermsEqual;
+      const nextUser = isUserEqual ? curUser : { ...newUser, permissions: nextPerms };
+      set({ user: nextUser, stage: nextStage, permissions: nextPerms, loading: false });
     } catch {
       const refreshToken = localStorage.getItem("mengya_refresh");
       if (refreshToken) {
@@ -118,7 +139,28 @@ export const useAuthStore = create<AuthState>((set, get) => ({
           curStage.trimester === newStage.trimester &&
           curStage.period === newStage.period);
       const nextStage = isStageEqual ? curStage : newStage;
-      set({ user: { ...data.user, permissions: perms }, stage: nextStage, permissions: perms, loading: false });
+      const curUser = get().user;
+      const newUser = data.user;
+      const curPerms = get().permissions;
+      const isPermsEqual = JSON.stringify(curPerms) === JSON.stringify(perms);
+      const nextPerms = isPermsEqual ? curPerms : perms;
+      const isUserEqual =
+        !!curUser &&
+        !!newUser &&
+        curUser.id === newUser.id &&
+        curUser.phone === newUser.phone &&
+        curUser.nickname === newUser.nickname &&
+        curUser.role === newUser.role &&
+        curUser.avatar === newUser.avatar &&
+        curUser.due_date === newUser.due_date &&
+        curUser.baby_birthday === newUser.baby_birthday &&
+        curUser.is_pregnant === newUser.is_pregnant &&
+        curUser.is_staff === newUser.is_staff &&
+        curUser.is_active === newUser.is_active &&
+        curUser.ai_authorized === newUser.ai_authorized &&
+        isPermsEqual;
+      const nextUser = isUserEqual ? curUser : { ...newUser, permissions: nextPerms };
+      set({ user: nextUser, stage: nextStage, permissions: nextPerms, loading: false });
             return;
           }
         } catch {

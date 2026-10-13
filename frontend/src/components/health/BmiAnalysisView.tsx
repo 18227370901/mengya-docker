@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Scale, CheckCircle2, ArrowUpRight, ArrowDownRight, ChevronUp, ChevronDown, FileText } from "lucide-react";
 import { healthApi } from "@/api/services";
 import { extractGestationAnchor, gestationLabel } from "@/utils/gestation";
-import type { BmiAnalysisInput, BmiAnalysisResult, BmiTimeSeriesRecord, SameDayConflictPayload } from "@/types/health";
+import type { BmiAnalysisInput, BmiAnalysisResult, BmiTimeSeriesRecord, SameDayConflictPayload, PregnancyStage } from "@/types/health";
 import BmiFormCard from "./BmiFormCard";
 import BmiTimeSeriesBoard from "./BmiTimeSeriesBoard";
 import BmiHistoryTable from "./BmiHistoryTable";
@@ -22,9 +22,21 @@ interface BmiAnalysisViewProps {
   onRecordChanged?: () => void;
   /** v1.60：外部打卡传入的最新分析评估结果（打卡后联动展示分析报告） */
   externalAnalysisResult?: BmiAnalysisResult | null;
+  stageType?: PregnancyStage;
+  onStageTypeChange?: (st: PregnancyStage) => void;
+  fallbackHeight?: number | null;
+  fallbackPreWeight?: number | null;
 }
 
-export default function BmiAnalysisView({ refreshTrigger, onRecordChanged, externalAnalysisResult }: BmiAnalysisViewProps = {}) {
+export default function BmiAnalysisView({
+  refreshTrigger,
+  onRecordChanged,
+  externalAnalysisResult,
+  stageType,
+  onStageTypeChange,
+  fallbackHeight,
+  fallbackPreWeight,
+}: BmiAnalysisViewProps = {}) {
   const [loading, setLoading] = useState<boolean>(false);
   const [result, setResult] = useState<BmiAnalysisResult | null>(() => {
     try {
@@ -171,14 +183,53 @@ export default function BmiAnalysisView({ refreshTrigger, onRecordChanged, exter
     return sorted[sorted.length - 1] ?? null;
   }, [timeseries]);
 
+  // 查找历史打卡中最近一次有效记录的身高与孕前体重（逆序查找最新一条有值记录，兜底外层传入的基线）
+  const latestHeight = useMemo(() => {
+    for (let i = timeseries.length - 1; i >= 0; i--) {
+      const h = timeseries[i]?.height;
+      if (h && Number(h) > 0) return Number(h);
+    }
+    return fallbackHeight ?? null;
+  }, [timeseries, fallbackHeight]);
+
+  const latestPreWeight = useMemo(() => {
+    for (let i = timeseries.length - 1; i >= 0; i--) {
+      const pw = timeseries[i]?.pre_weight;
+      if (pw && Number(pw) > 0) return Number(pw);
+    }
+    return fallbackPreWeight ?? null;
+  }, [timeseries, fallbackPreWeight]);
+
   // v1.58：首次孕期打卡锚点（无预产期时孕周自动推算 孕x周x天）
   const gestationAnchor = useMemo(() => extractGestationAnchor(timeseries), [timeseries]);
 
   const bmiStatus = useMemo(() => {
-    if (!latestRecord || !latestRecord.height) return null;
-    const h = latestRecord.height / 100;
-    const currentBmi = latestRecord.weight && h > 0 ? +(latestRecord.weight / (h * h)).toFixed(1) : null;
-    const preBmi = latestRecord.bmi ?? null;
+    if (!latestRecord && !result?.evaluation) return null;
+    const hMeter =
+      latestHeight && latestHeight > 0
+        ? latestHeight / 100
+        : latestRecord?.height && latestRecord.height > 0
+        ? latestRecord.height / 100
+        : null;
+    const currentWeight = latestRecord?.weight ?? null;
+    const currentBmi =
+      currentWeight && hMeter && hMeter > 0
+        ? +(currentWeight / (hMeter * hMeter)).toFixed(1)
+        : latestRecord?.bmi != null
+        ? +(latestRecord.bmi).toFixed(1)
+        : null;
+
+    let preBmi: number | null = null;
+    if (latestPreWeight && hMeter && hMeter > 0) {
+      preBmi = +(latestPreWeight / (hMeter * hMeter)).toFixed(1);
+    } else if (result?.evaluation?.bmi) {
+      preBmi = +(result.evaluation.bmi).toFixed(1);
+    } else if (latestRecord?.pre_weight && hMeter && hMeter > 0) {
+      preBmi = +(latestRecord.pre_weight / (hMeter * hMeter)).toFixed(1);
+    } else if (currentBmi) {
+      preBmi = currentBmi;
+    }
+
     const cat = (b: number) =>
       b < 18.5
         ? { label: "偏瘦", cls: "text-amber-500 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-400" }
@@ -188,7 +239,7 @@ export default function BmiAnalysisView({ refreshTrigger, onRecordChanged, exter
         ? { label: "超重", cls: "text-amber-500 bg-amber-50 dark:bg-amber-950/40 dark:text-amber-400" }
         : { label: "肥胖", cls: "text-red-500 bg-red-50 dark:bg-red-950/40 dark:text-red-400" };
     return { currentBmi, preBmi, currentCat: currentBmi ? cat(currentBmi) : null, preCat: preBmi ? cat(preBmi) : null };
-  }, [latestRecord]);
+  }, [latestRecord, latestHeight, latestPreWeight, result?.evaluation]);
 
   return (
     <div className="space-y-6">
@@ -262,13 +313,15 @@ export default function BmiAnalysisView({ refreshTrigger, onRecordChanged, exter
         </div>
       </div>
 
-      {/* 卡片 1: 测量录入与按天打卡（v1.56 基线连续预填；v1.58 孕周锚点自动推算） */}
+      {/* 卡片 1: 测量录入与按天打卡（基线连续预填；孕周锚点自动推算） */}
       <BmiFormCard
         onSubmit={handleAnalyze}
         loading={loading}
-        initialHeight={latestRecord?.height ?? null}
-        initialPreWeight={latestRecord?.pre_weight ?? null}
+        initialHeight={latestHeight}
+        initialPreWeight={latestPreWeight}
         gestationAnchor={gestationAnchor}
+        stageType={stageType}
+        onStageTypeChange={onStageTypeChange}
       />
 
       {/* 卡片 2: 多维度时序图表看板（趋势折线 / 增量柱状 + 时间跨度筛选） */}

@@ -129,6 +129,9 @@ export const authApi = {
   testAIConfig: (data: { api_key: string; base_url?: string; model?: string }) =>
     api.post<ApiResponse<{ status: string; latency_ms: number; model: string; reply?: string }>>("/users/ai-config/test/", data).then((r) => r.data),
 
+  fetchAIModels: (data: { config_index?: number; api_key?: string; base_url?: string }) =>
+    api.post<ApiResponse<{ success: boolean; models: string[]; message: string; detail?: string }>>("/users/ai-config/models/", data).then((r) => r.data),
+
   aiAuthList: () => api.get<ApiResponse<Array<{ id: number; phone: string; nickname: string; is_staff: boolean; ai_authorized: boolean }>>>("/users/ai-auth/").then((r) => r.data.data),
 
   aiAuthToggle: (userId: number, authorized: boolean) =>

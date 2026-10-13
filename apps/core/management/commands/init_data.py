@@ -17,6 +17,7 @@ from apps.core.models import (
     BabyProfile,
     BabyShoppingItem,
     BrandProfile,
+    DailyTip,
     FetalStory,
     KidsEncyclopedia,
     Product,
@@ -81,6 +82,7 @@ class Command(BaseCommand):
 
             # 8. 系统全局设置 SystemSetting
             self._ensure_system_setting(by_model.get("core.systemsetting", []))
+            self._ensure_daily_tips(force)
 
             # 9. 物理清理历史预置演示账号与测试宝宝档案（消除默认密码安全隐患）
             self._cleanup_legacy_demo_users()
@@ -198,6 +200,19 @@ class Command(BaseCommand):
             created += 1
         self.stdout.write(self.style.SUCCESS(f"  [就绪] 待产母婴清单初始化完成 (共 {created} 条)"))
 
+
+    def _ensure_daily_tips(self, force):
+        try:
+            from apps.core.models import DailyTip
+            from apps.core.services.daily_tip_service import DailyTipService
+            count = DailyTip.objects.count()
+            if count == 0 or force:
+                created, updated = DailyTipService.seed_builtin_tips(force_reset=force)
+                self.stdout.write(self.style.SUCCESS(f"  [初始化] 今日关怀小锦囊内置数据加载完成 (创建 {created} 条, 更新 {updated} 条)"))
+            else:
+                self.stdout.write(f"  [跳过] 今日关怀小锦囊已存在 ({count} 条)")
+        except Exception as e:
+            self.stdout.write(self.style.WARNING(f"  [警告] 今日关怀小锦囊初始化异常: {e}"))
     def _ensure_system_setting(self, items):
         if not SystemSetting.objects.exists() and items:
             d = items[0]
@@ -228,6 +243,7 @@ class Command(BaseCommand):
                 Recipe,
                 KidsEncyclopedia,
                 BabyShoppingItem,
+                DailyTip,
             ]
             sequence_sql = connection.ops.sequence_reset_sql(no_style(), models_to_reset)
             if sequence_sql:

@@ -1,4 +1,6 @@
 import SetStageModal from "@/components/SetStageModal";
+import HomeWeatherBanner from "@/components/HomeWeatherBanner";
+import { CloudSun } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import {
@@ -121,6 +123,7 @@ export default function HomePage() {
     { to: "/shopping-list/generate", label: "智能待产包", icon: PackageSearch, desc: "季节+分娩方式自适应", perm: "menu_shopping_list" },
     { to: "/health", label: "健康中心", icon: Activity, desc: "产检/生长曲线/疫苗", perm: "menu_health" },
     { to: "/ai-assistant", label: "AI小助手", icon: Bot, desc: "7×24小时问答比价", perm: "menu_ai_assistant" },
+    { to: "/weather", label: "天气万年历", icon: CloudSun, desc: "实时天气+15天预报与黄历", perm: "menu_weather" },
   ];
   const visibleQuickEntries = quickEntries.filter((it) => user?.is_staff || !it.perm || hasPermission(it.perm));
 
@@ -143,43 +146,12 @@ export default function HomePage() {
   const fetusSize = currentWeek ? FETUS_SIZE[currentWeek] : null;
 
   return (
-    <div className="space-y-8">
-      {/* 顶部欢迎卡 */}
-      <section className="rounded-3xl bg-gradient-to-r from-brand-500 to-orange-400 p-6 text-white shadow-lg">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm opacity-90">{user?.nickname || (user?.role === "father" ? "准爸爸" : user?.role === "grandma" ? "长辈" : user?.role === "caregiver" ? "照料者" : "准妈妈")}，你好呀</p>
-            <div className="mt-1 flex items-center gap-2 flex-wrap">
-              <h1
-                onClick={() => setShowStageModal(true)}
-                className="text-2xl font-bold cursor-pointer hover:opacity-90 transition inline-flex items-center gap-1.5"
-                title="点击设置或修改预产期/宝宝生日"
-              >
-                {stage?.label || "欢迎来到萌芽"}
-              </h1>
-              <button
-                type="button"
-                onClick={() => setShowStageModal(true)}
-                className="inline-flex items-center gap-1 rounded-full bg-white/20 hover:bg-white/30 px-2.5 py-0.5 text-xs font-medium text-white transition cursor-pointer"
-                title="点击设置或修改预产期/宝宝生日"
-              >
-                <Edit3 className="h-3 w-3" />
-                <span>{stage?.type === "unknown" ? "立即设置" : "修改"}</span>
-              </button>
-            </div>
-            <p className="mt-1 text-sm opacity-90">
-              {stage?.trimester || stage?.period || "从第一次胎动到第一次背书包，我们陪您每一步"}
-            </p>
-          </div>
-          <Sprout className="h-14 w-14 opacity-60" />
-        </div>
-        <div className="mt-4 flex flex-wrap gap-2">
-          <span className="rounded-full bg-white/20 px-3 py-1 text-xs">全周期科学指导</span>
-          <span className="rounded-full bg-white/20 px-3 py-1 text-xs">智能对比</span>
-          <span className="rounded-full bg-white/20 px-3 py-1 text-xs">动态清单</span>
-          <span className="rounded-full bg-white/20 px-3 py-1 text-xs">AI 7×24</span>
-        </div>
-      </section>
+    <div className="space-y-6">
+      {/* 首页全景关怀横幅：深度整合问候、阶段卡、时钟走秒、农历节气班休与实况气象 */}
+      <HomeWeatherBanner
+        stage={stage}
+        onEditStage={() => setShowStageModal(true)}
+      />
 
       {/* 未设置阶段时的引导卡片 */}
       {stage?.type === "unknown" && (

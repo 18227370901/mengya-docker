@@ -578,7 +578,7 @@ class MeView(APIView):
         if user.is_pregnant and user.baby_birthday is not None:
             user.baby_birthday = None
             fields_to_update.append("baby_birthday")
-        elif not user.is_pregnant and user.baby_birthday and user.due_date is not None:
+        elif not user.is_pregnant and user.due_date is not None:
             user.due_date = None
             fields_to_update.append("due_date")
 
@@ -2204,8 +2204,21 @@ class HealthRecordViewSet(viewsets.ModelViewSet):
                     if height is not None and not (MOM_RANGE["height"][0] <= height <= MOM_RANGE["height"][1]):
                         height = inherit_height
                     stage_raw = str(row.get("stage") or "").strip().lower()
-                    stage_map = {"pregnancy": "pregnancy", "postpartum": "postpartum", "general": "general", "": None}
+                    stage_map = {
+                        "pregnancy": "pregnancy", "孕期": "pregnancy", "全孕期": "pregnancy", "怀孕中": "pregnancy", "孕": "pregnancy",
+                        "postpartum": "postpartum", "产后": "postpartum", "产后恢复": "postpartum", "恢复期": "postpartum",
+                        "general": "general", "非孕期": "general", "备孕": "general", "日常": "general",
+                        "": None,
+                    }
                     stage = stage_map.get(stage_raw)
+                    if stage is None and stage_raw:
+                        if "孕" in stage_raw:
+                            stage = "pregnancy"
+                        elif "产后" in stage_raw:
+                            stage = "postpartum"
+                        elif "非" in stage_raw or "备" in stage_raw:
+                            stage = "general"
+
                     if stage is None:
                         # 未显式指定阶段：按档案智能回推（孕期中→pregnancy；宝宝已出生→postpartum；其余→general）
                         if getattr(user, "is_pregnant", None) is True:
@@ -2216,17 +2229,39 @@ class HealthRecordViewSet(viewsets.ModelViewSet):
                             stage = "postpartum"
                         else:
                             stage = "general"
+
                     gestational_week = None
                     gestational_days = None
+                    auto_postpartum_months = None
+
                     if stage == "pregnancy":
                         wk = _to_float(row.get("week"))
-                        gestational_week = int(wk) if wk else None
-                        if gestational_week is None:
-                            _fail("孕期记录必须提供 week（孕周）列，或改用 postpartum/general 阶段导入")
-                            continue
-                        # v1.58：week 列支持小数（如 23.5 = 孕23周3天），整数部分为周、小数×7为天
-                        gestational_days = int(round((wk - int(wk)) * 7))
-                        gestational_days = max(0, min(6, gestational_days))
+                        if wk is not None:
+                            gestational_week = int(wk)
+                            # week 列支持小数（如 23.5 = 孕23周3天），整数部分为周、小数×7为天
+                            gestational_days = int(round((wk - int(wk)) * 7))
+                            gestational_days = max(0, min(6, gestational_days))
+                        else:
+                            # 用户未填孕周：优先根据默认档案（预产期 due_date 或历史打卡基准）自动推算为 x周x天
+                            from apps.core.services.gestation_engine import get_expected_week
+                            expected = get_expected_week(user, rec_date)
+                            if expected and expected.get("week") is not None:
+                                gestational_week = expected["week"]
+                                gestational_days = expected.get("days", 0)
+                            else:
+                                _fail("未检测到预产期或宝宝档案配置，无法根据记录日期自动推算孕周，请先在档案中设置预产期/宝宝档案，或在 CSV 中填写 week（孕周）列")
+                                continue
+                    elif stage == "postpartum":
+                        # 产后阶段：如果未填 postpartum_months，尝试根据宝宝生日自动推算
+                        baby_b = getattr(user, "baby_birthday", None)
+                        if not baby_b:
+                            from apps.core.models.baby import BabyProfile
+                            born_baby = BabyProfile.objects.filter(user=user, is_born=True).order_by("-is_primary", "-id").first()
+                            if born_baby and born_baby.birthday:
+                                baby_b = born_baby.birthday
+                        if baby_b and rec_date >= baby_b:
+                            auto_postpartum_months = max(0, int((rec_date - baby_b).days / 30.44))
+
                     bmi_val = None
                     if height and weight:
                         bmi_val = round(weight / ((height / 100.0) ** 2), 2)
@@ -2238,6 +2273,8 @@ class HealthRecordViewSet(viewsets.ModelViewSet):
                         # v1.58：孕x周x天粒度（仅孕期阶段）
                         "gestational_days": gestational_days,
                     }
+                    if stage == "postpartum" and auto_postpartum_months is not None:
+                        exam_items["postpartum_months"] = auto_postpartum_months
                     if existing:
                         existing.gestational_week = gestational_week
                         existing.height = height or existing.height
@@ -2248,6 +2285,7 @@ class HealthRecordViewSet(viewsets.ModelViewSet):
                         updated += 1
                         audit(request, "health_record_import", "批量导入覆盖健康记录", "health", existing.id, "prenatal_exam", f"CSV 导入覆盖 {rec_date}")
                     else:
+                        stage_cn = "全孕期" if stage == "pregnancy" else "产后恢复" if stage == "postpartum" else "非孕期/备孕"
                         new_rec = HealthRecord.objects.create(
                             user=user,
                             record_type="prenatal_exam",
@@ -2256,7 +2294,7 @@ class HealthRecordViewSet(viewsets.ModelViewSet):
                             height=height,
                             weight=weight,
                             exam_items=exam_items,
-                            note=row.get("note") or f"CSV 批量导入（{stage}）",
+                            note=row.get("note") or f"CSV 批量导入（{stage_cn}）",
                         )
                         created += 1
                         audit(request, "health_record_import", "批量导入健康记录", "health", new_rec.id, "prenatal_exam", f"CSV 导入 {rec_date}")
@@ -2337,15 +2375,39 @@ def _build_bmi_timeseries(user):
             user=user,
             record_type="prenatal_exam",
         ).exclude(weight__isnull=True).order_by("record_date", "created_at")
+
+        # 查找该用户历史最新有效身高与孕前基线体重（用于缺失记录自动继承基线）
+        default_height = None
+        default_pre_weight = None
+        for r in user_records.reverse():
+            if not default_height and r.height and r.height > 0:
+                default_height = r.height
+            items = r.exam_items if isinstance(r.exam_items, dict) else {}
+            pw = items.get("pre_weight")
+            if not default_pre_weight and pw and float(pw) > 0:
+                default_pre_weight = float(pw)
+            if default_height and default_pre_weight:
+                break
+
         prev_w = None
+        running_height = default_height
+        running_pre_weight = default_pre_weight
         for r in user_records:
             delta = round(r.weight - prev_w, 2) if prev_w is not None else 0.0
             prev_w = r.weight
             items = r.exam_items if isinstance(r.exam_items, dict) else {}
             w_circum = items.get("waist_circumference")
             pre_weight = items.get("pre_weight")
-            rec_bmi = round(r.weight / ((r.height / 100.0) ** 2), 2) if (r.height and r.height > 0) else None
-            cum_gain = round(r.weight - pre_weight, 2) if (pre_weight and pre_weight > 0) else None
+            if pre_weight and float(pre_weight) > 0:
+                running_pre_weight = float(pre_weight)
+            effective_pre_weight = running_pre_weight
+
+            if r.height and r.height > 0:
+                running_height = r.height
+            effective_height = running_height
+
+            rec_bmi = round(r.weight / ((effective_height / 100.0) ** 2), 2) if (effective_height and effective_height > 0) else None
+            cum_gain = round(r.weight - effective_pre_weight, 2) if (effective_pre_weight and effective_pre_weight > 0) else None
             # 阶段标记：新数据显式存 exam_items.stage；历史数据按孕周有无回推
             stage = items.get("stage") or ("pregnancy" if r.gestational_week else "pregnancy")
             timeseries_history.append({
@@ -2356,12 +2418,12 @@ def _build_bmi_timeseries(user):
                 "gestational_week": r.gestational_week,
                 # v1.58：孕x周x天粒度（历史无 days 的记录为 None，展示层降级为整周）
                 "gestational_days": items.get("gestational_days"),
-                "height": r.height,
+                "height": effective_height,
                 "weight": r.weight,
                 "waist_circumference": w_circum,
                 "bmi": rec_bmi,
                 "delta_kg": delta,
-                "pre_weight": pre_weight,
+                "pre_weight": effective_pre_weight,
                 "cumulative_gain": cum_gain,
                 "gain_status": items.get("gain_status"),
                 "is_twins": bool(items.get("is_twins", False)),
@@ -4014,3 +4076,211 @@ class AdminPermissionsView(APIView):
                 "default_permissions": setting.default_user_permissions,
             },
         })
+
+
+# ============================================================
+# 天气预报、历法与 AI 模型列表 API (迁移增量)
+# ============================================================
+import logging as _py_logging
+import time as _py_time
+from datetime import date as _py_date
+from apps.core.services import weather_service, holiday_service
+from apps.core.utils.permissions import check_permission_or_403, has_permission
+
+_logger = _py_logging.getLogger(__name__)
+_HOME_WEATHER_CACHE = {}
+_HOME_WEATHER_TTL = 30 * 60  # 30 分钟缓存
+
+
+def _get_cached_home_weather(city: str):
+    now = _py_time.time()
+    hit = _HOME_WEATHER_CACHE.get(city)
+    if hit and hit[0] > now:
+        return hit[1]
+    try:
+        data = weather_service.query_weather(city, days=2)
+    except Exception:
+        return None
+    current = (data or {}).get("current") or {}
+    daily = (data or {}).get("daily") or []
+    payload = {
+        "city": city,
+        "temp": current.get("temperature"),
+        "desc": current.get("weather_text") or "",
+        "icon": current.get("icon") or "",
+        "code": current.get("weather_code"),
+        "today_max": (daily[0] or {}).get("temp_max") if daily else None,
+        "today_min": (daily[0] or {}).get("temp_min") if daily else None,
+        "tomorrow_max": (daily[1] or {}).get("temp_max") if len(daily) > 1 else None,
+        "tomorrow_min": (daily[1] or {}).get("temp_min") if len(daily) > 1 else None,
+        "update_time": current.get("time") or "",
+    }
+    _HOME_WEATHER_CACHE[city] = (now + _HOME_WEATHER_TTL, payload)
+    return payload
+
+
+class WeatherQueryView(APIView):
+    """天气查询 API：支持坐标直查（级联选择）与城市文本搜索，默认 15 天预报"""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        check_permission_or_403(request.user, "menu_weather", "您无权访问天气查询功能")
+        days = request.query_params.get("days") or weather_service.DEFAULT_FORECAST_DAYS
+        lat = (request.query_params.get("lat") or "").strip()
+        lon = (request.query_params.get("lon") or "").strip()
+
+        try:
+            if lat and lon:
+                label = (request.query_params.get("label") or "").strip()
+                data = weather_service.query_weather_by_coords(lat, lon, days=days, label=label)
+                target_city_name = label or (data.get("city") if isinstance(data, dict) else "")
+            else:
+                city = (request.query_params.get("city") or "").strip()
+                if not city:
+                    city = "成都"
+                province = (request.query_params.get("province") or "").strip()
+                city2 = (request.query_params.get("city2") or "").strip()
+                data = weather_service.query_weather(city, province=province or None, district_city=city2 or None, days=int(days))
+                target_city_name = city
+            if request.user.is_staff and target_city_name:
+                try:
+                    from apps.core.models.system import SystemSetting
+                    sys_setting = SystemSetting.get_settings()
+                    sys_setting.default_user_permissions["_admin_weather_city"] = target_city_name
+                    sys_setting.save(update_fields=["default_user_permissions"])
+                except Exception:
+                    pass
+            return Response({"code": 0, "message": "ok", "data": data})
+        except weather_service.WeatherError as e:
+            return Response(
+                {"code": 4000, "message": e.message, "data": None},
+                status=status.HTTP_400_BAD_REQUEST if e.status_code == 400 else status.HTTP_502_BAD_GATEWAY
+            )
+        except Exception:
+            _logger.exception("查询天气异常")
+            return Response(
+                {"code": 5000, "message": "天气服务查询异常，请稍后重试", "data": None},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+class HomeWeatherView(APIView):
+    """首页轻量天气与万年历 API：支持无天气权限时降级为管理员配置城市与提示说明"""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        from apps.core.models.system import SystemSetting
+        sys_setting = SystemSetting.get_settings()
+        admin_city = (sys_setting.default_user_permissions or {}).get("_admin_weather_city") or "成都"
+        has_perm = request.user.is_staff or has_permission(request.user, "menu_weather")
+
+        raw_city = (request.query_params.get("city") or "").strip()
+        if not has_perm:
+            city = admin_city
+            source = "admin"
+            notice = "您没有天气页面权限，当前天气信息默认来源于管理员用户"
+        else:
+            if raw_city and len(raw_city) <= weather_service.CITY_NAME_MAX_LEN:
+                city = raw_city
+                source = "user"
+                if request.user.is_staff:
+                    try:
+                        sys_setting.default_user_permissions["_admin_weather_city"] = city
+                        sys_setting.save(update_fields=["default_user_permissions"])
+                    except Exception:
+                        pass
+            else:
+                city = admin_city
+                source = "default"
+            notice = ""
+
+        weather = _get_cached_home_weather(city)
+        if not weather:
+            weather = {
+                "city": city,
+                "temp": 22,
+                "desc": "晴",
+                "icon": "01d",
+                "code": 0,
+                "today_max": 26,
+                "today_min": 17,
+                "tomorrow_max": 25,
+                "tomorrow_min": 16,
+                "update_time": _py_time.strftime("%H:%M"),
+            }
+
+        badge = None
+        try:
+            today = _py_date.today()
+            holidays = holiday_service.get_year_holidays(today.year) or {}
+            info = holidays.get("%02d-%02d" % (today.month, today.day))
+            if info:
+                badge = {"holiday": bool(info.get("holiday")), "name": info.get("name") or ""}
+        except Exception:
+            pass
+
+        return Response({
+            "code": 0,
+            "message": "ok",
+            "data": {
+                "city": city,
+                "source": source,
+                "notice": notice,
+                "has_permission": has_perm,
+                "weather": weather,
+                "badge": badge,
+            }
+        })
+
+
+class HolidayYearView(APIView):
+    """法定节假日班/休查询 API（万年历模块班/休角标数据源）"""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, year):
+        check_permission_or_403(request.user, "menu_weather", "您无权访问万年历节假日数据")
+        if year < holiday_service.HOLIDAY_YEAR_MIN or year > holiday_service.HOLIDAY_YEAR_MAX:
+            return Response(
+                {"code": 4000, "message": f"年份超出支持范围（{holiday_service.HOLIDAY_YEAR_MIN}~{holiday_service.HOLIDAY_YEAR_MAX}）", "data": None},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        try:
+            holidays = holiday_service.get_year_holidays(year)
+        except Exception:
+            _logger.exception("获取节假日班休数据异常")
+            holidays = {}
+        return Response({"code": 0, "message": "ok", "data": {"year": year, "holiday": holidays}})
+
+
+class AIConfigModelsView(APIView):
+    """获取 AI 提供商可用模型列表（仅具备 ai_fetch_models 权限或管理员可操作）"""
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        check_permission_or_403(request.user, "ai_fetch_models", "您暂无拉取 AI 模型列表的权限")
+        data = request.data or {}
+        config_index = data.get("config_index")
+        api_key = (data.get("api_key") or "").strip()
+        base_url = (data.get("base_url") or "").strip()
+
+        if config_index is not None:
+            try:
+                config_index = int(config_index)
+                user_configs = request.user.ai_configs or []
+                if 0 <= config_index < len(user_configs):
+                    cfg = user_configs[config_index]
+                    api_key = cfg.get("api_key") or ""
+                    base_url = cfg.get("base_url") or ""
+            except (ValueError, TypeError):
+                pass
+
+        if not api_key:
+            return Response(
+                {"code": 2001, "message": "API Key 不能为空，请先填写后再获取模型列表", "data": None},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        res = ai_service.fetch_model_list(api_key, base_url)
+        audit(request, "ai_fetch_models", "获取AI模型列表", "ai_config", 0, base_url or "api.openai.com",
+              f"拉取模型成功={res.get("success")}, 数量={len(res.get("models", []))}")
+        return Response({"code": 0, "message": "ok", "data": res})

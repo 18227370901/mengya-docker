@@ -75,6 +75,7 @@ const PERMISSION_PARENT_MAP: Record<string, string> = {
   ai_session_create: "menu_ai_assistant",
   ai_session_rename: "menu_ai_assistant",
   ai_session_delete: "menu_ai_assistant",
+  ai_fetch_models: "menu_ai_assistant",
 };
 
 const PERMISSION_CHILDREN_MAP: Record<string, string[]> = {};
@@ -91,6 +92,8 @@ const PERMISSION_KEY_NAMES: Record<string, string> = {
   menu_products: "商品库菜单",
   product_view: "浏览商品",
   menu_ai_assistant: "AI助手菜单",
+  ai_fetch_models: "拉取模型列表",
+  menu_weather: "天气预报菜单",
   baby_view: "查看宝宝档案",
 };
 

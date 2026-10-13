@@ -16,6 +16,7 @@ DEFAULT_USER_PERMISSIONS = {
     "menu_encyclopedia": True,      # 幼儿百科
     "menu_favorites": True,         # 我的收藏
     "menu_notifications": True,     # 消息通知
+    "menu_weather": True,           # 天气预报 / 万年历
 
     # 业务功能操作权限（CRUD 细粒度）
     # 待产包模块 (Shopping List)
@@ -47,6 +48,7 @@ DEFAULT_USER_PERMISSIONS = {
     "ai_session_create": True,      # 增：创建新会话
     "ai_session_rename": True,      # 改：重命名会话
     "ai_session_delete": True,      # 删：删除会话
+    "ai_fetch_models": False,       # 查：拉取可用模型列表（高级管理权限）
 }
 
 # 父子关联映射表：子权限 key -> 其直接父权限 key（支持多级继承联动）
@@ -79,6 +81,7 @@ PERMISSION_PARENT_MAP = {
     "ai_session_create": "menu_ai_assistant",
     "ai_session_rename": "menu_ai_assistant",
     "ai_session_delete": "menu_ai_assistant",
+    "ai_fetch_models": "menu_ai_assistant",
 }
 
 # 衍生直接子节点表：父权限 key -> [子权限 key, ...]
@@ -145,6 +148,7 @@ PERMISSION_DEFINITIONS = [
             {"key": "menu_encyclopedia", "name": "幼儿百科", "desc": "幼儿身体与认知趣味科普", "parent_key": None},
             {"key": "menu_favorites", "name": "我的收藏", "desc": "商品、时相、清单等个人收藏夹", "parent_key": None},
             {"key": "menu_notifications", "name": "消息通知", "desc": "系统提醒与关怀通知中心", "parent_key": None},
+            {"key": "menu_weather", "name": "天气预报/万年历", "desc": "实时天气、15天预报、空气质量与黄历班休", "parent_key": None},
         ],
     },
     {
@@ -200,6 +204,7 @@ PERMISSION_DEFINITIONS = [
             {"key": "ai_session_create", "name": "新建会话 (增)", "desc": "创建新的独立对话话题分支", "parent_key": "menu_ai_assistant"},
             {"key": "ai_session_rename", "name": "重命名会话 (改)", "desc": "修改会话列表中的主题标题", "parent_key": "menu_ai_assistant"},
             {"key": "ai_session_delete", "name": "删除会话 (删)", "desc": "删除历史对话会话及其全部聊天记录", "parent_key": "menu_ai_assistant"},
+            {"key": "ai_fetch_models", "name": "拉取模型列表 (查)", "desc": "在 AI 配置中通过 Base URL 自动拉取可用模型列表", "parent_key": "menu_ai_assistant"},
         ],
     },
 ]

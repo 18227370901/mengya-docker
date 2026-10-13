@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertCircle, ArrowLeft, Bot, CheckCircle, ChevronDown, ChevronUp, Eye, EyeOff, Globe, Loader2, Play, Plus, Settings, Trash2 } from "lucide-react";
+import { AlertCircle, ArrowLeft, Bot, CheckCircle, ChevronDown, ChevronUp, Eye, EyeOff, Globe, Loader2, Play, Plus, Settings, Trash2, X } from "lucide-react";
 import { authApi } from "@/api/auth";
+import { useAuthStore } from "@/store/authStore";
+import { ListFilter, Sparkles } from "lucide-react";
 import type { AIConfigItem } from "@/api/auth";
 import { searxngConfigApi } from "@/api/services";
 import type { SearXNGConfig } from "@/types/health";
@@ -22,6 +24,54 @@ export default function AIConfigPage() {
   // v1.56：搜索引擎配置（入口由健康中心 BMI 页迁移至 AI 助手配置页）
   const [searxngModalOpen, setSearxngModalOpen] = useState(false);
   const [searchCfg, setSearchCfg] = useState<SearXNGConfig | null>(null);
+  const { user, hasPermission } = useAuthStore();
+  const canFetchModels = user?.is_staff || hasPermission("ai_fetch_models");
+  const [fetchingModelsIdx, setFetchingModelsIdx] = useState<number | null>(null);
+  const [availableModels, setAvailableModels] = useState<Record<number, string[]>>({});
+  const [expandedModels, setExpandedModels] = useState<Record<number, boolean>>({});
+  const [modelSearchKeywords, setModelSearchKeywords] = useState<Record<number, string>>({});
+  const [modelFetchMsg, setModelFetchMsg] = useState<Record<number, { type: "success" | "error" | "warn"; text: string }>>({});
+
+  const handleFetchModels = async (idx: number, silent = false) => {
+    const cfg = aiConfigs[idx];
+    if (!cfg || !cfg.api_key.trim()) {
+      if (!silent) {
+        setModelFetchMsg((prev) => ({ ...prev, [idx]: { type: "warn", text: "请先填写 API Key" } }));
+      }
+      return;
+    }
+    setFetchingModelsIdx(idx);
+    try {
+      const res = await authApi.fetchAIModels({
+        config_index: idx,
+        api_key: cfg.api_key.trim(),
+        base_url: (cfg.base_url || "").trim(),
+      });
+      const data = res.data;
+      if (data?.success && data.models && data.models.length > 0) {
+        setAvailableModels((prev) => ({ ...prev, [idx]: data.models }));
+        setExpandedModels((prev) => ({ ...prev, [idx]: true }));
+        setModelFetchMsg((prev) => ({
+          ...prev,
+          [idx]: { type: "success", text: `成功获取 ${data.models.length} 个可用模型（选择可自动填入）` },
+        }));
+      } else {
+        if (!silent) {
+          setModelFetchMsg((prev) => ({
+            ...prev,
+            [idx]: { type: "error", text: data?.message || "获取模型列表失败" },
+          }));
+        }
+      }
+    } catch (err: any) {
+      if (!silent) {
+        const msg = err.response?.data?.message || err.message || "请求模型列表异常";
+        setModelFetchMsg((prev) => ({ ...prev, [idx]: { type: "error", text: msg } }));
+      }
+    } finally {
+      setFetchingModelsIdx(null);
+    }
+  };
 
   useEffect(() => {
     if (!accessDenied) {
@@ -177,7 +227,30 @@ export default function AIConfigPage() {
                     />
                   </div>
                   <div>
-                                        <label className="label">模型名称</label>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="label mb-0">模型名称</label>
+                      {canFetchModels && (
+                        <button
+                          type="button"
+                          onClick={() => handleFetchModels(idx)}
+                          disabled={fetchingModelsIdx === idx}
+                          className="inline-flex items-center gap-1 text-[11px] font-medium text-brand-600 hover:text-brand-700 disabled:opacity-50"
+                          title="从远端服务拉取可用模型列表"
+                        >
+                          {fetchingModelsIdx === idx ? (
+                            <>
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                              <span>获取中...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Sparkles className="h-3 w-3" />
+                              <span>获取模型列表</span>
+                            </>
+                          )}
+                        </button>
+                      )}
+                    </div>
                     <input
                       className="input"
                       placeholder="gpt-4o-mini"
@@ -186,6 +259,141 @@ export default function AIConfigPage() {
                     />
                   </div>
                 </div>
+
+                {/* 模型拉取反馈提示 */}
+                {modelFetchMsg[idx] && (
+                  <div className={`mt-2 flex items-center justify-between rounded-lg px-2.5 py-1.5 text-xs ${
+                    modelFetchMsg[idx].type === "success"
+                      ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                      : modelFetchMsg[idx].type === "warn"
+                      ? "bg-amber-50 text-amber-700 border border-amber-200"
+                      : "bg-red-50 text-red-600 border border-red-200"
+                  }`}>
+                    <span className="truncate">{modelFetchMsg[idx].text}</span>
+                    <button
+                      type="button"
+                      onClick={() => setModelFetchMsg((prev) => { const n = { ...prev }; delete n[idx]; return n; })}
+                      className="ml-2 text-gray-400 hover:text-gray-600"
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
+
+                {/* 候选模型选择面板（支持折叠/展开与选中后自动折叠） */}
+                {availableModels[idx] && availableModels[idx].length > 0 && (
+                  (() => {
+                    const allModels = availableModels[idx];
+                    const kw = (modelSearchKeywords[idx] || "").trim().toLowerCase();
+                    const filteredList = kw
+                      ? allModels.filter((m) => m.toLowerCase().includes(kw))
+                      : allModels;
+                    const isExpanded = !!expandedModels[idx];
+
+                    return !isExpanded ? (
+                      /* 收起状态精简条：显示已选模型与展开按钮，避免页面数据铺满 */
+                      <div className="mt-2.5 flex items-center justify-between rounded-lg bg-gray-50/90 px-3 py-1.5 text-xs border border-gray-200">
+                        <div className="flex items-center gap-1.5 text-gray-600 min-w-0">
+                          <ListFilter className="h-3.5 w-3.5 text-brand-500 shrink-0" />
+                          <span className="truncate">已拉取 <b>{allModels.length}</b> 个可用模型</span>
+                          {cfg.model && (
+                            <span className="text-gray-400 truncate hidden sm:inline">
+                              · 已选：<span className="font-mono text-brand-600 font-semibold">{cfg.model}</span>
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => setExpandedModels((prev) => ({ ...prev, [idx]: true }))}
+                            className="inline-flex items-center gap-1 rounded-md bg-white px-2 py-0.5 text-xs font-medium text-brand-600 hover:text-brand-700 border border-gray-200 shadow-2xs cursor-pointer"
+                            title="展开模型列表以更换模型"
+                          >
+                            <span>展开列表</span>
+                            <ChevronDown className="h-3.5 w-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAvailableModels((prev) => { const n = { ...prev }; delete n[idx]; return n; });
+                              setExpandedModels((prev) => { const n = { ...prev }; delete n[idx]; return n; });
+                            }}
+                            className="text-gray-400 hover:text-gray-600 p-0.5 cursor-pointer"
+                            title="清除此模型候选缓存"
+                          >
+                            <X className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      /* 展开状态：支持过滤筛选，选中指定模型后立即自动折叠收起 */
+                      <div className="mt-2.5 rounded-xl bg-gray-50/90 p-3 border border-brand-200/80 shadow-2xs">
+                        <div className="flex items-center justify-between pb-2 mb-2 border-b border-gray-200/60 text-xs">
+                          <span className="font-semibold flex items-center gap-1.5 text-gray-700">
+                            <ListFilter className="h-3.5 w-3.5 text-brand-500" />
+                            <span>候选模型列表 ({filteredList.length}/{allModels.length})</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setExpandedModels((prev) => ({ ...prev, [idx]: false }))}
+                            className="inline-flex items-center gap-1 text-xs text-gray-600 hover:text-gray-800 font-medium bg-white px-2.5 py-0.5 rounded-md border border-gray-200 shadow-2xs cursor-pointer"
+                            title="折叠收起列表"
+                          >
+                            <ChevronUp className="h-3.5 w-3.5" />
+                            <span>折叠收起</span>
+                          </button>
+                        </div>
+
+                        {allModels.length > 6 && (
+                          <div className="mb-2">
+                            <input
+                              className="input text-xs py-1 px-2.5 bg-white w-full"
+                              placeholder="输入关键词快速筛选模型 (如 gpt, claude, deepseek)..."
+                              value={modelSearchKeywords[idx] || ""}
+                              onChange={(e) => setModelSearchKeywords((prev) => ({ ...prev, [idx]: e.target.value }))}
+                            />
+                          </div>
+                        )}
+
+                        <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto pr-1">
+                          {filteredList.map((m) => (
+                            <button
+                              key={m}
+                              type="button"
+                              onClick={() => {
+                                setAIConfigs((prev) => prev.map((c, i) => i === idx ? { ...c, model: m } : c));
+                                // 核心优化：选中指定模型后立即自动折叠收起列表，防止页面膨胀
+                                setExpandedModels((prev) => ({ ...prev, [idx]: false }));
+                              }}
+                              className={`rounded-lg px-2.5 py-1 text-xs transition font-mono cursor-pointer ${
+                                cfg.model === m
+                                  ? "bg-brand-500 text-white font-medium shadow-sm"
+                                  : "bg-white text-gray-700 hover:bg-brand-50 hover:text-brand-600 border border-gray-200"
+                              }`}
+                              title="点击选用此模型并自动折叠收起"
+                            >
+                              {m}
+                            </button>
+                          ))}
+                          {filteredList.length === 0 && (
+                            <span className="text-xs text-gray-400 py-1">未匹配到相关模型</span>
+                          )}
+                        </div>
+
+                        <div className="mt-2 pt-1.5 border-t border-gray-200/50 flex items-center justify-between text-[11px] text-gray-400">
+                          <span>💡 点击任意模型即可自动填入并折叠收起</span>
+                          <button
+                            type="button"
+                            onClick={() => setExpandedModels((prev) => ({ ...prev, [idx]: false }))}
+                            className="text-brand-600 hover:underline font-medium cursor-pointer"
+                          >
+                            收起
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()
+                )}
                 {/* 一键测试与状态提示 */}
                 <div className="mt-3 flex items-center justify-between border-t border-gray-200/60 pt-2.5">
                   <div className="flex-1 min-w-0 pr-2">

@@ -5,7 +5,7 @@ import { healthApi } from "@/api/services";
 import { authApi } from "@/api/auth";
 import { extractGestationAnchor, gestationLabel } from "@/utils/gestation";
 import type { HealthRecord } from "@/types";
-import type { BmiAnalysisResult } from "@/types/health";
+import type { BmiAnalysisResult, PregnancyStage } from "@/types/health";
 import GrowthChart from "@/components/GrowthChart";
 import VaccineCalendar from "@/components/VaccineCalendar";
 import HealthCalendar from "@/components/HealthCalendar";
@@ -42,7 +42,16 @@ export default function HealthPage() {
   const [loading, setLoading] = useState(true);
   const [showCheckIn, setShowCheckIn] = useState(false);
   const [checkInDate, setCheckInDate] = useState<string | undefined>(undefined);
+  const [checkInMode, setCheckInMode] = useState<"mom_pregnancy" | "mom_postpartum" | "mom_general" | "baby" | undefined>(undefined);
+  const [bmiStageType, setBmiStageType] = useState<PregnancyStage>(() =>
+    user?.is_pregnant
+      ? "pregnancy"
+      : !user?.is_pregnant && user?.baby_birthday
+      ? "postpartum"
+      : "general"
+  );
   const [showImport, setShowImport] = useState(false);
+  const [importTarget, setImportTarget] = useState<"mom" | "baby">("mom");
   const [toast, setToast] = useState("");
   const [calendarMonth, setCalendarMonth] = useState(() => new Date());
   // v1.59/v1.60：跨组件同步触发器、宝宝性别基准与最新分析报告联动
@@ -92,9 +101,30 @@ export default function HealthPage() {
     load();
   }, [tab]);
 
-  /** 打开健康打卡弹窗（可选预填日期，供时间轴补录） */
-  const openCheckIn = (date?: string) => {
+  /** 打开 CSV 批量导入弹窗：导入对象根据当前子页面自动联动匹配 */
+  const openImport = (targetOverride?: "mom" | "baby") => {
+    setImportTarget(targetOverride || (tab === "growth" ? "baby" : "mom"));
+    setShowImport(true);
+  };
+
+  /** 打开健康打卡弹窗：记录类型根据当前子页面自动联动匹配 */
+  const openCheckIn = (date?: string, targetMode?: "mom_pregnancy" | "mom_postpartum" | "mom_general" | "baby") => {
     setCheckInDate(date || undefined);
+    if (targetMode) {
+      setCheckInMode(targetMode);
+    } else if (tab === "growth") {
+      setCheckInMode("baby");
+    } else if (tab === "mom") {
+      setCheckInMode(
+        bmiStageType === "pregnancy"
+          ? "mom_pregnancy"
+          : bmiStageType === "postpartum"
+          ? "mom_postpartum"
+          : "mom_general"
+      );
+    } else {
+      setCheckInMode(undefined);
+    }
     setShowCheckIn(true);
   };
 
@@ -131,6 +161,21 @@ export default function HealthPage() {
   // ===== v1.55/1.56 统一数据口径：妈妈记录 = prenatal_exam；宝宝记录 = growth_measurement =====
   const momRecords = records.filter((r) => r.record_type === "prenatal_exam");
   const growthRecords = records.filter((r) => r.record_type === "growth_measurement");
+
+  // 妈妈最近一次打卡基线身高（用于健康打卡自动继承）
+  const latestMomHeight = useMemo(() => {
+    const rec = momRecords.find((r) => r.height && r.height > 0);
+    return rec?.height ?? null;
+  }, [momRecords]);
+
+  // 妈妈最近一次打卡基线孕前体重（用于健康打卡与 BMI 分析自动继承）
+  const latestMomPreWeight = useMemo(() => {
+    for (const r of momRecords) {
+      const items = r.exam_items && typeof r.exam_items === "object" ? (r.exam_items as any) : {};
+      if (items.pre_weight && Number(items.pre_weight) > 0) return Number(items.pre_weight);
+    }
+    return null;
+  }, [momRecords]);
 
   // v1.58：首次孕期打卡锚点（打卡弹窗无预产期时孕周自动推算 孕x周x天）
   const gestationAnchor = useMemo(() => extractGestationAnchor(records), [records]);
@@ -181,21 +226,37 @@ export default function HealthPage() {
           <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">健康中心</h1>
           <p className="mt-1 text-sm text-gray-400">妈妈孕产档案 · 宝宝生长与疫苗 · 全周期时间轴</p>
         </div>
-        <div className="flex items-center gap-2">
-          {/* v1.57 CSV 批量导入入口（蓝牙秤 / Apple Health 数据转 CSV 导入，需具备录入权限） */}
-          {hasPermission("health_record_create") && (
-            <button className="btn-secondary gap-1.5" onClick={() => setShowImport(true)} title="健康数据 CSV 批量导入">
-              <FileUp className="h-4 w-4" /> 导入数据
-            </button>
-          )}
-          {hasPermission("health_record_create") ? (
-            <button className="btn-primary" onClick={() => openCheckIn()}>
-              <Plus className="h-4 w-4" /> 健康打卡
-            </button>
-          ) : (
-            <span className="text-xs text-gray-400">管理员已关闭您的健康记录录入权限</span>
-          )}
-        </div>
+        {/* 仅在相关页面（妈妈·孕产档案 与 宝宝·生长档案）展示健康打卡与导入数据，不相关页面（宝宝疫苗、健康时间轴与日历）不做展示 */}
+        {(tab === "mom" || tab === "growth") && (
+          <div className="flex items-center gap-2">
+            {hasPermission("health_record_create") && (
+              <button className="btn-secondary gap-1.5" onClick={() => openImport()} title="健康数据 CSV 批量导入">
+                <FileUp className="h-4 w-4" /> 导入数据
+              </button>
+            )}
+            {hasPermission("health_record_create") ? (
+              <button
+                className="btn-primary"
+                onClick={() =>
+                  openCheckIn(
+                    undefined,
+                    tab === "growth"
+                      ? "baby"
+                      : bmiStageType === "pregnancy"
+                      ? "mom_pregnancy"
+                      : bmiStageType === "postpartum"
+                      ? "mom_postpartum"
+                      : "mom_general"
+                  )
+                }
+              >
+                <Plus className="h-4 w-4" /> 健康打卡
+              </button>
+            ) : (
+              <span className="text-xs text-gray-400">管理员已关闭您的健康记录录入权限</span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Tab 导航 */}
@@ -216,11 +277,13 @@ export default function HealthPage() {
         ))}
       </div>
 
-      {/* 统一健康打卡弹窗（唯一录入入口：妈妈孕期/产后/非孕期 + 宝宝生长测量；v1.58 孕周锚点自动推算） */}
+      {/* 统一健康打卡弹窗（唯一录入入口：记录类型根据子页面自动联动） */}
       <UnifiedHealthCheckIn
         isOpen={showCheckIn}
         onClose={() => setShowCheckIn(false)}
         initialDate={checkInDate}
+        initialMode={checkInMode}
+        initialHeight={latestMomHeight}
         gestationAnchor={gestationAnchor}
         onSaved={(archiveHint, analysisResult) => {
           showToast(archiveHint);
@@ -231,12 +294,16 @@ export default function HealthPage() {
         }}
       />
 
-      {/* v1.57 CSV 批量导入弹窗 */}
+      {/* v1.57 CSV 批量导入弹窗（导入对象根据当前子页面自动联动） */}
       <CsvImportModal
         isOpen={showImport}
+        initialTarget={importTarget}
         onClose={() => setShowImport(false)}
-        onImported={(hint) => {
+        onImported={(hint, resolvedStage) => {
           showToast(hint);
+          if (resolvedStage) {
+            setBmiStageType(resolvedStage);
+          }
           triggerRefresh();
         }}
       />
@@ -247,7 +314,15 @@ export default function HealthPage() {
       ) : tab === "mom" ? (
         <div className="space-y-6">
           {/* 妈妈·孕产档案：BMI 分析（状态卡 + 表单 + 时序看板 + 历史表 + 医学评估） */}
-          <BmiAnalysisView refreshTrigger={refreshTick} onRecordChanged={load} externalAnalysisResult={latestAnalysisResult} />
+          <BmiAnalysisView
+            refreshTrigger={refreshTick}
+            onRecordChanged={load}
+            externalAnalysisResult={latestAnalysisResult}
+            stageType={bmiStageType}
+            onStageTypeChange={(newSt) => setBmiStageType(newSt)}
+            fallbackHeight={latestMomHeight}
+            fallbackPreWeight={latestMomPreWeight}
+          />
         </div>
       ) : tab === "growth" ? (
         <div className="space-y-5">

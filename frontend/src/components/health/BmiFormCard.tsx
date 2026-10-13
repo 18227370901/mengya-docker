@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { Activity, Sparkles, AlertCircle, Calendar, CheckCircle2 } from "lucide-react";
 import { useAuthStore } from "@/store/authStore";
 import { computeGestation, type GestationAnchor } from "@/utils/gestation";
@@ -12,6 +12,8 @@ interface BmiFormCardProps {
   initialPreWeight?: number | null;
   /** v1.58：孕周锚点（首次孕期打卡 日期+孕周；无预产期时自动推算 孕x周x天） */
   gestationAnchor?: GestationAnchor | null;
+  stageType?: PregnancyStage;
+  onStageTypeChange?: (st: PregnancyStage) => void;
 }
 
 const MEDICAL_HISTORY_OPTIONS = [
@@ -30,7 +32,7 @@ function autoPostpartumMonths(babyBirthday: string, recordDate: string): number 
   return Math.max(0, Math.floor((rec.getTime() - birth.getTime()) / (30.44 * 86400000)));
 }
 
-export default function BmiFormCard({ onSubmit, loading, initialHeight, initialPreWeight, gestationAnchor }: BmiFormCardProps) {
+export default function BmiFormCard({ onSubmit, loading, initialHeight, initialPreWeight, gestationAnchor, stageType: externalStageType, onStageTypeChange }: BmiFormCardProps) {
   const { user } = useAuthStore();
   const hasDueDate = !!user?.due_date;
   const hasBabyBirthday = !!user?.baby_birthday;
@@ -41,16 +43,46 @@ export default function BmiFormCard({ onSubmit, loading, initialHeight, initialP
   // v1.56：基线连续预填——最近一次打卡的身高/孕前体重自动带入（仍可修改）
   const [height, setHeight] = useState<string>(initialHeight ? String(initialHeight) : "");
   const [preWeight, setPreWeight] = useState<string>(initialPreWeight ? String(initialPreWeight) : "");
+
+  const lastInitialHeightRef = useRef<number | null>(initialHeight ?? null);
+  const lastInitialPreWeightRef = useRef<number | null>(initialPreWeight ?? null);
+
+  useEffect(() => {
+    if (initialHeight && (initialHeight !== lastInitialHeightRef.current || !height)) {
+      lastInitialHeightRef.current = initialHeight;
+      setHeight(String(initialHeight));
+    }
+  }, [initialHeight]);
+
+  useEffect(() => {
+    if (initialPreWeight && (initialPreWeight !== lastInitialPreWeightRef.current || !preWeight)) {
+      lastInitialPreWeightRef.current = initialPreWeight;
+      setPreWeight(String(initialPreWeight));
+    }
+  }, [initialPreWeight]);
+
   const [curWeight, setCurWeight] = useState<string>("");
   const [waistCircumference, setWaistCircumference] = useState<string>("");
   // v1.55/1.56 档案联动：孕期用户默认孕期；已出生宝宝档案默认产后；其余默认非孕期
-  const [stageType, setStageType] = useState<PregnancyStage>(() =>
-    user && !user.is_pregnant && user.baby_birthday
+  const [stageType, setInternalStageType] = useState<PregnancyStage>(() =>
+    externalStageType ||
+    (user && !user.is_pregnant && user.baby_birthday
       ? "postpartum"
       : user && !user.is_pregnant && !user.baby_birthday
       ? "general"
-      : "pregnancy"
+      : "pregnancy")
   );
+
+  useEffect(() => {
+    if (externalStageType && externalStageType !== stageType) {
+      setInternalStageType(externalStageType);
+    }
+  }, [externalStageType]);
+
+  const setStageType = (newStage: PregnancyStage) => {
+    setInternalStageType(newStage);
+    onStageTypeChange?.(newStage);
+  };
   const [gestationalWeek, setGestationalWeek] = useState<string>("");
   const [gestationalDays, setGestationalDays] = useState<string>("");
   // v1.58：touched 标记——用户手动改过周/天后尊重用户值；日期/阶段变化时重置回自动推算
@@ -187,7 +219,7 @@ export default function BmiFormCard({ onSubmit, loading, initialHeight, initialP
               深度体重/BMI分析与打卡 (WS/T 801-2022)
             </h3>
             <p className="text-xs text-gray-400">
-              完整医学评估入口 · 快速打卡可使用页头「健康打卡」· 身高/孕前体重留空自动继承基线
+              完整医学评估入口 · 快速打卡可使用页头「健康打卡」· 身高与孕前体重已自动带入历史值（支持校准修改）
             </p>
           </div>
         </div>
@@ -340,23 +372,29 @@ export default function BmiFormCard({ onSubmit, loading, initialHeight, initialP
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
           <div>
-            <label className="label">身高 (cm, 首次必填)</label>
+            <label className="label">
+              身高 (cm{height ? "" : "，首次必填"})
+              {height ? <span className="ml-1 text-[10px] text-emerald-600 dark:text-emerald-400">已带入历史值</span> : null}
+            </label>
             <input
               type="number"
-              className="input"
-              placeholder="留空自动继承"
+              className="input font-medium"
+              placeholder="例如 165"
               value={height}
               onChange={(e) => setHeight(e.target.value)}
             />
           </div>
 
           <div>
-            <label className="label">孕前体重 (kg, 选填)</label>
+            <label className="label">
+              孕前体重 (kg，选填)
+              {preWeight ? <span className="ml-1 text-[10px] text-emerald-600 dark:text-emerald-400">已带入基线值</span> : null}
+            </label>
             <input
               type="number"
               step="0.1"
-              className="input"
-              placeholder="留空自动继承基线"
+              className="input font-medium"
+              placeholder="例如 52.0"
               value={preWeight}
               onChange={(e) => setPreWeight(e.target.value)}
             />

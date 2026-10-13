@@ -15,6 +15,7 @@ from .chat import ChatSession, ChatMessage
 from .favorite import UserFavorite
 from .notification import Notification
 from .system import SystemSetting, InviteLink
+from .daily_tip import DailyTip
 from .fetal_story import FetalStory
 
 __all__ = [
@@ -36,6 +37,7 @@ __all__ = [
     "ChatMessage",
     "UserFavorite",
     "Notification",
+    "DailyTip",
     "SystemSetting",
     "InviteLink",
     "FetalStory",

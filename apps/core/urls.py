@@ -1,7 +1,7 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
-from . import views, views_searxng
+from . import views, views_searxng, views_daily_tips
 
 router = DefaultRouter()
 router.register(r"babies", views.BabyViewSet, basename="baby")
@@ -28,6 +28,10 @@ urlpatterns = [
     path("users/me/", views.MeView.as_view(), name="me"),
     path("users/ai-config/", views.AIConfigView.as_view(), name="ai-config"),
     path("users/ai-config/test/", views.AIConfigTestView.as_view(), name="ai-config-test"),
+    path("users/ai-config/models/", views.AIConfigModelsView.as_view(), name="ai-config-models"),
+    path("weather/query/", views.WeatherQueryView.as_view(), name="weather-query"),
+    path("weather/home/", views.HomeWeatherView.as_view(), name="weather-home"),
+    path("weather/holiday/<int:year>/", views.HolidayYearView.as_view(), name="weather-holiday"),
     path("users/ai-auth/", views.AIAuthManageView.as_view(), name="ai-auth-manage"),
     path("users/permissions/", views.UserPermissionsView.as_view(), name="user-permissions"),
     path("admin/permissions/", views.AdminPermissionsView.as_view(), name="admin-permissions"),
@@ -53,5 +57,13 @@ urlpatterns = [
     path("ai/sessions/<int:session_id>/", views.ai_session_detail, name="ai-session-detail"),
     path("ai/sessions/<int:session_id>/rename/", views.ai_session_rename, name="ai-session-rename"),
     path("ai/sessions/<int:session_id>/delete/", views.ai_session_delete, name="ai-session-delete"),
+    # 今日关怀小锦囊 API
+    path("daily-tips/", views_daily_tips.public_daily_tips_view, name="daily-tips-public"),
+    path("admin/daily-tips/", views_daily_tips.admin_daily_tips_list_create_view, name="admin-daily-tips-list-create"),
+    path("admin/daily-tips/<int:pk>/", views_daily_tips.admin_daily_tip_detail_view, name="admin-daily-tips-detail"),
+    path("admin/daily-tips/batch-status/", views_daily_tips.admin_daily_tips_batch_status_view, name="admin-daily-tips-batch-status"),
+    path("admin/daily-tips/batch-delete/", views_daily_tips.admin_daily_tips_batch_delete_view, name="admin-daily-tips-batch-delete"),
+    path("admin/daily-tips/config/", views_daily_tips.admin_daily_tips_config_view, name="admin-daily-tips-config"),
+    path("admin/daily-tips/reset-builtin/", views_daily_tips.admin_daily_tips_reset_builtin_view, name="admin-daily-tips-reset-builtin"),
     path("", include(router.urls)),
 ]

@@ -100,7 +100,7 @@ def calculate_baby_age(baby_birthday: date, today: Optional[date] = None) -> dic
     else:
         age_str = f"{days}天"
 
-    if total_months <= 3:
+    if days <= 28:
         period = "新生儿期"
     elif total_months <= 12:
         period = "婴儿期"
