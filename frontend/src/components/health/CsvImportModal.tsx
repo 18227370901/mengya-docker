@@ -10,6 +10,7 @@ interface CsvImportModalProps {
   /** 保存成功后回调，展示提示文案及可选的归档阶段类型 */
   onImported: (hint: string, importedStage?: "pregnancy" | "postpartum" | "general") => void;
   initialTarget?: ImportTarget;
+  motherId?: number | null;
 }
 
 type ImportTarget = "mom" | "baby";
@@ -112,7 +113,7 @@ function matchColumnKey(headerText: string, target: ImportTarget): string | null
   return null;
 }
 
-export default function CsvImportModal({ isOpen, onClose, onImported, initialTarget }: CsvImportModalProps) {
+export default function CsvImportModal({ isOpen, onClose, onImported, initialTarget, motherId }: CsvImportModalProps) {
   const { user } = useAuthStore();
   const defaultProfileStage = useMemo<"pregnancy" | "postpartum" | "general">(() => {
     if (user?.is_pregnant) return "pregnancy";
@@ -326,6 +327,7 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
         target,
         conflict_strategy: strategy,
         records: rowsToSubmit,
+        mother_id: target === "mom" && motherId ? motherId : undefined,
       });
       setResult(res);
       if (res.errors.length === 0) {

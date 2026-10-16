@@ -1,3 +1,4 @@
+import type { BabyProfile } from "@/types";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Scale, CheckCircle2, ArrowUpRight, ArrowDownRight, ChevronUp, ChevronDown, FileText } from "lucide-react";
 import { healthApi } from "@/api/services";
@@ -26,6 +27,8 @@ interface BmiAnalysisViewProps {
   onStageTypeChange?: (st: PregnancyStage) => void;
   fallbackHeight?: number | null;
   fallbackPreWeight?: number | null;
+  motherId?: number | null;
+  babies?: BabyProfile[];
 }
 
 export default function BmiAnalysisView({
@@ -36,6 +39,8 @@ export default function BmiAnalysisView({
   onStageTypeChange,
   fallbackHeight,
   fallbackPreWeight,
+  motherId,
+  babies,
 }: BmiAnalysisViewProps = {}) {
   const [loading, setLoading] = useState<boolean>(false);
   const [result, setResult] = useState<BmiAnalysisResult | null>(() => {
@@ -71,18 +76,18 @@ export default function BmiAnalysisView({
     setTimeout(() => setToast(""), 4000);
   };
 
-  /** 拉取全时序测量打卡历史（看板与历史表共用数据源） */
+  /** 拉取全时序测量打卡历史（看板与历史表共用数据源，按妈妈维度隔离） */
   const loadTimeseries = useCallback(async () => {
     setHistoryLoading(true);
     try {
-      const data = await healthApi.getBmiTimeseries();
+      const data = await healthApi.getBmiTimeseries(motherId ? { mother_id: motherId } : undefined);
       setTimeseries(data?.timeseries || []);
     } catch {
       setTimeseries([]);
     } finally {
       setHistoryLoading(false);
     }
-  }, []);
+  }, [motherId]);
 
   useEffect(() => {
     loadTimeseries();
@@ -102,7 +107,12 @@ export default function BmiAnalysisView({
   const handleAnalyze = async (data: BmiAnalysisInput, overwrite = false) => {
     setLoading(true);
     try {
-      const res = await healthApi.analyzeBmi(overwrite ? { ...data, overwrite: true } : data);
+      const payload: BmiAnalysisInput = {
+        ...data,
+        mother_id: motherId || undefined,
+        overwrite: overwrite ? true : undefined,
+      };
+      const res = await healthApi.analyzeBmi(payload);
       updateResult(res);
       // 分析打卡已自动持久化，优先直接采用响应内带回的最新时序，失败再回源拉取
       if (res?.timeseries) {
@@ -322,6 +332,7 @@ export default function BmiAnalysisView({
         gestationAnchor={gestationAnchor}
         stageType={stageType}
         onStageTypeChange={onStageTypeChange}
+        babies={babies}
       />
 
       {/* 卡片 2: 多维度时序图表看板（趋势折线 / 增量柱状 + 时间跨度筛选） */}

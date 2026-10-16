@@ -1,6 +1,7 @@
 from .user import ROLE_CHOICES, User
 from .audit import AuditLog
 from .baby import BabyProfile
+from .mother import MotherProfile
 from .timeline import TimelineEvent
 from .recipe import Recipe
 from .kids_encyclopedia import KidsEncyclopedia
@@ -22,6 +23,7 @@ __all__ = [
     "User",
     "AuditLog",
     "BabyProfile",
+    "MotherProfile",
     "TimelineEvent",
     "Recipe",
     "KidsEncyclopedia",

@@ -5,8 +5,6 @@ import {
   PersonStanding,
   Activity,
   Calendar,
-  Scale,
-  Ruler,
   Loader2,
   CheckCircle2,
   X,
@@ -15,8 +13,9 @@ import {
 } from "lucide-react";
 import { useAuthStore } from "@/store/authStore";
 import { healthApi } from "@/api/services";
+import { authApi } from "@/api/auth";
 import { computeGestation, gestationLabel, type GestationAnchor } from "@/utils/gestation";
-import type { BmiAnalysisInput, HealthRecord } from "@/types";
+import type { BmiAnalysisInput, HealthRecord, BabyProfile } from "@/types";
 import type { BmiAnalysisResult, SameDayConflictPayload } from "@/types/health";
 
 /**
@@ -36,11 +35,18 @@ interface UnifiedHealthCheckInProps {
   initialDate?: string;
   /** 初始记录类型（由外层页面根据子页面上下文联动传入） */
   initialMode?: CheckInMode;
+  /** 允许展示的打卡模式（用于子页面严格隔离，避免模式混淆） */
+  allowedModes?: CheckInMode[];
   /** 历史打卡基线身高（自动继承；无历史时首次必填） */
   initialHeight?: number | null;
   /** v1.58：孕周锚点（首次孕期打卡的 日期+孕周；无预产期时自动推算 孕x周x天） */
   gestationAnchor?: GestationAnchor | null;
   onModeChange?: (mode: CheckInMode) => void;
+  motherId?: number | null;
+  initialBabyId?: number | null;
+  babies?: BabyProfile[];
+  initialRecord?: HealthRecord | null;
+  allRecords?: HealthRecord[];
 }
 
 /** 依据宝宝生日自动推算天数差 */
@@ -51,12 +57,74 @@ function daysBetween(fromDate: string, toDate: string): number | null {
   return Math.max(0, Math.floor((to.getTime() - from.getTime()) / 86400000));
 }
 
-export default function UnifiedHealthCheckIn({ isOpen, onClose, onSaved, initialDate, initialMode, initialHeight, gestationAnchor, onModeChange }: UnifiedHealthCheckInProps) {
+export default function UnifiedHealthCheckIn({
+  isOpen,
+  onClose,
+  onSaved,
+  initialDate,
+  initialMode,
+  allowedModes,
+  initialHeight,
+  gestationAnchor,
+  onModeChange,
+  motherId,
+  initialBabyId,
+  babies,
+  initialRecord,
+  allRecords,
+}: UnifiedHealthCheckInProps) {
+  const effectiveAllowedModes = useMemo(() => {
+    if (allowedModes && allowedModes.length > 0) return allowedModes;
+    return ['mom_pregnancy', 'mom_postpartum', 'mom_general', 'baby'] as CheckInMode[];
+  }, [allowedModes]);
+  const [babyList, setBabyList] = useState<BabyProfile[]>(() => babies || []);
+  const [selectedBabyId, setSelectedBabyId] = useState<number | null>(() => (initialBabyId != null ? Number(initialBabyId) : null));
+
+  useEffect(() => {
+    if (babies && babies.length > 0) {
+      setBabyList(babies);
+    } else if (isOpen) {
+      authApi.babies().then(setBabyList).catch(() => {});
+    }
+  }, [isOpen, babies]);
+
+  useEffect(() => {
+    if (isOpen) {
+      if (initialRecord?.baby != null) {
+        setSelectedBabyId(Number(initialRecord.baby));
+      } else if (initialBabyId != null) {
+        setSelectedBabyId(Number(initialBabyId));
+      } else if (initialRecord?.baby_name && babyList.length > 0) {
+        const found = babyList.find((b) => b.name === initialRecord.baby_name);
+        if (found) setSelectedBabyId(Number(found.id));
+      } else if (babyList.length > 0) {
+        const def = babyList.find((b) => b.is_primary) || babyList[0];
+        setSelectedBabyId(Number(def?.id || null));
+      }
+    }
+  }, [isOpen, initialBabyId, initialRecord, babyList]);
+
+  const activeBaby = useMemo(() => {
+    if (selectedBabyId != null) {
+      const found = babyList.find((b) => Number(b.id) === Number(selectedBabyId));
+      if (found) return found;
+    }
+    return babyList.find((b) => b.is_primary) || babyList[0] || null;
+  }, [babyList, selectedBabyId]);
   const { user } = useAuthStore();
-  const hasDueDate = !!user?.due_date;
-  const hasBabyBirthday = !!user?.baby_birthday;
-  // v1.58：无预产期但有首次打卡锚点时，孕周同样自动推算（不强制手填）
-  const hasAutoBasis = hasDueDate || !!gestationAnchor;
+  const pregnantBaby = useMemo(() => {
+    return babyList.find((b) => b.is_born === false || (b.birthday && new Date(b.birthday) > new Date())) || null;
+  }, [babyList]);
+
+  const bornBabies = useMemo(() => {
+    return babyList.filter((b) => b.is_born !== false && (!b.birthday || new Date(b.birthday) <= new Date()));
+  }, [babyList]);
+
+  const effectiveDueDate = pregnantBaby?.birthday || user?.due_date;
+  const hasDueDate = Boolean(effectiveDueDate);
+  const hasBabyBirthday = Boolean(bornBabies.length > 0 || user?.baby_birthday);
+  // v1.58：孕期宝宝预产期/用户预产期或首次打卡锚点自动推算
+  const hasAutoBasis = Boolean(effectiveDueDate || gestationAnchor);
 
   const [mode, setInternalMode] = useState<CheckInMode>("mom_pregnancy");
 
@@ -88,32 +156,163 @@ export default function UnifiedHealthCheckIn({ isOpen, onClose, onSaved, initial
   }>(null);
   const todayStr = new Date().toISOString().slice(0, 10);
 
-  // 档案智能默认：优先遵从外层子页面传入的 initialMode；未指定时孕期用户默认孕期打卡；已出生宝宝默认宝宝测量
+  // 打开/关闭/切换关键维度时重置冲突覆盖态，确保绝不无故预先展示覆盖确认框
+  useEffect(() => {
+    if (!isOpen) {
+      setConflict(null);
+    }
+  }, [isOpen]);
+
+  useEffect(() => {
+    setConflict(null);
+  }, [recordDate, mode, selectedBabyId]);
+
+  // 1. 打开弹窗或传入 initialRecord 时，解析初始打卡模式与初始日期
   useEffect(() => {
     if (!isOpen) return;
     setErrorMsg("");
-    if (initialMode) {
-      setMode(initialMode);
-    } else if (user?.is_pregnant) {
-      setMode("mom_pregnancy");
-    } else if (user?.baby_birthday) {
-      setMode("baby");
+    setConflict(null);
+
+    if (initialRecord) {
+      const recItems = (initialRecord.exam_items && typeof initialRecord.exam_items === "object" ? initialRecord.exam_items : {}) as Record<string, unknown>;
+      const recStage = (recItems.stage as string) || initialRecord.stage_type;
+      let resolvedMode: CheckInMode = "mom_general";
+
+      if (
+        initialRecord.record_type === "growth_measurement" ||
+        initialRecord.record_type === "vaccination" ||
+        initialRecord.record_type === "vaccine"
+      ) {
+        resolvedMode = "baby";
+      } else if (initialRecord.record_type === "postpartum_recovery" || recStage === "postpartum") {
+        resolvedMode = "mom_postpartum";
+      } else if (initialRecord.record_type === "prenatal_exam" || initialRecord.record_type === "checkup" || recStage === "pregnancy" || initialRecord.gestational_week) {
+        resolvedMode = "mom_pregnancy";
+      } else if (recStage === "general") {
+        resolvedMode = "mom_general";
+      } else if (initialMode && effectiveAllowedModes.includes(initialMode)) {
+        resolvedMode = initialMode;
+      }
+      setMode(resolvedMode);
+      setRecordDate(initialRecord.record_date || new Date().toISOString().slice(0, 10));
+
+      if (initialRecord.baby != null) {
+        setSelectedBabyId(Number(initialRecord.baby));
+      } else if (initialRecord.baby_name && babyList.length > 0) {
+        const found = babyList.find((b) => b.name === initialRecord.baby_name);
+        if (found) setSelectedBabyId(Number(found.id));
+      }
     } else {
-      setMode("mom_general");
+      if (initialMode && effectiveAllowedModes.includes(initialMode)) {
+        setMode(initialMode);
+      } else if (effectiveAllowedModes.includes("mom_pregnancy") && user?.is_pregnant) {
+        setMode("mom_pregnancy");
+      } else if (effectiveAllowedModes.includes("baby") && (user?.baby_birthday || babyList.length > 0)) {
+        setMode("baby");
+      } else {
+        setMode(effectiveAllowedModes[0] || "mom_general");
+      }
+      setRecordDate(initialDate || new Date().toISOString().slice(0, 10));
     }
-    setRecordDate(initialDate || new Date().toISOString().slice(0, 10));
-    setHeight(initialHeight ? String(initialHeight) : "");
-    setWeight("");
-    setWaist("");
-    setManualWeek("");
-    setManualDays("");
-    setWeekTouched(false);
-    setDaysTouched(false);
-    setBabyHeight("");
-    setBabyWeight("");
-    setBabyHead("");
-    setNote("");
-  }, [isOpen, initialMode, user?.is_pregnant, user?.baby_birthday, initialDate, initialHeight]);
+  }, [
+    isOpen,
+    initialRecord,
+    initialMode,
+    initialDate,
+    effectiveAllowedModes,
+    user?.is_pregnant,
+    user?.baby_birthday,
+  ]);
+
+  // 2. 当日期、打卡对象（宝宝/妈妈）或打卡模式切换时，自动回显对应记录数据至输入框（多宝宝/妈妈数据隔离）
+  useEffect(() => {
+    if (!isOpen) return;
+
+    let targetRec: HealthRecord | null = null;
+    const isBaby = mode === "baby";
+
+    // 优先采用直接传入的 initialRecord（若与当前日期、模式、宝宝匹配）
+    if (initialRecord && initialRecord.record_date === recordDate) {
+      const isInitialBaby = initialRecord.record_type === "growth_measurement" || initialRecord.record_type === "vaccination" || initialRecord.record_type === "vaccine";
+      if (isBaby && isInitialBaby) {
+        if (!initialRecord.baby || Number(initialRecord.baby) === Number(activeBaby?.id) || initialRecord.baby_name === activeBaby?.name) {
+          targetRec = initialRecord;
+        }
+      } else if (!isBaby && !isInitialBaby) {
+        targetRec = initialRecord;
+      }
+    }
+
+    // 若未匹配 initialRecord，则在全局 records 中按日期 + 目标宝宝/妈妈检索
+    if (!targetRec && allRecords && allRecords.length > 0) {
+      if (isBaby && activeBaby) {
+        targetRec = allRecords.find((r) =>
+          r.record_date === recordDate &&
+          (r.record_type === "growth_measurement" || r.record_type === "vaccination" || r.record_type === "vaccine") &&
+          (Number(r.baby) === Number(activeBaby.id) || r.baby_name === activeBaby.name)
+        ) || null;
+      } else if (!isBaby) {
+        targetRec = allRecords.find((r) =>
+          r.record_date === recordDate &&
+          r.record_type === "prenatal_exam"
+        ) || null;
+      }
+    }
+
+    if (targetRec) {
+      const items = (targetRec.exam_items && typeof targetRec.exam_items === "object" ? targetRec.exam_items : {}) as Record<string, unknown>;
+      if (isBaby) {
+        const h = targetRec.height != null ? String(targetRec.height) : (items.height != null ? String(items.height) : "");
+        const w = targetRec.weight != null ? String(targetRec.weight) : (items.weight != null ? String(items.weight) : "");
+        const head = targetRec.head_circumference != null ? String(targetRec.head_circumference) : (items.head_circumference != null ? String(items.head_circumference) : "");
+        setBabyHeight(h);
+        setBabyWeight(w);
+        setBabyHead(head);
+      } else {
+        const h = targetRec.height != null ? String(targetRec.height) : (items.height != null ? String(items.height) : (initialHeight ? String(initialHeight) : ""));
+        const w = targetRec.weight != null ? String(targetRec.weight) : (items.weight != null ? String(items.weight) : "");
+        const waistVal = targetRec.waist_circumference != null ? String(targetRec.waist_circumference) : (items.waist_circumference != null ? String(items.waist_circumference) : "");
+        setHeight(h);
+        setWeight(w);
+        setWaist(waistVal);
+
+        const gw = targetRec.gestational_week != null ? targetRec.gestational_week : (items.gestational_week as number | undefined);
+        if (gw != null) {
+          setManualWeek(String(gw));
+          setWeekTouched(true);
+        }
+        const gd = targetRec.gestational_day != null ? targetRec.gestational_day : (items.gestational_days as number | undefined);
+        if (gd != null) {
+          setManualDays(String(gd));
+          setDaysTouched(true);
+        }
+      }
+      setNote(targetRec.note || targetRec.notes || (items.note as string) || "");
+    } else {
+      if (isBaby) {
+        setBabyHeight("");
+        setBabyWeight("");
+        setBabyHead("");
+      } else {
+        setHeight(initialHeight ? String(initialHeight) : "");
+        setWeight("");
+        setWaist("");
+        setManualWeek("");
+        setManualDays("");
+        setWeekTouched(false);
+        setDaysTouched(false);
+      }
+      setNote("");
+    }
+  }, [
+    isOpen,
+    recordDate,
+    mode,
+    activeBaby?.id,
+    initialRecord,
+    allRecords,
+    initialHeight,
+  ]);
 
   useEffect(() => {
     if (isOpen && initialHeight && (!height || height === "")) {
@@ -121,17 +320,17 @@ export default function UnifiedHealthCheckIn({ isOpen, onClose, onSaved, initial
     }
   }, [isOpen, initialHeight]);
 
-  // v1.58 孕周双基准自动推算（与后端一致）：预产期 280 天模型 > 首次打卡锚点线性外推；
+  // v1.58 孕周多基准自动推算（与后端一致）：孕期宝宝预产期 > 档案预产期 > 首次打卡锚点线性外推；
   const gestation = useMemo(() => {
     if (mode !== "mom_pregnancy") return null;
-    if (user?.due_date) {
-      return computeGestation({ date: user.due_date, week: 40 }, recordDate);
+    if (effectiveDueDate) {
+      return computeGestation({ date: effectiveDueDate, week: 40 }, recordDate);
     }
     if (gestationAnchor) {
       return computeGestation(gestationAnchor, recordDate);
     }
     return null;
-  }, [mode, user?.due_date, gestationAnchor, recordDate]);
+  }, [mode, effectiveDueDate, gestationAnchor, recordDate]);
 
   // 日期/模式变化时解除手动编辑态 → 回到自动推算展示（v1.58 派生显示值方案，无 effect 填充竞态）
   useEffect(() => {
@@ -143,18 +342,32 @@ export default function UnifiedHealthCheckIn({ isOpen, onClose, onSaved, initial
   const weekDisplay = !weekTouched && gestation ? String(gestation.week) : manualWeek;
   const daysDisplay = !daysTouched && gestation ? String(gestation.days) : manualDays;
 
-  // 产后天数 / 宝宝天数自动推算
+  // 产后天数 / 宝宝天数 / 孕期自动推算（修复怀孕中宝宝显示0天的缺陷）
+  const effectiveBabyBirthday = activeBaby?.birthday || user?.baby_birthday;
+  const isBabyUnborn =
+    activeBaby?.is_born === false ||
+    (activeBaby?.is_born == null && effectiveBabyBirthday && new Date(effectiveBabyBirthday) > new Date(recordDate));
+
   const babyDays = useMemo(() => {
-    if (!user?.baby_birthday) return null;
-    return daysBetween(user.baby_birthday, recordDate);
-  }, [user?.baby_birthday, recordDate]);
+    if (!effectiveBabyBirthday) return null;
+    return daysBetween(effectiveBabyBirthday, recordDate);
+  }, [effectiveBabyBirthday, recordDate]);
 
   const babyAgeText = useMemo(() => {
+    if (!effectiveBabyBirthday) return null;
+    if (isBabyUnborn) {
+      // 预产期 280 天医学模型推算孕周天数
+      const gest = computeGestation({ date: effectiveBabyBirthday, week: 40 }, recordDate);
+      if (gest) {
+        return `${gest.week}周${gest.days}天`;
+      }
+      return "怀孕中";
+    }
     if (babyDays == null) return null;
     if (babyDays < 30) return `${babyDays} 天`;
     const months = Math.floor(babyDays / 30.44);
     return `${months} 个月（${babyDays} 天）`;
-  }, [babyDays]);
+  }, [effectiveBabyBirthday, isBabyUnborn, recordDate, babyDays]);
 
   // v1.57 宝宝数值软提示（仅黄色警示不阻断提交，用户明确要求不限制录入）
   const babyRangeHints = useMemo(() => {
@@ -175,12 +388,12 @@ export default function UnifiedHealthCheckIn({ isOpen, onClose, onSaved, initial
     return hints;
   }, [mode, babyHeight, babyWeight, babyHead]);
 
-  if (!isOpen) return null;
-
   const isBabyMode = mode === "baby";
   const isPostpartumMode = mode === "mom_postpartum";
   const isGeneralMode = mode === "mom_general";
   const momMode = mode === "mom_pregnancy";
+
+  const primaryBornBaby = bornBabies.find((b) => b.is_primary) || bornBabies[0] || null;
 
   const MODE_OPTIONS: Array<{
     key: CheckInMode;
@@ -191,7 +404,9 @@ export default function UnifiedHealthCheckIn({ isOpen, onClose, onSaved, initial
     {
       key: "mom_pregnancy",
       label: "我 · 孕期产检",
-      desc: hasDueDate
+      desc: pregnantBaby
+        ? `孕周按「${pregnantBaby.name}」预产期自动推算（孕x周x天）`
+        : hasDueDate
         ? "孕周按预产期自动推算（孕x周x天）"
         : gestationAnchor
         ? `孕周按首次打卡 ${gestationAnchor.date} 孕${gestationAnchor.week}周自动推算`
@@ -201,7 +416,11 @@ export default function UnifiedHealthCheckIn({ isOpen, onClose, onSaved, initial
     {
       key: "mom_postpartum",
       label: "我 · 产后恢复",
-      desc: hasBabyBirthday ? "产后天数按宝宝生日自动推算" : "记录产后体重恢复走势",
+      desc: primaryBornBaby
+        ? `产后天数按「${primaryBornBaby.name}」生日自动推算`
+        : hasBabyBirthday
+        ? "产后天数按宝宝生日自动推算"
+        : "记录产后体重恢复走势",
       icon: HeartPulse,
     },
     {
@@ -217,6 +436,10 @@ export default function UnifiedHealthCheckIn({ isOpen, onClose, onSaved, initial
       icon: Baby,
     },
   ];
+
+  const filteredModeOptions = useMemo(() => {
+    return MODE_OPTIONS.filter((o) => effectiveAllowedModes.includes(o.key));
+  }, [MODE_OPTIONS, effectiveAllowedModes]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -266,6 +489,7 @@ export default function UnifiedHealthCheckIn({ isOpen, onClose, onSaved, initial
         const babyPayload: Partial<HealthRecord> = {
           record_type: "growth_measurement",
           record_date: recordDate,
+          baby: activeBaby?.id || undefined,
           baby_age_days: babyDays ?? undefined,
           height: babyHeight ? Number(babyHeight) : undefined,
           weight: babyWeight ? Number(babyWeight) : undefined,
@@ -273,7 +497,7 @@ export default function UnifiedHealthCheckIn({ isOpen, onClose, onSaved, initial
           note: note || undefined,
         };
         await healthApi.create(babyPayload);
-        onSaved("宝宝测量已归档：生长曲线 · 日历总览");
+        onSaved(`宝宝「${activeBaby?.name || "小萌宝"}」测量已归档：生长曲线 · 日历总览`);
       } else {
         // ===== 妈妈打卡（孕期/产后/非孕期）→ BMI 分析接口（自动孕周校验 + 基线继承 + 评估）=====
         const payload: BmiAnalysisInput = {
@@ -284,6 +508,7 @@ export default function UnifiedHealthCheckIn({ isOpen, onClose, onSaved, initial
           waist_circumference_cm: waist ? Number(waist) : undefined,
           medical_history: [],
           is_twins: false,
+          mother_id: motherId || undefined,
         };
         if (momMode) {
           // v1.58：周+天双输入——提交显示值（未手动编辑时为推算值，手动编辑后为用户值）；后端双基准校验周偏差
@@ -315,6 +540,7 @@ export default function UnifiedHealthCheckIn({ isOpen, onClose, onSaved, initial
             babyPayload: {
               record_type: "growth_measurement",
               record_date: recordDate,
+              baby: activeBaby?.id || undefined,
               baby_age_days: babyDays ?? undefined,
               height: babyHeight ? Number(babyHeight) : undefined,
               weight: babyWeight ? Number(babyWeight) : undefined,
@@ -375,6 +601,8 @@ export default function UnifiedHealthCheckIn({ isOpen, onClose, onSaved, initial
       setSaving(false);
     }
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
@@ -443,40 +671,78 @@ export default function UnifiedHealthCheckIn({ isOpen, onClose, onSaved, initial
             </div>
           )}
 
-          {/* 分区 1：记录对象（按档案智能默认，可自由切换覆盖补录场景；v1.57 四模式四列布局） */}
+          {initialRecord && (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-blue-200 bg-blue-50/80 p-3 text-xs text-blue-800 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-200">
+              <div className="flex items-center gap-2">
+                <Info className="h-4 w-4 shrink-0 text-blue-600 dark:text-blue-400" />
+                <span>
+                  已调出【{initialRecord.baby_name ? `${initialRecord.baby_name}宝宝` : initialRecord.record_type === "prenatal_exam" ? "孕期产检" : "健康档案"}】当日记录数据并已自动回显至下方输入框，可直接查看或修改后保存覆盖。
+                </span>
+              </div>
+            </div>
+          )}
+
+                    {/* 分区 1：记录对象（根据所在页面与权限严格隔离记录模式，杜绝混淆） */}
           <div>
             <label className="label">① 我要记录</label>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {MODE_OPTIONS.map((opt) => (
-                <button
-                  key={opt.key}
-                  type="button"
-                  onClick={() => {
-                    setMode(opt.key);
-                    setErrorMsg("");
-                  }}
-                  className={`flex flex-col items-center gap-1 rounded-xl border p-3 text-center transition ${
-                    mode === opt.key
-                      ? "border-brand-400 bg-brand-50 shadow-xs dark:border-brand-600 dark:bg-brand-950/50"
-                      : "border-gray-100 bg-white hover:border-brand-200 dark:border-gray-700 dark:bg-gray-800"
-                  }`}
-                >
-                  <opt.icon
-                    className={`h-5 w-5 ${mode === opt.key ? "text-brand-600 dark:text-brand-400" : "text-gray-400"}`}
-                  />
-                  <span
-                    className={`text-xs font-semibold ${
-                      mode === opt.key ? "text-brand-700 dark:text-brand-300" : "text-gray-600 dark:text-gray-300"
+            {filteredModeOptions.length === 1 ? (
+              <div className="flex items-center gap-3 rounded-xl border border-brand-200 bg-brand-50/70 p-3 dark:border-brand-900/60 dark:bg-brand-950/40">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-500 text-white shadow-xs">
+                  {(() => {
+                    const Icon = filteredModeOptions[0].icon;
+                    return <Icon className="h-5 w-5" />;
+                  })()}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <span className="text-xs font-bold text-brand-800 dark:text-brand-200">
+                    {filteredModeOptions[0].label}
+                  </span>
+                  <p className="mt-0.5 text-[11px] text-gray-500 dark:text-gray-400">
+                    {filteredModeOptions[0].desc}
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className={`grid gap-2 ${
+                filteredModeOptions.length === 3
+                  ? "grid-cols-1 sm:grid-cols-3"
+                  : filteredModeOptions.length === 2
+                  ? "grid-cols-2"
+                  : "grid-cols-2 sm:grid-cols-4"
+              }`}>
+                {filteredModeOptions.map((opt) => (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => {
+                      setMode(opt.key);
+                      setErrorMsg("");
+                    }}
+                    className={`flex flex-col items-center gap-1 rounded-xl border p-3 text-center transition cursor-pointer ${
+                      mode === opt.key
+                        ? "border-brand-400 bg-brand-50 shadow-xs dark:border-brand-600 dark:bg-brand-950/50"
+                        : "border-gray-100 bg-white hover:border-brand-200 dark:border-gray-700 dark:bg-gray-800"
                     }`}
                   >
-                    {opt.label}
-                  </span>
-                </button>
-              ))}
-            </div>
-            <p className="mt-1.5 text-[11px] text-gray-400">
-              {MODE_OPTIONS.find((o) => o.key === mode)?.desc}
-            </p>
+                    <opt.icon
+                      className={`h-5 w-5 ${mode === opt.key ? "text-brand-600 dark:text-brand-400" : "text-gray-400"}`}
+                    />
+                    <span
+                      className={`text-xs font-semibold ${
+                        mode === opt.key ? "text-brand-700 dark:text-brand-300" : "text-gray-600 dark:text-gray-300"
+                      }`}
+                    >
+                      {opt.label}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {filteredModeOptions.length > 1 && (
+              <p className="mt-1.5 text-[11px] text-gray-400">
+                {filteredModeOptions.find((o) => o.key === mode)?.desc}
+              </p>
+            )}
           </div>
 
           {/* 分区 2：日期（默认今天，支持补录；自动回显孕周/产后天数/宝宝月龄） */}
@@ -584,15 +850,14 @@ export default function UnifiedHealthCheckIn({ isOpen, onClose, onSaved, initial
                         <span className="text-[10px] text-amber-500">首次必填</span>
                       )}
                     </label>
-                    <div className="relative">
-                      <Ruler className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                    <div>
                       <input
                         type="number"
                         step="0.1"
                         min={100}
                         max={220}
-                        className="input pl-9 font-medium"
-                        placeholder="例如 165"
+                        className="input font-medium"
+                        placeholder={height || initialHeight ? `已录入: ${height || initialHeight} cm` : "例如 165"}
                         value={height}
                         onChange={(e) => setHeight(e.target.value)}
                         required={!initialHeight && !height}
@@ -601,15 +866,14 @@ export default function UnifiedHealthCheckIn({ isOpen, onClose, onSaved, initial
                   </div>
                   <div>
                     <label className="text-xs text-gray-500 dark:text-gray-400">本次体重 (kg) *</label>
-                    <div className="relative">
-                      <Scale className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                    <div>
                       <input
                         type="number"
                         step="0.1"
                         min={30}
                         max={220}
-                        className="input pl-9"
-                        placeholder="例如 58.2"
+                        className="input"
+                        placeholder={weight ? `已录入: ${weight} kg` : "例如 58.2"}
                         value={weight}
                         onChange={(e) => setWeight(e.target.value)}
                         required
@@ -637,17 +901,73 @@ export default function UnifiedHealthCheckIn({ isOpen, onClose, onSaved, initial
                 </p>
               </div>
             ) : (
-              <div className="space-y-2">
+              <div className="space-y-3">
+                {/* 目标已有宝宝选择栏 */}
+                <div className="rounded-xl border border-orange-100 bg-orange-50/60 p-3 dark:border-gray-700 dark:bg-gray-800/80">
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-bold text-gray-700 dark:text-gray-200 flex items-center gap-1.5">
+                      <Baby className="h-4 w-4 text-orange-500" />
+                      打卡目标宝宝 <span className="text-red-500">*</span>
+                    </label>
+                    {activeBaby && (
+                      <span className="text-[11px] text-gray-400">
+                        {activeBaby.is_born === false
+                          ? `预产期 ${activeBaby.birthday}`
+                          : `出生 ${activeBaby.birthday}`}
+                      </span>
+                    )}
+                  </div>
+                  {babyList.length > 0 ? (
+                    <div className="space-y-2">
+                      <div className="flex flex-wrap gap-2">
+                        {babyList.map((b) => {
+                          const isSelected = Number(b.id) === Number(activeBaby?.id ?? selectedBabyId);
+                          const genderIcon = b.gender === "girl" ? "👧" : b.gender === "boy" ? "👦" : "👶";
+                          return (
+                            <button
+                              key={b.id}
+                              type="button"
+                              onClick={() => setSelectedBabyId(Number(b.id))}
+                              className={`flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition cursor-pointer ${
+                                isSelected
+                                  ? "bg-orange-500 text-white shadow-2xs"
+                                  : "bg-white text-gray-600 border border-gray-200 hover:border-orange-300 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600"
+                              }`}
+                            >
+                              <span>{genderIcon}</span>
+                              <span className="font-semibold">{b.name}</span>
+                              {b.is_primary && (
+                                <span className={`text-[10px] px-1 rounded ${isSelected ? "bg-white/20 text-white" : "bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-300"}`}>
+                                  默认
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {babyAgeText && (
+                        <p className="text-[11px] text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                          <CheckCircle2 className="h-3 w-3 inline" />
+                          已关联「{activeBaby?.name}」档案，当前月龄/天数：{babyAgeText}
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <p className="text-xs text-amber-600 dark:text-amber-400">
+                      暂无宝宝档案，打卡将保存至默认档案「{user?.nickname ? `${user.nickname}的宝宝` : "小萌宝"}」
+                    </p>
+                  )}
+                </div>
+
                 <div className="grid grid-cols-3 gap-3">
                   <div>
                     <label className="text-xs text-gray-500 dark:text-gray-400">身高 (cm)</label>
-                    <div className="relative">
-                      <Ruler className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                    <div>
                       <input
                         type="number"
                         step="0.1"
-                        className="input pl-9"
-                        placeholder="身高"
+                        className="input"
+                        placeholder={babyHeight ? `已录入: ${babyHeight} cm` : "身高"}
                         value={babyHeight}
                         onChange={(e) => setBabyHeight(e.target.value)}
                       />
@@ -655,13 +975,12 @@ export default function UnifiedHealthCheckIn({ isOpen, onClose, onSaved, initial
                   </div>
                   <div>
                     <label className="text-xs text-gray-500 dark:text-gray-400">体重 (kg)</label>
-                    <div className="relative">
-                      <Scale className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                    <div>
                       <input
                         type="number"
                         step="0.1"
-                        className="input pl-9"
-                        placeholder="体重"
+                        className="input"
+                        placeholder={babyWeight ? `已录入: ${babyWeight} kg` : "体重"}
                         value={babyWeight}
                         onChange={(e) => setBabyWeight(e.target.value)}
                       />
@@ -673,7 +992,7 @@ export default function UnifiedHealthCheckIn({ isOpen, onClose, onSaved, initial
                       type="number"
                       step="0.1"
                       className="input"
-                      placeholder="头围"
+                      placeholder={babyHead ? `已录入: ${babyHead} cm` : "头围"}
                       value={babyHead}
                       onChange={(e) => setBabyHead(e.target.value)}
                     />
@@ -698,7 +1017,7 @@ export default function UnifiedHealthCheckIn({ isOpen, onClose, onSaved, initial
             <label className="label">备注 (选填)</label>
             <input
               className="input"
-              placeholder="如：胎心正常 / 医生建议 / 本次测量感受"
+              placeholder={initialRecord?.notes ? `已录入: ${initialRecord.notes}` : "如：胎心正常 / 医生建议 / 本次测量感受"}
               value={note}
               onChange={(e) => setNote(e.target.value)}
             />

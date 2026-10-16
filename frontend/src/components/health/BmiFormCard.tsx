@@ -3,6 +3,7 @@ import { Activity, Sparkles, AlertCircle, Calendar, CheckCircle2 } from "lucide-
 import { useAuthStore } from "@/store/authStore";
 import { computeGestation, type GestationAnchor } from "@/utils/gestation";
 import type { BmiAnalysisInput, PregnancyStage } from "@/types/health";
+import type { BabyProfile } from "@/types";
 
 interface BmiFormCardProps {
   onSubmit: (data: BmiAnalysisInput) => void;
@@ -14,6 +15,7 @@ interface BmiFormCardProps {
   gestationAnchor?: GestationAnchor | null;
   stageType?: PregnancyStage;
   onStageTypeChange?: (st: PregnancyStage) => void;
+  babies?: BabyProfile[];
 }
 
 const MEDICAL_HISTORY_OPTIONS = [
@@ -32,12 +34,52 @@ function autoPostpartumMonths(babyBirthday: string, recordDate: string): number 
   return Math.max(0, Math.floor((rec.getTime() - birth.getTime()) / (30.44 * 86400000)));
 }
 
-export default function BmiFormCard({ onSubmit, loading, initialHeight, initialPreWeight, gestationAnchor, stageType: externalStageType, onStageTypeChange }: BmiFormCardProps) {
+export default function BmiFormCard({ onSubmit, loading, initialHeight, initialPreWeight, gestationAnchor, stageType: externalStageType, onStageTypeChange, babies }: BmiFormCardProps) {
   const { user } = useAuthStore();
-  const hasDueDate = !!user?.due_date;
-  const hasBabyBirthday = !!user?.baby_birthday;
-  // v1.58：预产期或首次打卡锚点任一存在即自动推算孕周（展示孕x周x天，免手填）
-  const hasAutoBasis = hasDueDate || !!gestationAnchor;
+  const pregnantBabies = useMemo(() => {
+    return babies?.filter((b) => b.is_born === false || (b.birthday && new Date(b.birthday) > new Date())) || [];
+  }, [babies]);
+
+  const [selectedPregnantBabyId, setSelectedPregnantBabyId] = useState<number | null>(null);
+
+  const activePregnantBaby = useMemo(() => {
+    if (selectedPregnantBabyId != null) {
+      const found = pregnantBabies.find((b) => b.id === selectedPregnantBabyId);
+      if (found) return found;
+    }
+    return (
+      pregnantBabies.find((b) => b.is_primary) ||
+      pregnantBabies[0] ||
+      (babies && babies.length > 0 ? babies.find((b) => b.is_born === false) || null : null)
+    );
+  }, [pregnantBabies, selectedPregnantBabyId, babies]);
+
+  const pregnantBaby = activePregnantBaby;
+  const pregnantBabyName =
+    activePregnantBaby?.name ||
+    (babies && babies.length > 0 ? babies[0].name : user?.nickname ? `${user.nickname}的宝宝` : "待产宝宝");
+
+  const bornBabies = useMemo(() => {
+    return babies?.filter((b) => b.is_born !== false && (!b.birthday || new Date(b.birthday) <= new Date())) || [];
+  }, [babies]);
+
+  const [selectedPostpartumBabyId, setSelectedPostpartumBabyId] = useState<number | null>(null);
+
+  const activePostpartumBaby = useMemo(() => {
+    if (selectedPostpartumBabyId != null) {
+      const found = bornBabies.find((b) => b.id === selectedPostpartumBabyId);
+      if (found) return found;
+    }
+    return bornBabies.find((b) => b.is_primary) || bornBabies[0] || (babies && babies.length > 0 ? babies[0] : null);
+  }, [bornBabies, selectedPostpartumBabyId, babies]);
+
+  const postpartumBabyName = activePostpartumBaby?.name || (user?.nickname ? `${user.nickname}的宝宝` : "宝宝");
+  const effectiveBabyBirthday = activePostpartumBaby?.birthday || user?.baby_birthday;
+
+  const effectiveDueDate = activePregnantBaby?.birthday || user?.due_date;
+  const hasDueDate = Boolean(effectiveDueDate);
+  const hasBabyBirthday = Boolean(effectiveBabyBirthday);
+  const hasAutoBasis = Boolean(effectiveDueDate || gestationAnchor);
 
   const [recordDate, setRecordDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   // v1.56：基线连续预填——最近一次打卡的身高/孕前体重自动带入（仍可修改）
@@ -96,10 +138,10 @@ export default function BmiFormCard({ onSubmit, loading, initialHeight, initialP
   // v1.58 孕周双基准自动推算（与后端一致）：预产期 280 天模型 > 首次打卡锚点线性外推
   const gestation = useMemo(() => {
     if (stageType !== "pregnancy") return null;
-    if (user?.due_date) return computeGestation({ date: user.due_date, week: 40 }, recordDate);
+    if (effectiveDueDate) return computeGestation({ date: effectiveDueDate, week: 40 }, recordDate);
     if (gestationAnchor) return computeGestation(gestationAnchor, recordDate);
     return null;
-  }, [stageType, user?.due_date, gestationAnchor, recordDate]);
+  }, [stageType, effectiveDueDate, gestationAnchor, recordDate]);
 
   // 日期/阶段变化时解除手动编辑态 → 回到自动推算展示（v1.58 派生显示值方案，无 effect 填充竞态）
   useEffect(() => {
@@ -113,8 +155,8 @@ export default function BmiFormCard({ onSubmit, loading, initialHeight, initialP
 
   // v1.58 产后月龄双基准：未手动编辑时直接展示推算值（自动填充可靠）
   const postpartumMonthsDisplay =
-    stageType === "postpartum" && user?.baby_birthday
-      ? String(autoPostpartumMonths(user.baby_birthday, recordDate) ?? 1)
+    stageType === "postpartum" && effectiveBabyBirthday
+      ? String(autoPostpartumMonths(effectiveBabyBirthday, recordDate) ?? 1)
       : postpartumMonths;
 
   const instantBmi = useMemo(() => {
@@ -299,8 +341,27 @@ export default function BmiFormCard({ onSubmit, loading, initialHeight, initialP
           <div>
             {stageType === "pregnancy" ? (
               <>
+                {pregnantBabies.length > 1 && (
+                  <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+                    <span className="text-[11px] text-gray-400">参考宝宝：</span>
+                    {pregnantBabies.map((b) => (
+                      <button
+                        key={b.id}
+                        type="button"
+                        onClick={() => setSelectedPregnantBabyId(b.id)}
+                        className={`rounded-lg px-2 py-0.5 text-[11px] font-medium transition-all cursor-pointer ${
+                          activePregnantBaby?.id === b.id
+                            ? "bg-brand-500 text-white shadow-xs"
+                            : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300"
+                        }`}
+                      >
+                        {b.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <label className="label">
-                  当前孕周 {hasAutoBasis ? "· 已自动推算（可修改周与天）" : "(1 ~ 42 周) *"}
+                  当前孕周 {hasAutoBasis ? `· 已自动推算（可修改周与天） · 参考宝宝：${pregnantBabyName}` : "(1 ~ 42 周) *"}
                 </label>
                 {/* v1.58：周+天双输入框——自动推算填充（未编辑时显示推算值），支持手改 */}
                 <div className="flex items-center gap-2">
@@ -336,16 +397,37 @@ export default function BmiFormCard({ onSubmit, loading, initialHeight, initialP
                   <p className="mt-1 flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400">
                     <CheckCircle2 className="h-3 w-3" />
                     本日期推算为 {gestation.label}
-                    {hasDueDate
-                      ? "（按档案预产期，允许 ±1 周微调）"
+                    {activePregnantBaby
+                      ? `（按孕期宝宝「${pregnantBabyName}」预产期自动填入，允许 ±1 周微调）`
+                      : hasDueDate
+                      ? `（按档案预产期自动填入 · 参考宝宝：${pregnantBabyName}，允许 ±1 周微调）`
                       : `（按首次打卡 ${gestationAnchor!.date} 孕${gestationAnchor!.week}周，允许 ±1 周微调）`}
                   </p>
                 )}
               </>
             ) : stageType === "postpartum" ? (
               <>
+                {bornBabies.length > 1 && (
+                  <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+                    <span className="text-[11px] text-gray-400">参考宝宝：</span>
+                    {bornBabies.map((b) => (
+                      <button
+                        key={b.id}
+                        type="button"
+                        onClick={() => setSelectedPostpartumBabyId(b.id)}
+                        className={`rounded-lg px-2 py-0.5 text-[11px] font-medium transition cursor-pointer ${
+                          activePostpartumBaby?.id === b.id
+                            ? "bg-brand-500 text-white shadow-xs"
+                            : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300"
+                        }`}
+                      >
+                        {b.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <label className="label">
-                  产后月龄 (0 ~ 36 个月) {hasBabyBirthday ? "· 按宝宝生日自动" : "*"}
+                  产后月龄 (0 ~ 36 个月) {effectiveBabyBirthday ? `· 按${postpartumBabyName}宝宝生日自动` : "*"}
                 </label>
                 <div className="flex items-center gap-2">
                   <input
@@ -353,13 +435,19 @@ export default function BmiFormCard({ onSubmit, loading, initialHeight, initialP
                     min="0"
                     max="36"
                     className="input"
-                    placeholder={hasBabyBirthday ? "按宝宝生日自动填充" : "例如 2"}
+                    placeholder={effectiveBabyBirthday ? `按${postpartumBabyName}宝宝生日自动` : "例如 2"}
                     value={postpartumMonthsDisplay}
                     onChange={(e) => setPostpartumMonths(e.target.value)}
                     required
                   />
                   <span className="text-xs text-gray-400">个月</span>
                 </div>
+                {effectiveBabyBirthday && (
+                  <p className="mt-1 flex items-center gap-1 text-[11px] text-emerald-600 dark:text-emerald-400">
+                    <CheckCircle2 className="h-3 w-3" />
+                    按「${postpartumBabyName}」宝宝生日（${effectiveBabyBirthday}）自动推算为 ${postpartumMonthsDisplay} 个月
+                  </p>
+                )}
               </>
             ) : (
               <div className="rounded-xl bg-brand-50/60 p-3 text-[11px] leading-relaxed text-brand-700 dark:bg-brand-950/40 dark:text-brand-300">

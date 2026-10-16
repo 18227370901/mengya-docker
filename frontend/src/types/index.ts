@@ -39,6 +39,19 @@ export interface Stage {
   total_months?: number;
 }
 
+export interface MotherProfile {
+  id: number;
+  name: string;
+  is_primary: boolean;
+  due_date?: string | null;
+  is_pregnant: boolean;
+  avatar?: string | null;
+  note?: string;
+  health_records_count?: number;
+  created_at?: string;
+  updated_at?: string;
+}
+
 export interface BabyProfile {
   id: number;
   name: string;
@@ -250,7 +263,16 @@ export interface HealthRecord {
   vaccine_site?: string;
   attachment_url?: string;
   ai_analysis?: string;
+  stage_type?: string;
+  notes?: string;
+  waist_circumference?: number;
+  systolic_bp?: number;
+  diastolic_bp?: number;
+  gestational_day?: number;
   baby?: number;
+  baby_name?: string;
+  mother?: number;
+  mother_name?: string;
 }
 
 export interface ApiResponse<T = unknown> {

@@ -38,7 +38,7 @@ const FETUS_SIZE: Record<number, string> = {
 };
 
 export default function HomePage() {
-  const { user, stage, hasPermission } = useAuthStore();
+  const { user, stage, hasPermission, fetchMe } = useAuthStore();
   const [essentials, setEssentials] = useState<TimelineItem[]>([]);
   const [weekItems, setWeekItems] = useState<TimelineItem[]>([]);
   const [recommend, setRecommend] = useState<Product[]>([]);
@@ -108,7 +108,8 @@ export default function HomePage() {
   }, [stageKey]);
 
   useEffect(() => {
-    const handleStageChanged = () => {
+    const handleStageChanged = async () => {
+      await fetchMe();
       fetchHomeData(true);
     };
     window.addEventListener("stageChanged", handleStageChanged);

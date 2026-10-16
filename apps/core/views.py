@@ -20,6 +20,7 @@ from .models import (
     AIQueryLog,
     AuditLog,
     BabyProfile,
+    MotherProfile,
     BabyShoppingItem,
     BrandProfile,
     ChatMessage,
@@ -40,6 +41,7 @@ from .models import (
 )
 from .serializers import (
     BabyProfileSerializer,
+    MotherProfileSerializer,
     BabyShoppingItemSerializer,
     BrandProfileSerializer,
     FetalStorySerializer,
@@ -867,6 +869,104 @@ def verify_invite(request):
     })
 
 
+class MotherViewSet(viewsets.ModelViewSet):
+    serializer_class = MotherProfileSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        qs = MotherProfile.objects.filter(user=user)
+        if not qs.exists():
+            from apps.core.models.baby import BabyProfile
+            primary_baby = BabyProfile.objects.filter(user=user, is_primary=True).first() or BabyProfile.objects.filter(user=user).first()
+            b_name = getattr(primary_baby, "name", "") or ""
+            mom_name = f"{b_name}妈妈" if b_name else "萌宝妈妈"
+            MotherProfile.objects.create(
+                user=user,
+                name=mom_name,
+                is_primary=True,
+                due_date=user.due_date,
+                is_pregnant=user.is_pregnant,
+            )
+            qs = MotherProfile.objects.filter(user=user)
+        else:
+            pri_mom = qs.filter(is_primary=True).first() or qs.first()
+            if pri_mom:
+                changed = False
+                if pri_mom.due_date != user.due_date:
+                    pri_mom.due_date = user.due_date
+                    changed = True
+                if pri_mom.is_pregnant != user.is_pregnant:
+                    pri_mom.is_pregnant = user.is_pregnant
+                    changed = True
+                # 若妈妈名称仍为通用“萌宝妈妈”但当前已有明确命名的默认宝宝，则自动同步为 xx妈妈
+                from apps.core.models.baby import BabyProfile
+                primary_baby = BabyProfile.objects.filter(user=user, is_primary=True).first() or BabyProfile.objects.filter(user=user).first()
+                if primary_baby and primary_baby.name and (not pri_mom.name or pri_mom.name == "萌宝妈妈" or pri_mom.name.endswith("妈妈")):
+                    expected_name = f"{primary_baby.name}妈妈"
+                    if pri_mom.name != expected_name:
+                        pri_mom.name = expected_name
+                        changed = True
+                if changed:
+                    pri_mom.save(update_fields=["due_date", "is_pregnant", "name"])
+        return qs
+
+    def perform_create(self, serializer):
+        check_permission_or_403(self.request.user, "health_record_create", "您没有添加妈妈档案的权限")
+        user = self.request.user
+        raw_name = (self.request.data.get("name") or "").strip()
+        if not raw_name:
+            primary_baby = BabyProfile.objects.filter(user=user, is_primary=True).first() or BabyProfile.objects.filter(user=user).first()
+            if primary_baby and primary_baby.name:
+                raw_name = f"{primary_baby.name}妈妈"
+            else:
+                raw_name = "萌宝妈妈"
+
+        is_primary = bool(self.request.data.get("is_primary", False))
+        total_mothers = MotherProfile.objects.filter(user=user).count()
+        if total_mothers == 0:
+            is_primary = True
+        elif is_primary:
+            MotherProfile.objects.filter(user=user).update(is_primary=False)
+
+        mom = serializer.save(user=user, name=raw_name, is_primary=is_primary)
+        audit(self.request, "mother_create", "添加妈妈档案", "mother", mom.id, mom.name, f"添加妈妈档案 {mom.name}")
+
+    def perform_update(self, serializer):
+        check_permission_or_403(self.request.user, "health_record_update", "您没有修改妈妈档案的权限")
+        raw_name = (self.request.data.get("name") or "").strip()
+        if not raw_name:
+            primary_baby = BabyProfile.objects.filter(user=self.request.user, is_primary=True).first() or BabyProfile.objects.filter(user=self.request.user).first()
+            if primary_baby and primary_baby.name:
+                raw_name = f"{primary_baby.name}妈妈"
+            else:
+                raw_name = "萌宝妈妈"
+        mom = serializer.save(name=raw_name)
+        audit(self.request, "mother_update", "修改妈妈档案", "mother", mom.id, mom.name, f"更新妈妈档案 {mom.name}")
+
+    def perform_destroy(self, instance):
+        check_permission_or_403(self.request.user, "health_record_delete", "您没有删除妈妈档案的权限")
+        user = self.request.user
+        was_primary = instance.is_primary
+        m_name = instance.name or f"妈妈#{instance.id}"
+        audit(self.request, "mother_delete", "删除妈妈档案", "mother", instance.id, m_name, f"删除妈妈档案 {m_name}")
+        instance.delete()
+        if was_primary:
+            remaining = MotherProfile.objects.filter(user=user).order_by("-id").first()
+            if remaining:
+                remaining.is_primary = True
+                remaining.save(update_fields=["is_primary"])
+
+    @action(detail=True, methods=["post"])
+    def set_primary(self, request, pk=None):
+        mom = get_object_or_404(MotherProfile, pk=pk, user=request.user)
+        MotherProfile.objects.filter(user=request.user).update(is_primary=False)
+        mom.is_primary = True
+        mom.save(update_fields=["is_primary"])
+        audit(request, "mother_switch", "切换默认妈妈", "mother", mom.id, mom.name, f"设为默认妈妈 {mom.name}")
+        return Response({"code": 0, "message": "已设为默认妈妈档案", "data": None})
+
+
 class BabyViewSet(viewsets.ModelViewSet):
     serializer_class = BabyProfileSerializer
     permission_classes = [IsAuthenticated]
@@ -875,8 +975,9 @@ class BabyViewSet(viewsets.ModelViewSet):
         return BabyProfile.objects.filter(user=self.request.user)
 
     def _sync_user_stage(self, user, baby):
-        """将宝宝档案（未出生/已出生）同步至用户的孕育阶段"""
+        """将宝宝档案（未出生/已出生）同步至用户的孕育阶段，并同步更新妈妈档案"""
         from datetime import date
+        from apps.core.models.mother import MotherProfile
         today = date.today()
         is_born = getattr(baby, "is_born", True)
         if not is_born or baby.birthday > today:
@@ -886,15 +987,42 @@ class BabyViewSet(viewsets.ModelViewSet):
             user.baby_birthday = None
             user.save(update_fields=["is_pregnant", "due_date", "baby_birthday"])
         else:
-            # 已出生宝宝 -> 同步为已出生模式
+            # 已出生宝宝 -> 同步为已出生/育儿模式
             user.is_pregnant = False
             user.baby_birthday = baby.birthday
             user.due_date = None
             user.save(update_fields=["is_pregnant", "due_date", "baby_birthday"])
 
+        # 同步更新用户的默认妈妈档案（保持与默认宝宝的关联与阶段一致）
+        pri_mom = MotherProfile.objects.filter(user=user, is_primary=True).first() or MotherProfile.objects.filter(user=user).first()
+        b_name = getattr(baby, "name", "") or ""
+        expected_mom_name = f"{b_name}妈妈" if b_name else "萌宝妈妈"
+        if pri_mom:
+            pri_mom.due_date = user.due_date
+            pri_mom.is_pregnant = user.is_pregnant
+            if not pri_mom.name or pri_mom.name == "萌宝妈妈" or pri_mom.name.endswith("妈妈"):
+                pri_mom.name = expected_mom_name
+            pri_mom.save(update_fields=["due_date", "is_pregnant", "name"])
+        else:
+            MotherProfile.objects.create(
+                user=user,
+                name=expected_mom_name,
+                is_primary=True,
+                due_date=user.due_date,
+                is_pregnant=user.is_pregnant,
+            )
+
     def perform_create(self, serializer):
         check_permission_or_403(self.request.user, "baby_create", "您没有添加宝宝档案的权限")
-        baby = serializer.save(user=self.request.user)
+        user = self.request.user
+        raw_name = (self.request.data.get("name") or "").strip()
+        if not raw_name:
+            primary_baby = BabyProfile.objects.filter(user=user, is_primary=True).first() or BabyProfile.objects.filter(user=user).first()
+            if primary_baby and primary_baby.name:
+                raw_name = primary_baby.name
+            else:
+                raw_name = "小萌宝"
+        baby = serializer.save(user=user, name=raw_name)
         total_babies = BabyProfile.objects.filter(user=self.request.user).count()
         if total_babies == 1 or baby.is_primary or self.request.data.get("sync_stage", True):
             BabyProfile.objects.filter(user=self.request.user).exclude(id=baby.id).update(is_primary=False)
@@ -1992,15 +2120,16 @@ class HealthRecordViewSet(viewsets.ModelViewSet):
     # ===== v1.57 数据合理性校验：测量类记录同日唯一（妈妈 prenatal_exam / 宝宝 growth_measurement；疫苗同日可多剂不查重）=====
     UNIQUE_DATE_TYPES = ("prenatal_exam", "growth_measurement")
 
-    def _find_same_day_record(self, user, record_type, record_date):
-        """查找同日同类型已有记录（历史脏数据同日多条时取创建时间最新的一条）"""
+    def _find_same_day_record(self, user, record_type, record_date, mother=None, baby=None):
+        """查找同日同类型已有记录（按单个妈妈或单个宝宝维度严格物理隔离，历史脏数据同日多条时取创建时间最新的一条）"""
         if record_type not in self.UNIQUE_DATE_TYPES or not record_date:
             return None
-        return (
-            HealthRecord.objects.filter(user=user, record_type=record_type, record_date=record_date)
-            .order_by("-created_at")
-            .first()
-        )
+        qs = HealthRecord.objects.filter(user=user, record_type=record_type, record_date=record_date)
+        if record_type == "prenatal_exam" and mother:
+            qs = qs.filter(mother=mother)
+        elif record_type == "growth_measurement" and baby:
+            qs = qs.filter(baby=baby)
+        return qs.order_by("-created_at").first()
 
     @staticmethod
     def _conflict_payload(existing):
@@ -2019,12 +2148,81 @@ class HealthRecordViewSet(viewsets.ModelViewSet):
         }
 
     def create(self, request, *args, **kwargs):
-        """新增记录入口：先做同日唯一性校验——命中且未显式确认覆盖时返回 409，
-        前端弹窗展示当日已有数据，用户确认覆盖后携 overwrite=true 重发，走更新逻辑。"""
+        """新增记录入口：同日唯一性校验 + 阶段合理性校验（按单个妈妈隔离）"""
         record_type = request.data.get("record_type")
         record_date = request.data.get("record_date")
+
+        target_mother = None
+        if record_type == "prenatal_exam":
+            from apps.core.models.mother import MotherProfile
+            mother_id = request.data.get("mother_id") or request.data.get("mother")
+            if mother_id:
+                target_mother = MotherProfile.objects.filter(id=mother_id, user=request.user).first()
+            if not target_mother:
+                target_mother = MotherProfile.objects.filter(user=request.user, is_primary=True).first() or MotherProfile.objects.filter(user=request.user).first()
+
+            if record_date:
+                from datetime import datetime
+                try:
+                    rec_date_obj = datetime.strptime(record_date, "%Y-%m-%d").date() if isinstance(record_date, str) else record_date
+                except Exception:
+                    rec_date_obj = None
+
+                if rec_date_obj:
+                    exam_items = request.data.get("exam_items") or {}
+                    if isinstance(exam_items, str):
+                        import json
+                        try:
+                            exam_items = json.loads(exam_items)
+                        except Exception:
+                            exam_items = {}
+                    stage = exam_items.get("stage") or request.data.get("stage_type") or request.data.get("stage")
+                    gw = request.data.get("gestational_week") or exam_items.get("gestational_week")
+                    gd = exam_items.get("gestational_days")
+                    if not stage:
+                        stage = "pregnancy" if gw else "general"
+                    try:
+                        gw_int = int(gw) if gw is not None else None
+                    except (ValueError, TypeError):
+                        gw_int = None
+                    try:
+                        gd_int = int(gd) if gd is not None else None
+                    except (ValueError, TypeError):
+                        gd_int = None
+                    try:
+                        pm_int = int(exam_items.get("postpartum_months")) if exam_items.get("postpartum_months") is not None else None
+                    except (ValueError, TypeError):
+                        pm_int = None
+
+                    existing = self._find_same_day_record(request.user, record_type, record_date, mother=target_mother)
+                    from apps.core.services.stage_validator import validate_stage_transition
+                    is_st_ok, st_msg = validate_stage_transition(
+                        user=request.user,
+                        record_date=rec_date_obj,
+                        stage_type=stage,
+                        gestational_week=gw_int,
+                        gestational_days=gd_int,
+                        postpartum_months=pm_int,
+                        mother=target_mother,
+                        exclude_record_id=existing.id if existing else None,
+                    )
+                    if not is_st_ok:
+                        return Response(
+                            {"code": 4005, "message": st_msg, "data": None},
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+
+        target_baby = None
+        if record_type in ("growth_measurement", "vaccination", "illness"):
+            from apps.core.models.baby import BabyProfile
+            baby_id = request.data.get("baby_id") or request.data.get("baby")
+            if baby_id:
+                target_baby = BabyProfile.objects.filter(id=baby_id, user=request.user).first()
+            if not target_baby:
+                target_baby = BabyProfile.objects.filter(user=request.user, is_primary=True).first() or BabyProfile.objects.filter(user=request.user).first()
+
         if record_type and record_date:
-            existing = self._find_same_day_record(request.user, record_type, record_date)
+            existing = self._find_same_day_record(request.user, record_type, record_date, mother=target_mother, baby=target_baby)
             if existing:
                 if not bool(request.data.get("overwrite", False)):
                     return Response(
@@ -2050,7 +2248,31 @@ class HealthRecordViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         check_permission_or_403(self.request.user, "health_record_create", "您没有添加健康记录的权限")
-        rec = serializer.save(user=self.request.user)
+        record_type = serializer.validated_data.get("record_type") or self.request.data.get("record_type")
+        extra_kwargs = {"user": self.request.user}
+        if record_type == "prenatal_exam" and not serializer.validated_data.get("mother"):
+            from apps.core.models.mother import MotherProfile
+            mother_id = self.request.data.get("mother_id") or self.request.data.get("mother")
+            target_mother = None
+            if mother_id:
+                target_mother = MotherProfile.objects.filter(id=mother_id, user=self.request.user).first()
+            if not target_mother:
+                target_mother = MotherProfile.objects.filter(user=self.request.user, is_primary=True).first() or MotherProfile.objects.filter(user=self.request.user).first()
+            if target_mother:
+                extra_kwargs["mother"] = target_mother
+
+        if record_type in ("growth_measurement", "vaccination", "illness") and not serializer.validated_data.get("baby"):
+            from apps.core.models.baby import BabyProfile
+            baby_id = self.request.data.get("baby_id") or self.request.data.get("baby")
+            target_baby = None
+            if baby_id:
+                target_baby = BabyProfile.objects.filter(id=baby_id, user=self.request.user).first()
+            if not target_baby:
+                target_baby = BabyProfile.objects.filter(user=self.request.user, is_primary=True).first() or BabyProfile.objects.filter(user=self.request.user).first()
+            if target_baby:
+                extra_kwargs["baby"] = target_baby
+
+        rec = serializer.save(**extra_kwargs)
         audit(self.request, "health_record_create", "添加健康记录", "health", rec.id, rec.record_type, f"记录类型: {rec.record_type}")
 
     def perform_update(self, serializer):
@@ -2148,12 +2370,20 @@ class HealthRecordViewSet(viewsets.ModelViewSet):
         BABY_RANGE = {"height": (20.0, 200.0), "weight": (0.2, 60.0), "head": (20.0, 80.0)}
 
         created, updated, skipped, errors = 0, 0, 0, []
+
+        from apps.core.models.mother import MotherProfile
+        mother_id = request.data.get("mother_id")
+        target_mother = None
+        if mother_id:
+            target_mother = MotherProfile.objects.filter(id=mother_id, user=user).first()
+        if not target_mother and target == "mom":
+            target_mother = MotherProfile.objects.filter(user=user, is_primary=True).first()
+
         # 妈妈：身高与孕前体重从最近一条打卡记录继承（批量导入免填，减少列数）
-        last_mom = (
-            HealthRecord.objects.filter(user=user, record_type="prenatal_exam")
-            .order_by("-record_date", "-created_at")
-            .first()
-        )
+        last_mom_qs = HealthRecord.objects.filter(user=user, record_type="prenatal_exam")
+        if target_mother:
+            last_mom_qs = last_mom_qs.filter(mother=target_mother)
+        last_mom = last_mom_qs.order_by("-record_date", "-created_at").first()
         inherit_height = last_mom.height if last_mom else None
         inherit_pre_weight = (
             last_mom.exam_items.get("pre_weight")
@@ -2185,7 +2415,15 @@ class HealthRecordViewSet(viewsets.ModelViewSet):
                 except (TypeError, ValueError):
                     return None
 
-            existing = self._find_same_day_record(user, "prenatal_exam" if target == "mom" else "growth_measurement", rec_date)
+            target_baby = None
+            if target == "baby":
+                from apps.core.models.baby import BabyProfile
+                baby_id = request.data.get("baby_id") or request.data.get("baby")
+                if baby_id:
+                    target_baby = BabyProfile.objects.filter(id=baby_id, user=user).first()
+                if not target_baby:
+                    target_baby = BabyProfile.objects.filter(user=user, is_primary=True).first() or BabyProfile.objects.filter(user=user).first()
+            existing = self._find_same_day_record(user, "prenatal_exam" if target == "mom" else "growth_measurement", rec_date, mother=target_mother, baby=target_baby)
             if existing and strategy == "skip":
                 skipped += 1
                 continue
@@ -2251,6 +2489,22 @@ class HealthRecordViewSet(viewsets.ModelViewSet):
                             else:
                                 _fail("未检测到预产期或宝宝档案配置，无法根据记录日期自动推算孕周，请先在档案中设置预产期/宝宝档案，或在 CSV 中填写 week（孕周）列")
                                 continue
+
+                    # 校验阶段合理性（按单个妈妈维度隔离拦截冲突行）
+                    from apps.core.services.stage_validator import validate_stage_transition
+                    is_st_ok, st_msg = validate_stage_transition(
+                        user=user,
+                        record_date=rec_date,
+                        stage_type=stage,
+                        gestational_week=gestational_week,
+                        gestational_days=gestational_days,
+                        postpartum_months=auto_postpartum_months,
+                        mother=target_mother,
+                        exclude_record_id=existing.id if existing else None,
+                    )
+                    if not is_st_ok:
+                        _fail(st_msg)
+                        continue
                     elif stage == "postpartum":
                         # 产后阶段：如果未填 postpartum_months，尝试根据宝宝生日自动推算
                         baby_b = getattr(user, "baby_birthday", None)
@@ -2334,6 +2588,7 @@ class HealthRecordViewSet(viewsets.ModelViewSet):
                     else:
                         new_rec = HealthRecord.objects.create(
                             user=user,
+                            baby=target_baby,
                             record_type="growth_measurement",
                             record_date=rec_date,
                             height=height,
@@ -2366,7 +2621,7 @@ class HealthRecordViewSet(viewsets.ModelViewSet):
         )
 
 
-def _build_bmi_timeseries(user):
+def _build_bmi_timeseries(user, mother_id=None):
     """构建妈妈时序测量打卡历史（仅 prenatal_exam，含孕期/产后阶段标记与达标状态），供 BMI 图表看板与历史数据表复用"""
     from apps.core.models.health import HealthRecord
     timeseries_history = []
@@ -2374,7 +2629,17 @@ def _build_bmi_timeseries(user):
         user_records = HealthRecord.objects.filter(
             user=user,
             record_type="prenatal_exam",
-        ).exclude(weight__isnull=True).order_by("record_date", "created_at")
+        ).exclude(weight__isnull=True)
+        if mother_id:
+            user_records = user_records.filter(mother_id=mother_id)
+        else:
+            from apps.core.models.mother import MotherProfile
+            pri_mom = MotherProfile.objects.filter(user=user, is_primary=True).first()
+            if pri_mom:
+                pri_qs = user_records.filter(mother=pri_mom)
+                if pri_qs.exists():
+                    user_records = pri_qs
+        user_records = user_records.order_by("record_date", "created_at")
 
         # 查找该用户历史最新有效身高与孕前基线体重（用于缺失记录自动继承基线）
         default_height = None
@@ -2445,11 +2710,12 @@ class HealthBmiAnalysisView(APIView):
         check_permission_or_403(request.user, "menu_health", "您没有访问健康中心的权限")
         # v1.57 权限补齐：时序拉取属于健康档案查看能力，需同时具备查看权限（原仅校验菜单级权限存在越权漏洞）
         check_permission_or_403(request.user, "health_record_view", "您没有查看健康档案的权限")
+        mother_id = request.query_params.get("mother_id")
         return Response({
             "code": 0,
             "message": "获取成功",
             "data": {
-                "timeseries": _build_bmi_timeseries(request.user),
+                "timeseries": _build_bmi_timeseries(request.user, mother_id=mother_id),
             },
         })
 
@@ -2473,15 +2739,22 @@ class HealthBmiAnalysisView(APIView):
         from apps.core.models.health import HealthRecord
 
         # ===== 基线自动补齐：身高与孕前体重可从最近一条妈妈记录继承（支持统一健康打卡轻量录入）=====
+        from apps.core.models.mother import MotherProfile
+        mother_id = request.data.get("mother_id")
+        mother = None
+        if mother_id:
+            mother = MotherProfile.objects.filter(id=mother_id, user=request.user).first()
+        if not mother:
+            mother = MotherProfile.objects.filter(user=request.user, is_primary=True).first()
+
         stage_type = data.get("stage_type", "pregnancy")
         current_weight = data["current_weight_kg"]
         height_cm = data.get("height_cm")
         pre_weight = data.get("pre_pregnancy_weight_kg")
-        last_mom_record = (
-            HealthRecord.objects.filter(user=request.user, record_type="prenatal_exam")
-            .order_by("-record_date", "-created_at")
-            .first()
-        )
+        last_mom_qs = HealthRecord.objects.filter(user=request.user, record_type="prenatal_exam")
+        if mother:
+            last_mom_qs = last_mom_qs.filter(mother=mother)
+        last_mom_record = last_mom_qs.order_by("-record_date", "-created_at").first()
         if not height_cm and last_mom_record and last_mom_record.height:
             height_cm = last_mom_record.height
         if not pre_weight and last_mom_record and isinstance(last_mom_record.exam_items, dict):
@@ -2501,13 +2774,12 @@ class HealthBmiAnalysisView(APIView):
         target_date = data.get("record_date") or timezone.now().date()
         # ===== v1.57 同日唯一性校验：当日已有妈妈打卡时返回 409，前端弹窗确认后携 overwrite=true 覆盖更新 =====
         overwrite = bool(data.get("overwrite", False))
-        existing_same_day = (
-            HealthRecord.objects.filter(
-                user=request.user, record_type="prenatal_exam", record_date=target_date
-            )
-            .order_by("-created_at")
-            .first()
+        existing_same_day_qs = HealthRecord.objects.filter(
+            user=request.user, record_type="prenatal_exam", record_date=target_date
         )
+        if mother:
+            existing_same_day_qs = existing_same_day_qs.filter(mother=mother)
+        existing_same_day = existing_same_day_qs.order_by("-created_at").first()
         if existing_same_day and not overwrite:
             existing_items = existing_same_day.exam_items if isinstance(existing_same_day.exam_items, dict) else {}
             # 与批次导出/记录接口保持一致：历史无 stage 的 prenatal_exam 按孕期回推
@@ -2536,7 +2808,7 @@ class HealthBmiAnalysisView(APIView):
         gestational_days = 0
         gestation_check = {"week": None, "days": 0, "basis": "", "auto_filled": False, "hint": ""}
         if stage_type == "pregnancy":
-            wk_check = validate_gestational_week(request.user, target_date, gestational_week)
+            wk_check = validate_gestational_week(request.user, target_date, gestational_week, mother=mother)
             gestation_check = {
                 "week": wk_check.get("week"),
                 "days": wk_check.get("days"),
@@ -2564,6 +2836,24 @@ class HealthBmiAnalysisView(APIView):
             gestation_check["days"] = gestational_days
         else:
             gestational_week = None
+
+        # 校验阶段类型合理性（按单个妈妈维度隔离拦截冲突数据）
+        from apps.core.services.stage_validator import validate_stage_transition
+        is_st_ok, st_msg = validate_stage_transition(
+            user=request.user,
+            record_date=target_date,
+            stage_type=stage_type,
+            gestational_week=gestational_week,
+            gestational_days=gestational_days,
+            postpartum_months=data.get("postpartum_months"),
+            mother=mother,
+            exclude_record_id=existing_same_day.id if existing_same_day else None,
+        )
+        if not is_st_ok:
+            return Response(
+                {"code": 4005, "message": st_msg, "data": None},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         evaluation = MedicalCalculator.evaluate_weight_gain(
             height_cm=height_cm,
@@ -2633,14 +2923,17 @@ class HealthBmiAnalysisView(APIView):
                 existing_same_day.weight = current_weight
                 existing_same_day.exam_items = exam_items
                 existing_same_day.note = note_text
+                if mother:
+                    existing_same_day.mother = mother
                 existing_same_day.save(
-                    update_fields=["gestational_week", "height", "weight", "exam_items", "note", "updated_at"]
+                    update_fields=["gestational_week", "height", "weight", "exam_items", "note", "mother", "updated_at"]
                 )
                 created_record_id = existing_same_day.id
                 record_action = "updated"
             else:
                 new_rec = HealthRecord.objects.create(
                     user=request.user,
+                    mother=mother,
                     record_type=rec_type,
                     record_date=target_date,
                     gestational_week=gestational_week,
@@ -2653,7 +2946,7 @@ class HealthBmiAnalysisView(APIView):
         except Exception:
             pass
 
-        timeseries_history = _build_bmi_timeseries(request.user)
+        timeseries_history = _build_bmi_timeseries(request.user, mother_id=mother.id if mother else None)
 
         audit(
             request,

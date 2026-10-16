@@ -3,6 +3,7 @@ from rest_framework import serializers
 
 from ..models import (
     BabyProfile,
+    MotherProfile,
     BabyShoppingItem,
     BrandProfile,
     FetalStory,
@@ -163,6 +164,7 @@ class RegisterSerializer(serializers.ModelSerializer):
 
 
 class BabyProfileSerializer(serializers.ModelSerializer):
+    name = serializers.CharField(max_length=50, required=False, allow_blank=True, default="")
     age_days = serializers.SerializerMethodField()
     age_months = serializers.SerializerMethodField()
     age_display = serializers.SerializerMethodField()
@@ -212,6 +214,29 @@ class BabyProfileSerializer(serializers.ModelSerializer):
             if delta.days >= 0:
                 return max(1, min(40, 40 - (delta.days // 7)))
         return None
+
+
+class MotherProfileSerializer(serializers.ModelSerializer):
+    health_records_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = MotherProfile
+        fields = [
+            "id",
+            "name",
+            "is_primary",
+            "due_date",
+            "is_pregnant",
+            "avatar",
+            "note",
+            "health_records_count",
+            "created_at",
+            "updated_at",
+        ]
+        read_only_fields = ["id", "created_at", "updated_at"]
+
+    def get_health_records_count(self, obj):
+        return obj.health_records.count()
 
 
 class BrandProfileSerializer(serializers.ModelSerializer):
@@ -410,6 +435,9 @@ class ShoppingListSerializer(serializers.ModelSerializer):
 
 
 class HealthRecordSerializer(serializers.ModelSerializer):
+    baby_name = serializers.CharField(source="baby.name", read_only=True, default="")
+    mother_name = serializers.CharField(source="mother.name", read_only=True, default="")
+
     class Meta:
         model = HealthRecord
         fields = [
@@ -429,10 +457,13 @@ class HealthRecordSerializer(serializers.ModelSerializer):
             "attachment_url",
             "ai_analysis",
             "baby",
+            "baby_name",
+            "mother",
+            "mother_name",
             "created_at",
             "updated_at",
         ]
-        read_only_fields = ["id", "created_at", "updated_at"]
+        read_only_fields = ["id", "created_at", "updated_at", "baby_name", "mother_name"]
 
     def validate(self, attrs):
         """

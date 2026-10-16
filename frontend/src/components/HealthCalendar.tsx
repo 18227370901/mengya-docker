@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import type { HealthRecord } from "@/types";
+import type { HealthRecord, BabyProfile } from "@/types";
 
 const TYPE_COLORS: Record<string, string> = {
   prenatal_exam: "bg-pink-100 text-pink-600 border-pink-200 dark:bg-pink-950/40 dark:text-pink-300 dark:border-pink-800",
@@ -28,10 +28,13 @@ interface Props {
   records: HealthRecord[];
   currentMonth: Date;
   onMonthChange: (date: Date) => void;
-  onDayClick?: (date: string, records: HealthRecord[]) => void;
+  onDayClick?: (date: string, records: HealthRecord[], targetRecord?: HealthRecord) => void;
+  onRecordClick?: (record: HealthRecord) => void;
+  babies?: BabyProfile[];
 }
 
-export default function HealthCalendar({ records, currentMonth, onMonthChange, onDayClick }: Props) {
+export default function HealthCalendar({ records, currentMonth, onMonthChange, onDayClick, onRecordClick, babies }: Props) {
+  const babyMap = useMemo(() => new Map(babies?.map((b) => [b.id, b])), [babies]);
   const year = currentMonth.getFullYear();
   const month = currentMonth.getMonth();
 
@@ -122,7 +125,7 @@ export default function HealthCalendar({ records, currentMonth, onMonthChange, o
                 if (isFuture) return;
                 // v1.56 P1-D：历史或当日日期可点击（含空日期），用于补录健康打卡
                 if (onDayClick && cell.dateStr) {
-                  onDayClick(cell.dateStr, dayRecords);
+                  onDayClick(cell.dateStr, dayRecords, dayRecords.length === 1 ? dayRecords[0] : undefined);
                 }
               }}
               title={isFuture ? "未来日期暂不支持补录打卡" : cell.dateStr ? `点击补录 ${cell.dateStr} 健康记录` : undefined}
@@ -138,21 +141,35 @@ export default function HealthCalendar({ records, currentMonth, onMonthChange, o
               >
                 {cell.day}
               </div>
-              {dayRecords.slice(0, 2).map((r, ri) => (
-                <div
-                  key={ri}
-                  className={`mt-0.5 truncate rounded px-1 py-0.5 text-[10px] border ${
-                    TYPE_COLORS[r.record_type] || "bg-gray-100 text-gray-500 border-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700"
-                  }`}
-                >
-                  {TYPE_LABELS[r.record_type] || r.record_type}
-                  {r.record_type === "growth_measurement" && r.weight ? ` ${r.weight}kg` : ""}
-                  {r.record_type === "prenatal_exam" && r.gestational_week ? ` ${r.gestational_week}w` : ""}
-                  {(r.record_type === "vaccination" || r.record_type === "vaccine") && r.vaccine_name ? ` ${r.vaccine_name}` : ""}
-                </div>
-              ))}
-              {dayRecords.length > 2 && (
-                <div className="text-[10px] text-gray-400 dark:text-gray-500">+{dayRecords.length - 2}</div>
+              {dayRecords.slice(0, 3).map((r, ri) => {
+                const isBabyRec = r.record_type === "growth_measurement" || r.record_type === "vaccination" || r.record_type === "vaccine";
+                const bName = r.baby_name || (r.baby ? babyMap.get(r.baby)?.name : "") || (babies && babies.length === 1 && isBabyRec ? babies[0].name : "");
+                return (
+                  <div
+                    key={ri}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (onRecordClick) {
+                        onRecordClick(r);
+                      } else if (onDayClick && cell.dateStr) {
+                        onDayClick(cell.dateStr, dayRecords, r);
+                      }
+                    }}
+                    title={cell.dateStr ? `点击针对此【${bName ? `${bName}的` : ""}${TYPE_LABELS[r.record_type] || r.record_type}】进行打卡或修改` : undefined}
+                    className={`mt-0.5 truncate rounded px-1 py-0.5 text-[10px] border cursor-pointer hover:opacity-85 transition-opacity ${
+                      TYPE_COLORS[r.record_type] || "bg-gray-100 text-gray-500 border-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-700"
+                    }`}
+                  >
+                    {isBabyRec && bName ? `[${bName}] ` : ""}
+                    {TYPE_LABELS[r.record_type] || r.record_type}
+                    {r.record_type === "growth_measurement" && r.weight ? ` ${r.weight}kg` : ""}
+                    {r.record_type === "prenatal_exam" && r.gestational_week ? ` ${r.gestational_week}w` : ""}
+                    {(r.record_type === "vaccination" || r.record_type === "vaccine") && r.vaccine_name ? ` ${r.vaccine_name}` : ""}
+                  </div>
+                );
+              })}
+              {dayRecords.length > 3 && (
+                <div className="text-[10px] text-gray-400 dark:text-gray-500">+{dayRecords.length - 3}</div>
               )}
             </div>
           );

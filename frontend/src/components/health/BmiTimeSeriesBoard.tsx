@@ -209,12 +209,12 @@ export default function BmiTimeSeriesBoard({ records, loading }: BmiTimeSeriesBo
               textStyle: { color: axisLabelColor, fontSize: 12 },
               data: ["BMI 18.5~23.9 标准区间", "BMI 21 中位参考", "实测体重走势"],
             },
-            grid: { top: 30, right: 25, bottom: 50, left: 45 },
+            grid: { top: 30, right: 55, bottom: 50, left: 45 },
             xAxis: {
               type: "category",
               data: labels,
               boundaryGap: filtered.length > 1 ? false : true,
-              axisLabel: { color: axisLabelColor, fontSize: 11 },
+              axisLabel: { color: axisLabelColor, fontSize: 11, showMaxLabel: true },
               axisLine: { lineStyle: { color: axisLineColor } },
             },
             yAxis: {
@@ -300,12 +300,12 @@ export default function BmiTimeSeriesBoard({ records, loading }: BmiTimeSeriesBo
               textStyle: { color: axisLabelColor, fontSize: 12 },
               data: ["WS/T 801-2022推荐区间", "推荐中位线", "实测增重走势"],
             },
-            grid: { top: 30, right: 25, bottom: 50, left: 45 },
+            grid: { top: 30, right: 55, bottom: 50, left: 45 },
             xAxis: {
               type: "category",
               data: labels,
               boundaryGap: filtered.length > 1 ? false : true,
-              axisLabel: { color: axisLabelColor, fontSize: 11 },
+              axisLabel: { color: axisLabelColor, fontSize: 11, showMaxLabel: true },
               axisLine: { lineStyle: { color: axisLineColor } },
             },
             yAxis: {
@@ -393,11 +393,11 @@ export default function BmiTimeSeriesBoard({ records, loading }: BmiTimeSeriesBo
               return `<b>${rec.record_date}${rec.gestational_week ? ` · ${gestationLabel(rec.gestational_week, rec.gestational_days)}` : rec.stage === "postpartum" ? " · 产后" : ""}</b><br/>较上次变化：<b>${val > 0 ? "+" : ""}${val} kg</b><br/>${verdict}`;
             },
           },
-          grid: { top: 30, right: 25, bottom: 45, left: 45 },
+          grid: { top: 30, right: 40, bottom: 45, left: 45 },
           xAxis: {
             type: "category",
             data: deltaLabels,
-            axisLabel: { color: axisLabelColor, fontSize: 11 },
+            axisLabel: { color: axisLabelColor, fontSize: 11, showMaxLabel: true },
             axisLine: { lineStyle: { color: axisLineColor } },
           },
           yAxis: {

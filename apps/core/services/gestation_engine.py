@@ -28,9 +28,9 @@ def _calc_week_from_lmp(record_date: date, lmp: date) -> Tuple[int, int]:
     return days // 7, days % 7
 
 
-def get_expected_week(user, record_date: date) -> Optional[Dict[str, Any]]:
+def get_expected_week(user, record_date: date, mother=None) -> Optional[Dict[str, Any]]:
     """
-    推算指定日期的医学孕周。
+    推算指定日期的医学孕周（按妈妈维度优先隔离）。
     返回 {"week": int, "days": int, "basis": "due_date"|"first_anchor", "label": str}；
     无任何基准（未设预产期且无历史打卡）时返回 None。
     """
@@ -38,7 +38,9 @@ def get_expected_week(user, record_date: date) -> Optional[Dict[str, Any]]:
         return None
 
     # ===== 基准1：预产期（最高优先级，医学 280 天模型）=====
-    due_date = getattr(user, "due_date", None)
+    due_date = getattr(mother, "due_date", None) if mother else None
+    if not due_date:
+        due_date = getattr(user, "due_date", None)
     if not due_date:
         try:
             from apps.core.models.baby import BabyProfile
@@ -93,6 +95,7 @@ def validate_gestational_week(
     user,
     record_date: date,
     gestational_week: Optional[int],
+    mother=None,
 ) -> Dict[str, Any]:
     """
     校验用户手填孕周与推算孕周的一致性。
@@ -101,7 +104,7 @@ def validate_gestational_week(
       {"ok": False, "expected": int, "label": str}  -> 偏差超过 1 周，应拦截并提示
     v1.58：全部成功路径透出 days（孕X周Y天粒度），供存储与前端"孕x周x天"展示复用。
     """
-    expected = get_expected_week(user, record_date)
+    expected = get_expected_week(user, record_date, mother=mother)
 
     # 无任何推算基准：允许手填（1~42），并提示建议设置预产期
     if expected is None:

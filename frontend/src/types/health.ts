@@ -20,6 +20,7 @@ export interface BmiAnalysisInput {
   is_twins: boolean;
   medical_history: string[];
   save_record?: boolean;
+  mother_id?: number | null;
 }
 
 export interface CurvePoint {

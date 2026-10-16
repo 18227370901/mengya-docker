@@ -1,5 +1,5 @@
 import api from "./client";
-import type { ApiResponse, BabyProfile, Stage, User } from "@/types";
+import type { ApiResponse, BabyProfile, MotherProfile, Stage, User } from "@/types";
 
 export interface AuthResult {
   user: User;
@@ -110,6 +110,12 @@ export const authApi = {
   me: () => api.get<ApiResponse<{ user: User; stage: Stage }>>("/users/me/").then((r) => r.data.data),
 
   updateMe: (data: Partial<User>) => api.put<ApiResponse<User>>("/users/me/", data).then((r) => r.data.data),
+
+  mothers: () => api.get<ApiResponse<MotherProfile[]>>("/mothers/").then((r) => r.data.data),
+  createMother: (data: Partial<MotherProfile>) => api.post<ApiResponse<MotherProfile>>("/mothers/", data).then((r) => r.data.data),
+  updateMother: (id: number, data: Partial<MotherProfile>) => api.put<ApiResponse<MotherProfile>>(`/mothers/${id}/`, data).then((r) => r.data.data),
+  deleteMother: (id: number) => api.delete<ApiResponse<null>>(`/mothers/${id}/`).then((r) => r.data.data),
+  setPrimaryMother: (id: number) => api.post<ApiResponse<null>>(`/mothers/${id}/set_primary/`).then((r) => r.data.data),
 
   babies: () => api.get<ApiResponse<BabyProfile[]>>("/babies/").then((r) => r.data.data),
 

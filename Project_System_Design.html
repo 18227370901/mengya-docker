@@ -2040,5 +2040,178 @@ estart: unless-stopped；
   </ul>
 </div>
 
+<div style="background:#fff;border-radius:12px;padding:24px;margin-bottom:24px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+  <h3 style="color:#0f172a;font-size:18px;margin-top:0;border-bottom:2px solid #ec4899;padding-bottom:8px;">10.30 健康打卡与时序图表排版优化、阶段合理性医学校验与健康中心宝宝生长档案多实体构建 (v1.67)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.30.1 业务背景与问题复盘</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>健康打卡输入框内图标遮挡内容</strong>：在健康打卡弹窗（<code>UnifiedHealthCheckIn.tsx</code>）中，身高与体重输入框内部保留了尺子与体重秤装饰图标及 <code>pl-9</code> 内边距，遮挡了数字开头，导致实测数据看不清楚；</li>
+    <li><strong>多维度时序图表看板末点阶段信息截断</strong>：在 BMI 时序趋势/增量柱状图看板（<code>BmiTimeSeriesBoard.tsx</code>）中，最后一个数据点的横轴阶段长标签（如“10-13 孕40周+5天”）显示不全被截断。定位为：<code>boundaryGap: false</code> 末点贴边 + X 轴超长标签居中向右溢出 35~45px + <code>grid.right</code> 留白仅 20~25px；</li>
+    <li><strong>阶段类型合理性校验缺失风险</strong>：健康中心在“用户添加数据”（打卡、一键分析评估）与“CSV 批量导入”两条入库链路中，缺乏跨时序的生理阶段合理性互斥校验，可能出现同一孕产周期内录入非孕期/产后等矛盾数据；且需支持按单个妈妈维度物理隔离；</li>
+    <li><strong>架构收敛与宝宝生长档案模块内建多宝宝支持</strong>：按照高内聚产品规范，回退独立的“妈妈孕产档案”与“宝宝生长档案”独立页面，<strong>将多宝宝档案管理能力完整内建于健康中心页面的「宝宝·生长档案」模块中</strong>，支持录入多位宝宝信息；且所有支持新增录入宝宝的入口均需贯彻“未填姓名默认自动继承默认宝宝名称，兜底小萌宝”的保底命名规则。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.30.2 架构重构与优化落地</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>健康打卡输入框视觉净化 (`UnifiedHealthCheckIn.tsx`)</strong>：彻底移除身高与体重输入框内的尺子与体重秤装饰图标，移除 <code>pl-9</code>，恢复原生 <code>.input</code> 干净排版，确保实测数据 100% 完整可见；严格保留全部输入防呆范围校验（身高 100~220cm，体重 25~250kg）、基线继承与表单校验逻辑；</li>
+    <li><strong>时序图表看板末端标签防截断排版方案 (`BmiTimeSeriesBoard.tsx`)</strong>：将趋势折线图网格右侧留白 <code>grid.right</code> 从 25px 大幅扩展至 55px；增量柱状图 <code>grid.right</code> 从 20px 扩展至 40px，预留充足文本安全延伸区；在 X 轴配置中增加 <code>axisLabel: { showMaxLabel: true }</code>，强制确保末端最后一个数据点的标签始终渲染不被丢弃，彻底根除截断；</li>
+    <li><strong>阶段类型合理性医学校验引擎 (`apps/core/services/stage_validator.py`)</strong>：依据国家卫健委标准（WS/T 801-2022），以 280 天全孕期模型（<code>LMP = EDD - 280天</code>）及分娩后生理恢复周期为基准，建立 <code>validate_stage_transition</code> 校验服务；全覆盖打卡归档、分析归档及 CSV 批量导入；严格拦截妊娠区间 <code>[LMP - 14天, EDD + 14天]</code> 内非孕期数据与分娩前产后数据，防孕周倒流，并按单个妈妈维度严格物理隔离；</li>
+    <li><strong>健康中心「宝宝·生长档案」内建多宝宝管理套件 (`HealthPage.tsx`)</strong>：
+      <ul style="margin-top:4px;">
+        <li><strong>多宝宝标签快速切换栏</strong>：展示当前用户全部宝宝胶囊标签（显示性别 emoji、姓名、默认标识、孕育中标识），点击即可无缝切换当前激活宝宝，专属 WHO 参考生长曲线与性别标准实时联动响应；</li>
+        <li><strong>当前宝宝信息微卡与操作</strong>：展示当前宝宝的姓名、出生日期/预产期、当前月龄/年龄精准计算、出生指标（身长/体重），并提供【设为默认】、【编辑资料】与【删除档案】一站式操作；</li>
+        <li><strong>内建新增宝宝档案弹窗 (`showAddBabyModal`)</strong>：支持出生状态切换（已出生/预产期）、宝宝昵称、性别、出生日期、出生体重、出生身长及是否设为默认宝宝。</li>
+      </ul>
+    </li>
+    <li><strong>全入口宝宝默认命名保底机制</strong>：
+      <ul style="margin-top:4px;">
+        <li><strong>默认命名规则</strong>：用户未输入姓名时，自动查询当前激活的默认宝宝档案信息继承其名称，无宝宝时兜底命名为 <code>小萌宝</code>；</li>
+        <li><strong>全入口 100% 统一覆盖</strong>：1) 健康中心「宝宝·生长档案」模块的【录入新宝宝】弹窗（<code>HealthPage.tsx#handleCreateBaby</code>）；2) 个人中心宝宝档案的【添加宝宝】表单（<code>ProfilePage.tsx#addBaby</code>）；3) 阶段设置弹窗的宝宝同步建立逻辑（<code>SetStageModal.tsx</code>）；4) 后端 API 接口全局保底（<code>BabyViewSet.perform_create</code>），任何途径调用 <code>POST /api/babies/</code> 均安全兜底。</li>
+      </ul>
+    </li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.30.3 验证效果</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li>健康打卡输入框无图标遮挡，输入与回显清爽可见；</li>
+    <li>时序图表看板在末点长标签场景下完整显示无截断；</li>
+    <li>阶段合理性校验引擎精准拦截冲突数据，多妈妈隔离可靠；</li>
+    <li>回退独立路由后系统架构精简规范；健康中心宝宝·生长档案模块内建多宝宝录入、编辑、切换与全入口默认命名 100% 验证通过。</li>
+  </ul>
+</div>
+
+
+<div style="background:#fff;border-radius:12px;padding:24px;margin-bottom:24px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+  <h3 style="color:#0f172a;font-size:18px;margin-top:0;border-bottom:2px solid #0284c7;padding-bottom:8px;">10.31 跨页面多模块全自动同步、宝宝健康打卡指定已有档案与时间轴/日历/图表多宝宝区分优化 (v1.68)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.31.1 业务背景与问题复盘</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>跨页面默认宝宝切换后妈妈档案不同步</strong>：用户在“我的”页面（<code>ProfilePage</code>）切换默认宝宝后，健康中心当前妈妈档案模块未自动同步更新，且健康中心、首页、我的页面之间缺乏全自动协同机制；</li>
+    <li><strong>宝宝健康打卡无法选择已有宝宝</strong>：健康中心“宝宝·生长档案”页面点击“健康打卡”按钮时，打卡弹窗未关联已有宝宝，无法针对指定宝宝录入档案，且月龄天数仅基于全局单人生日推算；</li>
+    <li><strong>健康时间轴与日历数据/图表无法区别宝宝</strong>：多宝宝场景下，健康时间轴节点卡片仅显示泛化的“宝宝 x 个月”，无法识别是哪个宝宝的测量或疫苗记录；统计图表将不同宝宝生长测量混在一块；日历单元格未显式标出对应宝宝名称，缺乏宝宝维度筛选与区分能力。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.31.2 架构重构与优化落地</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>全域多页面跨模块全自动同步机制</strong>：后端 <code>BabyViewSet._sync_user_stage</code> 切换默认宝宝时，自动联动更新用户的默认妈妈档案（同步预产期、是否孕期中与自动继承命名如 <code>xx妈妈</code>）；前端通过 <code>stageChanged</code> 全局广播与监听机制，健康中心（<code>HealthPage</code>）、我的页面（<code>ProfilePage</code>）与首页（<code>HomePage</code>）三页联动，切换默认宝宝或阶段后无需手动刷新即刻全量自动同步；</li>
+    <li><strong>健康打卡指定已有宝宝精准录入套件 (`UnifiedHealthCheckIn.tsx`)</strong>：表单在“宝宝生长测量”模式下渲染已有宝宝选择栏，展示全部宝宝姓名、性别 Emoji（👦/👧）、出生日期与“默认”标识，支持一键切换目标宝宝；根据所选宝宝生日动态推算精准天数与月龄；保存时严格绑定 <code>baby</code> 外键，后端按单个宝宝维度隔离查重，同日多宝宝打卡互不干扰；</li>
+    <li><strong>健康时间轴、统计图表与日历多宝宝区分体系</strong>：
+      <ul style="margin-top:4px;">
+        <li><strong>API 字段强化</strong>：<code>HealthRecordSerializer</code> 增加只读 <code>baby_name</code> 和 <code>mother_name</code>，返回数据明确附带宝宝与妈妈姓名；</li>
+        <li><strong>时间轴流专属宝宝徽章与按宝宝筛选 (`HealthTimelineView.tsx`)</strong>：提供【全部宝宝 / 指定宝宝】快捷筛选卡片，卡片头部展示高亮实体徽章（如 <code>👶 甜甜</code>）与专属月龄计算；</li>
+        <li><strong>统计图表多宝宝分离与动态透视 (`HealthChartsBoard`)</strong>：柱状图细分为多宝宝专属生长系列与专属图例配色，环形图按宝宝维度分别计算生长测量频次；</li>
+        <li><strong>日历总览多宝宝可视化标注 (`HealthCalendar.tsx`)</strong>：日历单元格内的生长与疫苗胶囊直接显式标明对应宝宝昵称（如 <code>[甜甜] 生长 5.2kg</code>），并在筛选时自动跟随过滤；</li>
+        <li><strong>宝宝生长档案曲线与历史表精准隔离 (`HealthPage.tsx`)</strong>：Tab 2 中的 WHO 生长曲线与历史测量表严格按照当前激活宝宝物理过滤，杜绝不同宝宝数据混入同一张曲线。</li>
+      </ul>
+    </li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.31.3 验证效果</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li>在“我的”页面切换默认宝宝后，健康中心当前妈妈档案模块、当前宝宝详情微卡、首页 Banner 均无需手动刷新即刻 100% 自动同步；</li>
+    <li>健康打卡宝宝模式可在多个已有宝宝之间自由切换，精准推算月龄天数，打卡数据正确归属于目标宝宝，同日多宝宝打卡无冲突；</li>
+    <li>健康时间轴、统计图表看板与经典日历视图全面呈现宝宝姓名与专属图例，支持多宝宝精准筛选，彻底解决多宝宝数据混淆问题。</li>
+  </ul>
+</div>
+
+<div style="background:#fff;border-radius:12px;padding:24px;margin-bottom:24px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+  <h3 style="color:#0f172a;font-size:18px;margin-top:0;border-bottom:2px solid #0284c7;padding-bottom:8px;">10.32 健康中心宝宝档案交互闭环、日历精准定向打卡与每日统计看板优化 (v1.69)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.32.1 业务背景与问题复盘</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>宝宝生长档案录入/编辑/删除操作无反应</strong>：健康中心「宝宝·生长档案」模块中，录入新宝宝、编辑资料与删除档案模态框缺失 JSX 挂载；</li>
+    <li><strong>生长曲线与测量记录未显示宝宝昵称</strong>：WHO 生长曲线与历史测量表格缺少所属宝宝标识，多宝宝切换时无法明确数据归属；</li>
+    <li><strong>健康日历总览多宝宝点击未定向且无历史数据提示</strong>：点击多宝宝日历记录未能精准路由至目标宝宝，打卡框缺少此前录入数据的提示；</li>
+    <li><strong>日历总览产检记录点击未切换打卡模式</strong>：点击产检记录（<code>prenatal_exam</code>）仍停留在“宝宝生长测量”模式；</li>
+    <li><strong>统计图表时间维度过大且不易观察</strong>：原月度堆叠图粒度过粗，缺少日级别（Daily）活跃时序与交互缩放能力。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.32.2 架构重构与优化落地</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>宝宝生长档案管理弹窗闭环与全域跨页同步</strong>：补齐录入新宝宝、编辑资料与删除确认弹窗，各操作均触发 <code>stageChanged</code> 与 <code>fetchMe()</code>，实现健康中心、首页与我的页面秒级自动同步；</li>
+    <li><strong>生长曲线与测量记录宝宝昵称显式呈现</strong>：WHO 参考曲线标题与卡片前置 <code>👶 当前展示：{currentBaby.name}</code>，历史测量表新增「宝宝昵称」列并为每行附带宝宝标识胶囊；</li>
+    <li><strong>健康日历定向打卡与已录入数据智能提示</strong>：日历胶囊独立响应点击，精准透传目标记录；打卡弹窗顶部提示该日期已录入实测数值并提供【一键填入上次数据】按钮，输入框 placeholder 与辅助文案同步回显历史录入数据；</li>
+    <li><strong>产检记录模式自动路由跳转</strong>：记录点击处理器智能识别记录类型，产检自动跳转至「我 · 孕期产检」选项卡，宝宝测量/疫苗自动跳转至「宝宝」选项卡并激活对应宝宝；</li>
+    <li><strong>以“天”为维度的统计看板与缩放优化</strong>：重构 <code>HealthChartsBoard</code>，支持【近 7 天 / 近 14 天 / 近 30 天】按天维度切换，顶部新增 4 维 KPI 概览微卡，柱状图支持 ECharts <code>dataZoom</code> 滚轮/滑块缩放与柱子点击联动下钻，右侧环形图呈现全量占比与环心总计。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.32.3 验证效果</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li>录入新宝宝、编辑与删除弹窗正常唤起与保存，跨页面数据全自动同步；</li>
+    <li>生长曲线与测量记录清晰标明宝宝昵称；</li>
+    <li>日历点击指定宝宝或产检记录准确归属并展示历史数值提示；</li>
+    <li>统计看板以天为单位展示直观清晰，支持缩放与点击补录。</li>
+  </ul>
+</div>
+
+<div style="background:#fff;border-radius:12px;padding:24px;margin-bottom:24px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+  <h3 style="color:#0f172a;font-size:18px;margin-top:0;border-bottom:2px solid #0284c7;padding-bottom:8px;">10.33 健康打卡模式隔离、怀孕宝宝孕周推算、日历定向多宝宝数据回填与统计看板深度下钻升级 (v1.70)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.33.1 业务背景与问题复盘</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>未出生/怀孕中宝宝月龄展示缺陷</strong>：未出生宝宝月龄一直展示为“0天”，缺少孕周孕天推算；</li>
+    <li><strong>打卡模式未按子页面严格隔离</strong>：妈妈页面显示宝宝打卡，宝宝页面显示妈妈打卡，存在混淆；</li>
+    <li><strong>日历总览多宝宝/产检记录点击未定向且无历史数据回填</strong>：点击悠悠仍停留在宋泽言，历史实测数据未回显；</li>
+    <li><strong>覆盖提示时机不合理</strong>：用户未点击保存即预先弹出覆盖确认提示；</li>
+    <li><strong>统计图表看板缺乏深度下钻分析</strong>：缺少多时间范围、天/周/月粒度切换及点击周期进入深度详情与返回能力。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.33.2 架构重构与优化落地</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>怀孕宝宝 280 天孕周推算</strong>：修正“0天”缺陷，根据预产期推算并展示「孕x周x天」；</li>
+    <li><strong>打卡记录类型按子页面严格隔离</strong>：妈妈页面只保留妈妈模式，宝宝页面只保留宝宝生长测量模式；</li>
+    <li><strong>日历多宝宝与产检记录精准定向与数据回填</strong>：点击悠悠/宋泽言或产检记录准确归属并自动回填身长/体重/头围历史值与输入提示；</li>
+    <li><strong>覆盖提示时机校准</strong>：仅在点击保存且返回 409 时触发覆盖确认；</li>
+    <li><strong>多粒度看板与深度下钻分析</strong>：支持 7/14/30/90/180天/全部范围、天/周/月粒度、柱/线/面形态切换，支持点击周期深度下钻与面包屑返回。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.33.3 验证效果</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li>未出生宝宝统一展示孕周天数；</li>
+    <li>子页面打卡选项严格隔离无混淆；</li>
+    <li>日历点击指定记录精准归属并自动填充输入框历史数据；</li>
+    <li>统计看板支持多粒度切换、点击周期进入下钻详情并顺利返回。</li>
+  </ul>
+</div>
+
+
+<div style="margin-top:28px;padding:20px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;">
+  <h3 style="color:#0f172a;font-size:18px;margin-top:0;border-bottom:2px solid #0284c7;padding-bottom:8px;">10.34 健康打卡运行时防崩修复、BMI 提示词与孕周自动填充、多孩阶段校验与图表下钻返回持久化 (v1.71)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.34.1 业务背景与问题复盘</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>健康打卡按钮点击白屏崩溃</strong>：因 <code>UnifiedHealthCheckIn.tsx</code> 中 <code>MODE_OPTIONS</code> 声明滞后引发 TDZ <code>ReferenceError</code> 且 Hook 位于条件返回之后，导致 React 根组件树崩溃白屏；</li>
+    <li><strong>深度体重/BMI分析提示词不具体且未自动填入孕周</strong>：选择产后恢复期时仅提示“按宝宝生日自动”，未说明是按哪位宝宝计算；选择全孕期阶段时，若存在孕期宝宝档案，孕周未自动带入；</li>
+    <li><strong>多孩不同阶段妈妈的阶段类型校验冲突与多模块联动缺失</strong>：同一位妈妈可能同时拥有大宝（已出生、产后恢复期）与二宝（怀孕中、全孕期），原校验逻辑按全局单一周期处理导致历史产后与当前孕期发生虚假冲突；</li>
+    <li><strong>统计图表看板下钻返回后记录类型构成饼图失效</strong>：周期下钻后返回总览看板，记录类型构成环形饼图无法展示数据；且图表和日历内点击触发打卡弹窗时受弹窗异常影响出现白屏。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.34.2 架构重构与优化落地</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>健康打卡弹窗全生命周期健壮性重构</strong>：严格前置声明 <code>MODE_OPTIONS</code>，所有 Hook 统一置于最顶层，彻底杜绝 TDZ 变量未初始化异常与 React 根树崩溃；</li>
+    <li><strong>深度体重/BMI分析提示词具体化与全孕期孕周自动填入</strong>：产后恢复期提示词动态更新为“产后月龄 (0 ~ 36 个月) · 按【xx】宝宝生日自动”并支持多宝宝切换；全孕期阶段自动检测孕期宝宝档案并基于 280 天临床模型自动填入孕周与天数；</li>
+    <li><strong>多孩不同阶段单次妊娠周期时间窗隔离校验</strong>：重构 <code>apps/core/services/stage_validator.py</code>，将冲突校验限制在单次妊娠周期时间窗 <code>[LMP - 14天, EDD + 42天]</code>（约 300 天）内，允许上一胎大宝的产后记录与当前二宝的全新孕期记录医学合理共存；</li>
+    <li><strong>统计图表总览与下钻 DOM 常驻及 ECharts 重绘保障</strong>：总览图表采用样式隐藏而非 DOM 卸载，保持画布常驻；复用 ECharts 实例并在返回时通过 <code>requestAnimationFrame</code> 触发重绘与尺寸自愈，放宽多宝宝比对匹配，确保饼图与趋势图 100% 稳定呈现。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.34.3 验证效果</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li>前端 <code>npm run build</code> 编译打包零警告零报错；</li>
+    <li>健康打卡弹窗秒级打开无白屏，所有图表与日历点击入口顺畅交互并回填数据；</li>
+    <li>BMI 模块动态展示对应宝宝昵称并自动填入孕周，多孩阶段校验畅通入库；</li>
+    <li>图表下钻返回后记录类型构成饼图与趋势图完整保留、稳定展示。</li>
+  </ul>
+</div>
+
+
+<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:20px;margin-bottom:24px;">
+  <h3 style="color:#0f172a;margin-top:0;">10.35 BMI参考宝宝显式化、孕前时序校验边界对齐、时序活跃度图表X轴防挤压与多宝宝图表精准匹配 (v1.72)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.35.1 业务背景与问题复盘</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>全孕期参考宝宝信息缺失</strong>：深度体重/BMI分析模块选择全孕期时，未直观展示是按哪位宝宝计算的当前孕周；</li>
+    <li><strong>阶段合理性时序校验边界虚假拦截</strong>：LMP 之前为合法的孕前备孕期，原校验使用 LMP-14天导致 2026-04-28 误报冲突；</li>
+    <li><strong>时序图表 X 轴排版拥挤与概率丢失</strong>：大范围阶段时图例、滑块与 X 轴标签重叠导致 ECharts 动态隐藏横坐标日期或标签互相遮盖；</li>
+    <li><strong>下钻图表形态丢失与多宝宝点击混淆</strong>：外部选择折线图/面积图后下钻仍为柱状图；同日多宝宝记录点击图表时无法精准跳转到对应宝宝。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.35.2 架构重构与优化落地</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>全孕期参考宝宝信息显式化</strong>：自动检测提取孕期宝宝档案，表单标签直观展示参考宝宝名称，多孕期宝宝提供可交互芯片切换；</li>
+    <li><strong>时序校验边界修正与文案严格对齐</strong>：将妊娠冲突拦截区间校准为 <code>[LMP, EDD + 7天]</code>，早于 LMP 的孕前备孕记录正常放行入库，文案与逻辑严格对齐；</li>
+    <li><strong>图表 X 轴结构优化与智能防挤压</strong>：高度扩展至 320px，图例上移，X 轴配置 <code>interval: "auto"</code>、<code>hideOverlap: true</code> 与动态旋转，长周期启用默认 14 单元滑动缩放窗口；</li>
+    <li><strong>图表形态全链路继承与多宝宝精准点击分流</strong>：下钻子图表形态 100% 同步外部形态；点击时解析 <code>seriesName</code> 精准命中指定宝宝记录并联动弹窗。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.35.3 验证效果</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li>前端 <code>npm run build</code> 零警告零报错通过；一体化服务运行正常（端口 5173，200 OK）；</li>
+    <li>全孕期阶段清晰显示参考宝宝，2026-04-28 孕前备孕记录成功入库；</li>
+    <li>时序活跃度图表横轴日期排版舒适清晰，滑动条平滑；下钻形态继承且多宝宝图表点击精准匹配。</li>
+  </ul>
+</div>
+
 </body>
 </html>

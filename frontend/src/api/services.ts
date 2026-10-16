@@ -66,13 +66,14 @@ export const healthApi = {
     target: "mom" | "baby";
     conflict_strategy: "skip" | "overwrite";
     records: Array<Record<string, string | number | undefined>>;
+    mother_id?: number | null;
   }) =>
     api.post<ApiResponse<CsvImportResult>>("/health/records/batch-import/", data).then((r) => r.data.data),
 
-  // 获取用户全时序测量打卡历史（用于趋势/增量图表看板与历史数据表）
-  getBmiTimeseries: () =>
-    api.get<ApiResponse<{ timeseries: BmiTimeSeriesRecord[] }>>("/health/bmi-analysis/").then((r) => r.data.data),
-  analyzeBmi: (data: BmiAnalysisInput) =>
+  // 获取用户全时序测量打卡历史（用于趋势/增量图表看板与历史数据表，支持按妈妈维度隔离）
+  getBmiTimeseries: (params?: { mother_id?: number | null }) =>
+    api.get<ApiResponse<{ timeseries: BmiTimeSeriesRecord[] }>>("/health/bmi-analysis/", { params }).then((r) => r.data.data),
+  analyzeBmi: (data: BmiAnalysisInput & { mother_id?: number | null }) =>
     api.post<ApiResponse<BmiAnalysisResult>>("/health/bmi-analysis/", data).then((r) => r.data.data),
 };
 

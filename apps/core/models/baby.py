@@ -11,7 +11,7 @@ class BabyProfile(models.Model):
     ]
 
     user = models.ForeignKey("User", on_delete=models.CASCADE, related_name="babies", verbose_name="用户")
-    name = models.CharField(max_length=50, verbose_name="宝宝昵称")
+    name = models.CharField(max_length=50, blank=True, default="", verbose_name="宝宝昵称")
     gender = models.CharField(max_length=10, choices=GENDER_CHOICES, default="unknown", verbose_name="性别")
     birthday = models.DateField(verbose_name="出生日期/预产期")
     is_born = models.BooleanField(default=True, verbose_name="是否已出生")

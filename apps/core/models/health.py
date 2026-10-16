@@ -20,6 +20,14 @@ class HealthRecord(models.Model):
         related_name="health_records",
         verbose_name="宝宝",
     )
+    mother = models.ForeignKey(
+        "MotherProfile",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="health_records",
+        verbose_name="妈妈档案",
+    )
     record_type = models.CharField(max_length=20, choices=RECORD_TYPES, verbose_name="记录类型")
 
     # 通用字段

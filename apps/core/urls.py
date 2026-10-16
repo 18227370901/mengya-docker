@@ -4,6 +4,7 @@ from rest_framework.routers import DefaultRouter
 from . import views, views_searxng, views_daily_tips
 
 router = DefaultRouter()
+router.register(r"mothers", views.MotherViewSet, basename="mother")
 router.register(r"babies", views.BabyViewSet, basename="baby")
 router.register(r"timeline", views.TimelineViewSet, basename="timeline")
 router.register(r"recipes", views.RecipeViewSet, basename="recipe")

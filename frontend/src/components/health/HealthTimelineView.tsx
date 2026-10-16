@@ -11,11 +11,18 @@ import {
   Sparkles,
   ChevronRight,
   TrendingUp,
+  ArrowLeft,
+  Layers,
+  LineChart,
+  RotateCcw,
+  CheckCircle2,
+  Info,
 } from "lucide-react";
 import { useThemeStore } from "@/store/themeStore";
 import { gestationLabel } from "@/utils/gestation";
-import type { HealthRecord } from "@/types";
+import type { HealthRecord, BabyProfile } from "@/types";
 import HealthCalendar from "../HealthCalendar";
+import HealthChartsBoard from "./HealthChartsBoard";
 import CopyButton from "@/components/CopyButton";
 
 type ViewMode = "timeline" | "charts" | "calendar";
@@ -25,8 +32,10 @@ interface HealthTimelineViewProps {
   records: HealthRecord[];
   currentMonth: Date;
   onMonthChange: (date: Date) => void;
-  onDayClick?: (date: string, records: HealthRecord[]) => void;
+  onDayClick?: (date: string, records: HealthRecord[], targetRecord?: HealthRecord) => void;
+  onRecordClick?: (record: HealthRecord) => void;
   onCheckInClick?: (date?: string) => void;
+  babies?: BabyProfile[];
 }
 
 const TYPE_CONFIG: Record<
@@ -63,226 +72,17 @@ const TYPE_CONFIG: Record<
   },
 };
 
-/**
- * 独立的健康统计图表看板子组件
- * 封装完整的 ECharts 挂载、绘制、自适应与卸载释放生命周期，彻底根除视图切换后的实例悬挂与空白缺陷
- */
-function HealthChartsBoard({
-  records,
-  stats,
-  onViewTimeline,
-}: {
-  records: HealthRecord[];
-  stats: { total: number; momCount: number; babyCount: number; vaccineCount: number; latestDate: string | null };
-  onViewTimeline: () => void;
-}) {
-  const isDark = useThemeStore((s) => s.theme === "dark");
-  const barChartRef = useRef<HTMLDivElement | null>(null);
-  const pieChartRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    const barEl = barChartRef.current;
-    const pieEl = pieChartRef.current;
-    if (!barEl || !pieEl) return;
-
-    const axisLabelColor = isDark ? "#94a3b8" : "#64748b";
-    const axisLineColor = isDark ? "#334155" : "#e2e8f0";
-    const splitLineColor = isDark ? "#1e293b" : "#f1f5f9";
-
-    // 1. 初始化实例
-    const barChart = echarts.init(barEl);
-    const pieChart = echarts.init(pieEl);
-
-    // 2. 计算近 6 个月打卡频次堆叠数据
-    const months: string[] = [];
-    const now = new Date();
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
-    }
-
-    const momMonthly = months.map(() => 0);
-    const babyMonthly = months.map(() => 0);
-    const vacMonthly = months.map(() => 0);
-
-    records.forEach((r) => {
-      const m = r.record_date.slice(0, 7);
-      const idx = months.indexOf(m);
-      if (idx !== -1) {
-        if (r.record_type === "prenatal_exam") momMonthly[idx]++;
-        else if (r.record_type === "growth_measurement") babyMonthly[idx]++;
-        else if (r.record_type === "vaccination" || r.record_type === "vaccine") vacMonthly[idx]++;
-      }
-    });
-
-    // 绘制柱状图
-    barChart.setOption({
-      tooltip: {
-        trigger: "axis",
-        axisPointer: { type: "shadow" },
-        backgroundColor: isDark ? "#1e293b" : "#ffffff",
-        borderColor: axisLineColor,
-        textStyle: { color: isDark ? "#f1f5f9" : "#1e293b" },
-      },
-      legend: {
-        bottom: 0,
-        textStyle: { color: axisLabelColor, fontSize: 11 },
-        data: ["孕期产检", "宝宝生长", "疫苗接种"],
-      },
-      grid: { top: 30, right: 20, bottom: 40, left: 40 },
-      xAxis: {
-        type: "category",
-        data: months,
-        axisLabel: { color: axisLabelColor, fontSize: 11 },
-        axisLine: { lineStyle: { color: axisLineColor } },
-      },
-      yAxis: {
-        type: "value",
-        minInterval: 1,
-        axisLabel: { color: axisLabelColor },
-        splitLine: { lineStyle: { color: splitLineColor } },
-      },
-      series: [
-        {
-          name: "孕期产检",
-          type: "bar",
-          stack: "total",
-          itemStyle: { color: "#ec4899" },
-          data: momMonthly,
-        },
-        {
-          name: "宝宝生长",
-          type: "bar",
-          stack: "total",
-          itemStyle: { color: "#10b981" },
-          data: babyMonthly,
-        },
-        {
-          name: "疫苗接种",
-          type: "bar",
-          stack: "total",
-          itemStyle: { color: "#3b82f6" },
-          data: vacMonthly,
-        },
-      ],
-    });
-
-    // 3. 计算构成环形饼图数据
-    const pieData = [
-      { value: stats.momCount, name: "孕期产检", itemStyle: { color: "#ec4899" } },
-      { value: stats.babyCount, name: "宝宝生长", itemStyle: { color: "#10b981" } },
-      { value: stats.vaccineCount, name: "疫苗接种", itemStyle: { color: "#3b82f6" } },
-    ].filter((d) => d.value > 0);
-
-    // 绘制饼图
-    pieChart.setOption({
-      tooltip: {
-        trigger: "item",
-        backgroundColor: isDark ? "#1e293b" : "#ffffff",
-        borderColor: axisLineColor,
-        textStyle: { color: isDark ? "#f1f5f9" : "#1e293b" },
-        formatter: "{b}: {c} 次 ({d}%)",
-      },
-      legend: {
-        bottom: 0,
-        textStyle: { color: axisLabelColor, fontSize: 11 },
-      },
-      series: [
-        {
-          name: "记录类型",
-          type: "pie",
-          radius: ["42%", "70%"],
-          center: ["50%", "45%"],
-          avoidLabelOverlap: false,
-          itemStyle: {
-            borderRadius: 6,
-            borderColor: isDark ? "#1f2937" : "#fff",
-            borderWidth: 2,
-          },
-          label: { show: false },
-          emphasis: {
-            label: {
-              show: true,
-              fontSize: 12,
-              fontWeight: "bold",
-              color: isDark ? "#f1f5f9" : "#1e293b",
-            },
-          },
-          data: pieData.length > 0 ? pieData : [{ value: 1, name: "暂无记录", itemStyle: { color: "#cbd5e1" } }],
-        },
-      ],
-    });
-
-    // 4. 自适应尺寸监听与首帧重绘保障
-    const observer = new ResizeObserver(() => {
-      barChart.resize();
-      pieChart.resize();
-    });
-    observer.observe(barEl);
-    observer.observe(pieEl);
-
-    // 延时确保浏览器排版流计算完毕
-    const rafId = requestAnimationFrame(() => {
-      barChart.resize();
-      pieChart.resize();
-    });
-
-    // 5. 卸载时彻底断开监听与销毁实例，防止内存泄漏和旧实例留存
-    return () => {
-      cancelAnimationFrame(rafId);
-      observer.disconnect();
-      barChart.dispose();
-      pieChart.dispose();
-    };
-  }, [records, isDark, stats]);
-
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        {/* 堆叠柱状图：月度打卡频次 */}
-        <div className="card space-y-2 p-4">
-          <div className="flex items-center justify-between border-b border-gray-100 pb-2 dark:border-gray-800">
-            <h3 className="text-sm font-bold text-gray-800 dark:text-gray-100">
-              近 6 个月健康打卡活跃度与类型分布
-            </h3>
-            <span className="text-xs text-gray-400">堆叠柱状图</span>
-          </div>
-          <div ref={barChartRef} style={{ height: 280 }} className="w-full" />
-        </div>
-
-        {/* 环形饼图：记录类型构成 */}
-        <div className="card space-y-2 p-4">
-          <div className="flex items-center justify-between border-b border-gray-100 pb-2 dark:border-gray-800">
-            <h3 className="text-sm font-bold text-gray-800 dark:text-gray-100">
-              健康档案记录类型构成
-            </h3>
-            <span className="text-xs text-gray-400">环形图</span>
-          </div>
-          <div ref={pieChartRef} style={{ height: 280 }} className="w-full" />
-        </div>
-      </div>
-
-      <div className="card p-4 text-xs text-gray-400 flex items-center justify-between">
-        <span>💡 统计图表按全量健康记录动态聚合，切换视图或新增打卡均能实时秒级重绘。</span>
-        <button
-          type="button"
-          onClick={onViewTimeline}
-          className="text-brand-600 hover:text-brand-700 dark:text-brand-400 font-medium"
-        >
-          查看时间轴明细 →
-        </button>
-      </div>
-    </div>
-  );
-}
-
 export default function HealthTimelineView({
   records,
   currentMonth,
   onMonthChange,
   onDayClick,
+  onRecordClick,
   onCheckInClick,
+  babies,
 }: HealthTimelineViewProps) {
+  const babyMap = useMemo(() => new Map(babies?.map((b) => [b.id, b])), [babies]);
+  const [selectedBabyFilter, setSelectedBabyFilter] = useState<number | "all">("all");
   // 持久化视图偏好，默认首选“时间轴流”
   const [viewMode, setViewMode] = useState<ViewMode>(() => {
     try {
@@ -321,15 +121,23 @@ export default function HealthTimelineView({
     };
   }, [records]);
 
-  // 2. 过滤排序后的时间轴记录（时间倒序）
+  // 2. 过滤排序后的时间轴记录（按类型与所选宝宝精准双重筛选，时间倒序）
+  const effectiveRecords = useMemo(() => {
+    if (selectedBabyFilter === "all") return records;
+    return records.filter((r) => {
+      if (r.record_type === "prenatal_exam") return false;
+      return r.baby === selectedBabyFilter;
+    });
+  }, [records, selectedBabyFilter]);
+
   const timelineRecords = useMemo(() => {
-    const list = records.filter((r) => {
+    const list = effectiveRecords.filter((r) => {
       if (filterType === "all") return true;
       if (filterType === "vaccination") return r.record_type === "vaccination" || r.record_type === "vaccine";
       return r.record_type === filterType;
     });
     return list.sort((a, b) => (a.record_date === b.record_date ? b.id - a.id : a.record_date < b.record_date ? 1 : -1));
-  }, [records, filterType]);
+  }, [effectiveRecords, filterType]);
 
   return (
     <div className="space-y-5">
@@ -398,7 +206,7 @@ export default function HealthTimelineView({
               {viewMode === "timeline"
                 ? "纵向时间轴流 · 支持按产检/生长/疫苗分类筛选"
                 : viewMode === "charts"
-                ? "月度活跃度堆叠柱状图 · 记录类型构成环形图"
+                ? "每日活跃度堆叠柱状图 · 记录类型构成环形图"
                 : "经典月历视图 · 点击历史日期可快速补录健康打卡"}
             </p>
           </div>
@@ -448,6 +256,48 @@ export default function HealthTimelineView({
       {/* 视图 1：纵向时间轴流 (Timeline) */}
       {viewMode === "timeline" && (
         <div className="space-y-4">
+          {/* 多宝宝专属筛选栏 */}
+          {babies && babies.length > 1 && (
+            <div className="flex flex-wrap items-center gap-2 rounded-xl bg-orange-50/70 p-2.5 border border-orange-100 dark:bg-gray-800/80 dark:border-gray-700">
+              <span className="flex items-center gap-1 text-xs text-orange-800 dark:text-orange-300 font-bold mr-1">
+                <Baby className="h-4 w-4 text-orange-500" /> 宝宝对象：
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelectedBabyFilter("all")}
+                className={`rounded-lg px-2.5 py-1 text-xs font-medium transition cursor-pointer ${
+                  selectedBabyFilter === "all"
+                    ? "bg-orange-500 text-white shadow-2xs"
+                    : "bg-white text-gray-600 border border-gray-200 hover:border-orange-300 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600"
+                }`}
+              >
+                全部宝宝 ({records.filter((r) => r.record_type !== "prenatal_exam").length})
+              </button>
+              {babies.map((b) => {
+                const count = records.filter((r) => r.baby === b.id).length;
+                const isSelected = selectedBabyFilter === b.id;
+                const emoji = b.gender === "girl" ? "👧" : b.gender === "boy" ? "👦" : "👶";
+                return (
+                  <button
+                    key={b.id}
+                    type="button"
+                    onClick={() => setSelectedBabyFilter(b.id)}
+                    className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-medium transition cursor-pointer ${
+                      isSelected
+                        ? "bg-orange-500 text-white shadow-2xs"
+                        : "bg-white text-gray-600 border border-gray-200 hover:border-orange-300 dark:bg-gray-700 dark:text-gray-200 dark:border-gray-600"
+                    }`}
+                  >
+                    <span>{emoji}</span>
+                    <span>{b.name}</span>
+                    <span className="text-[10px] opacity-80">({count})</span>
+                    {b.is_primary && <span className="text-[9px] px-1 rounded bg-orange-100 text-orange-700 dark:bg-orange-950 dark:text-orange-300">默认</span>}
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           {/* 类型筛选标签 */}
           <div className="flex flex-wrap items-center gap-2">
             <span className="flex items-center gap-1 text-xs text-gray-400 font-medium mr-1">
@@ -514,6 +364,12 @@ export default function HealthTimelineView({
                           <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${cfg.badgeCls}`}>
                             {cfg.label}
                           </span>
+                          {r.record_type !== "prenatal_exam" && (
+                            <span className="flex items-center gap-1 rounded-full bg-emerald-100/80 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800 border border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-300 dark:border-emerald-800 shadow-2xs">
+                              <Baby className="h-3 w-3" />
+                              {r.baby_name || (r.baby ? babyMap.get(r.baby)?.name : "") || (babies && babies.length === 1 ? babies[0].name : "宝宝")}
+                            </span>
+                          )}
                           {r.gestational_week && (
                             <span className="rounded-full bg-orange-50 px-2 py-0.5 text-[11px] font-semibold text-brand-600 dark:bg-brand-950/40 dark:text-brand-300">
                               {gestationLabel(r.gestational_week, (r as any).exam_items?.gestational_days ?? null)}
@@ -521,7 +377,7 @@ export default function HealthTimelineView({
                           )}
                           {r.baby_age_days != null && (
                             <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-600 dark:bg-emerald-950/40 dark:text-emerald-300">
-                              宝宝 {Math.floor(r.baby_age_days / 30.44)} 个月
+                              {r.baby_name || (r.baby ? babyMap.get(r.baby)?.name : "") || "宝宝"} {Math.floor(r.baby_age_days / 30.44)} 个月
                             </span>
                           )}
                         </div>
@@ -530,7 +386,7 @@ export default function HealthTimelineView({
                         {onDayClick && (
                           <button
                             type="button"
-                            onClick={() => onDayClick(r.record_date, [r])}
+                            onClick={() => { if (onRecordClick) { onRecordClick(r); } else if (onDayClick) { onDayClick(r.record_date, [r], r); } }}
                             className="text-xs text-gray-400 hover:text-brand-600 dark:hover:text-brand-400 transition flex items-center gap-0.5"
                           >
                             补录该日 <ChevronRight className="h-3 w-3" />
@@ -617,6 +473,9 @@ export default function HealthTimelineView({
           records={records}
           stats={stats}
           onViewTimeline={() => handleViewChange("timeline")}
+          babies={babies}
+          onDayClick={onDayClick}
+          onRecordClick={onRecordClick}
         />
       )}
 
@@ -624,10 +483,12 @@ export default function HealthTimelineView({
       {viewMode === "calendar" && (
         <div>
           <HealthCalendar
-            records={records}
+            records={effectiveRecords}
             currentMonth={currentMonth}
             onMonthChange={onMonthChange}
             onDayClick={onDayClick}
+            onRecordClick={onRecordClick}
+            babies={babies}
           />
         </div>
       )}

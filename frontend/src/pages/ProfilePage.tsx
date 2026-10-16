@@ -1,7 +1,7 @@
 import SetStageModal from "@/components/SetStageModal";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Bot, Baby, Bell, Edit3, Eye, EyeOff, Heart, HeartOff, KeyRound, LogOut, Moon, Package, Plus, Settings, ShieldCheck, Sun, Trash2, UserCheck, Users, ClipboardList, X, Loader2, Sparkles } from "lucide-react";
+import { Bot, Baby, Bell, Edit3, Eye, EyeOff, Heart, HeartOff, HeartPulse, KeyRound, LogOut, Moon, Package, Plus, Settings, ShieldCheck, Sun, Trash2, UserCheck, Users, ClipboardList, X, Loader2, Sparkles } from "lucide-react";
 import { useThemeStore } from "@/store/themeStore";
 import { authApi } from "@/api/auth";
 import { useAuthStore } from "@/store/authStore";
@@ -108,13 +108,21 @@ export default function ProfilePage() {
     authApi.babies().then(setBabies).catch(() => setBabies([]));
     // 检查 AI 授权状态（非 403 则有权限，用于决定是否显示"已授权"标识）
     authApi.aiConfig().then(() => setAIAuthorized(true)).catch(() => setAIAuthorized(false));
+
+    const handleStageChanged = async () => {
+      await fetchMe();
+      authApi.babies().then(setBabies).catch(() => {});
+    };
+    window.addEventListener("stageChanged", handleStageChanged);
+    return () => window.removeEventListener("stageChanged", handleStageChanged);
   }, []);
 
   const addBaby = async () => {
-    if (!babyForm.name.trim()) return;
     const isBorn = babyForm.status === "born";
+    const defaultBaby = babies.find((b) => b.is_primary) || babies[0];
+    const resolvedName = babyForm.name.trim() || (defaultBaby?.name || "小萌宝");
     const payload: Partial<BabyProfile> = {
-      name: babyForm.name.trim(),
+      name: resolvedName,
       gender: babyForm.gender,
       birthday: babyForm.birthday,
       is_born: isBorn,
@@ -348,11 +356,15 @@ export default function ProfilePage() {
 
             <div>
               <label className="label text-xs">
-                {babyForm.status === "pregnant" ? "宝宝胎名 / 小名 *" : "宝宝昵称 *"}
+                {babyForm.status === "pregnant" ? "宝宝胎名 / 小名" : "宝宝昵称"}
               </label>
               <input
                 className="input"
-                placeholder={babyForm.status === "pregnant" ? "例如：小核桃、大宝" : "例如：小土豆"}
+                placeholder={
+                  (babies.find((b) => b.is_primary) || babies[0])?.name
+                    ? `选填，留空默认：${(babies.find((b) => b.is_primary) || babies[0])?.name}`
+                    : "例如：小土豆（选填，留空默认：小萌宝）"
+                }
                 value={babyForm.name}
                 onChange={(e) => setBabyForm((f) => ({ ...f, name: e.target.value }))}
               />
