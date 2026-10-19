@@ -10,8 +10,8 @@
   5. 产物直接随代码提交 Git 仓库，实现云端服务器 git clone 即拉即跑（零 Node / 零 npm 依赖）。
 
 用法：
-  python build_frontend.py              # 执行构建与同步
-  python build_frontend.py --install    # 强制重新安装 npm 依赖并构建
+  python tools/build_frontend.py              # 执行构建与同步
+  python tools/build_frontend.py --install    # 强制重新安装 npm 依赖并构建
 """
 
 import os
@@ -20,7 +20,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-ROOT_DIR = Path(__file__).resolve().parent
+# 解析项目根目录 (tools/ 的上一级)
+ROOT_DIR = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = ROOT_DIR / 'frontend'
 TEMPLATES_DIR = ROOT_DIR / 'templates'
 STATIC_DIR = ROOT_DIR / 'static'

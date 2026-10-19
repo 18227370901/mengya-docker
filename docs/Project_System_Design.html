@@ -2211,6 +2211,25 @@ estart: unless-stopped；
     <li>全孕期阶段清晰显示参考宝宝，2026-04-28 孕前备孕记录成功入库；</li>
     <li>时序活跃度图表横轴日期排版舒适清晰，滑动条平滑；下钻形态继承且多宝宝图表点击精准匹配。</li>
   </ul>
+  <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0;" />
+  <h3 style="color:#0f172a;margin-top:0;">10.36 架构极简治理：根目录瘦身、文档中心分流与跨 AI 协作维护规范落地 (v1.74)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.36.1 治理背景与核心痛点</h4>
+  <p style="color:#475569;line-height:1.6;">
+    随着平台的持续演进，根目录与文档体系暴露出显著的结构性膨胀：<code>README.md</code> 累积达 1157 行，大量版本发布流水账与深层理论混杂，初次接入成本极高；辅助脚本与设计文档散落根目录；跨 AI 编程助手开发缺乏统一约束，容易发生日志反弹污染；关键运行探针需精准保护。
+  </p>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.36.2 核心改造与分层治理方案</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>文档中心 (docs/) 独立设立</strong>：收纳权威 PSD 规范与 HTML 交互视图；全量更新日志抽离为独立的 <code>docs/CHANGELOG.md</code> (承接 v1.13~v1.74)；三大数据库部署模式与 6 种物理隔离矩阵深度归并入 PSD 架构体系；</li>
+    <li><strong>工具中心 (tools/) 激活与路径自愈</strong>：<code>build_frontend.py</code> 移入 <code>tools/</code> 并将根路径锚点修复为两级父目录 <code>Path(__file__).resolve().parent.parent</code>；<code>check_admin_status.py</code> 移入 <code>tools/</code> 并头部注入 <code>sys.path</code>；严格保留 <code>wait_for_db.py</code> 于项目根目录保障容器构建与编排运行稳固；</li>
+    <li><strong>主自述文档 (README.md) 极简重构</strong>：篇幅收敛至 150 行以内，聚焦核心价值、单体一体化单进程架构、单阶段极简 Python 镜像、快速启动及全局导航；</li>
+    <li><strong>跨 AI 协作与维护规范 (AGENTS.md) 落地</strong>：建立根目录规范守卫，约束所有主流 AI 代理（Codex、Cursor、Claude Code、Windsurf 等）统一遵循文档路由分流与极简原则。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.36.3 验证效果</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li>跨目录执行 <code>tools/check_admin_status.py</code> 路径自愈生效；</li>
+    <li><code>tools/build_frontend.py</code> 根路径两级解析正确无误；</li>
+    <li>Dockerfile、docker-compose 编排与卷挂载保持 100% 守恒，原有代码逻辑与容器功能零影响。</li>
+  </ul>
 </div>
 
 </body>

@@ -1808,3 +1808,32 @@ django.db.utils.OperationalError: unable to open database file
 - Django 一体化服务（端口 5173）重启成功，本地 HTTP 响应 200 OK；
 - 验证全孕期阶段自动展示参考宝宝姓名与多宝切换，孕前备孕记录（如 2026-04-28）顺利入库且区间冲突提示数学准确；
 - 验证时序打卡图表日期标签清晰可见无遮挡，滑动缩放平滑；下钻图表形态与外部一致，多宝宝图表点击精准匹配对应宝宝。
+
+
+### 10.36 架构极简治理：根目录瘦身、文档中心分流与跨 AI 协作维护规范落地 (v1.74)
+
+#### 10.36.1 治理背景与核心痛点
+随着平台的持续演进，根目录与文档体系暴露出多项结构性膨胀与失焦问题：
+1. **主自述文档（README.md）严重膨胀**：累计达到 1157 行（113 KB），超 75% 篇幅被 v1.13 ~ v1.72 的历史更新流水账占据，初次接触项目的开发者阅读负担重；
+2. **辅助脚本与设计资产散落首页**：`build_frontend.py`、`check_admin_status.py` 与 PSD 设计文档（Markdown + HTML）混杂在项目根目录，首页文件繁杂；
+3. **跨 AI 工具协作失范隐患**：在切换不同 AI 编程助手（Codex、Cursor、Claude Code、Windsurf 等）或多人协作时，缺乏全局统一的行为规范指引，大模型极易按通用习惯继续将更新日志随手追加在 `README.md` 尾部，导致刚刚整理干净的主文档再度膨胀；
+4. **容器依赖特殊性保障**：核心就绪等待探针 `wait_for_db.py` 具有极高运行时地位，需在根目录严格固化，绝不可混同普通脚本随意搬迁。
+
+#### 10.36.2 核心改造与分层治理方案
+1. **文档中心（docs/）独立规范设立**：
+   - 将权威系统设计规范 `Project_System_Design.md` 与 HTML 交互视图 `Project_System_Design.html` 统一收纳进 `docs/` 目录；
+   - 抽离全量版本演化细节，设立独立的 `docs/CHANGELOG.md`，完整承接 v1.13 ~ v1.74 的全部迭代记录，保持历史审计溯源 100% 守恒；
+   - 将三大数据库模式自适应架构（SQLite / 共享 PG / 独立 PG）与 6 种双版本物理隔离矩阵深度融入 PSD 架构规范中。
+2. **工具中心（tools/）激活与路径深度自愈**：
+   - 将前端一键打包同步脚本 `build_frontend.py` 移入 `tools/` 目录，将其根目录解析锚点从单级 `parent` 升级为两级父目录：`ROOT_DIR = Path(__file__).resolve().parent.parent`，确保前端编译、模板写入与静态资产合并路径 100% 准确；
+   - 将管理员账号状态调试脚本 `check_admin_status.py` 移入 `tools/` 目录，头部显式注入 `sys.path.insert(0, str(ROOT_DIR))`，彻底杜绝跨目录执行时找不到 `config` 和 `apps` 导致的 `ModuleNotFoundError`；
+   - 严格保留 `wait_for_db.py` 于项目根目录，确保 `Dockerfile` 的 `CMD` 与 `docker-compose.yml` 挂载执行 100% 零破坏、零回归。
+3. **首页主文档（README.md）极简重构**：
+   - 篇幅严格收敛至 150 行左右，聚焦系统定位、单阶段轻量 Python 镜像、单体一体化单进程架构（0.0.0.0:5174/8000）、快速启动及全局文档导航，大幅提升可读性。
+4. **跨 AI 协作与维护规范（AGENTS.md）全面落地**：
+   - 在项目根目录设立 `AGENTS.md`，确立文档分流铁律、极简自述标准与零业务破坏原则，作为所有 AI 代理与人工开发的权威执行基准。
+
+#### 10.36.3 验证效果
+- 执行 `python tools/check_admin_status.py`，跨目录路径自愈完全生效；
+- `tools/build_frontend.py` 根路径锚点两级回退解析准确；
+- Dockerfile、docker-compose 编排配置与卷挂载保持 100% 守恒，原有代码逻辑与容器功能零影响。
