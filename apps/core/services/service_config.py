@@ -135,11 +135,14 @@ def _save_group(group, payload):
 # ===================== 读取配置 =====================
 
 def get_endpoints(group):
-    """普通组：返回 [{url, enabled}]；库中无有效配置时回落默认列表"""
+    """普通组：返回 [{url, enabled}]；库中无配置时回落默认列表；有配置但停用时尊重配置"""
     default = [dict(x) for x in DEFAULT_GROUPS[group]['defaults']]
-    data = _get_config_map().get(group) or {}
+    cfg = _get_config_map()
+    if group not in cfg:
+        return default
+    data = cfg.get(group) or {}
     raw = data.get('endpoints')
-    if isinstance(raw, list) and raw:
+    if isinstance(raw, list):
         out = []
         for item in raw:
             if isinstance(item, dict) and str(item.get('url', '')).strip():
@@ -147,8 +150,7 @@ def get_endpoints(group):
                     'url': str(item['url']).strip(),
                     'enabled': bool(item.get('enabled', True)),
                 })
-        if out:
-            return out
+        return out
     return default
 
 

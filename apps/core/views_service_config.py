@@ -45,6 +45,11 @@ class AdminServiceConfigView(APIView):
                             status=status.HTTP_500_INTERNAL_SERVER_ERROR)
         audit(request, 'service_config_update', '更新外部接口服务配置', 'system', 1, group,
               '更新配置组[%s]：%s' % (DEFAULT_GROUPS[group]['label'], _summarize_payload(group, request.data)))
+        try:
+            from .views import _HOME_WEATHER_CACHE
+            _HOME_WEATHER_CACHE.clear()
+        except Exception:
+            pass
         return Response({'code': 0, 'message': '配置已保存并即时生效', 'data': service_config.get_all_config()})
 
 
@@ -59,6 +64,11 @@ class AdminServiceConfigRestoreView(APIView):
                             status=status.HTTP_403_FORBIDDEN)
         service_config.restore_all_defaults()
         audit(request, 'service_config_restore', '恢复外部接口服务配置为默认值', 'system', 1, '', '清空 external_api_config，全部回落内置默认值')
+        try:
+            from .views import _HOME_WEATHER_CACHE
+            _HOME_WEATHER_CACHE.clear()
+        except Exception:
+            pass
         return Response({'code': 0, 'message': '已恢复全部默认值', 'data': service_config.get_all_config()})
 
 

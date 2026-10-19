@@ -2254,5 +2254,12 @@ estart: unless-stopped；
   </ul>
 </div>
 
+
+<div class="adr-card" id="adr-10-40">
+  <h3>10.40 天气与万年历精度深度优化、请求频次治理与外部服务配置生效机制重构（v1.77）</h3>
+  <div class="meta"><span class="badge badge-success">已实施</span> <span class="badge badge-primary">v1.77</span> <span class="badge">2026-10-19</span></div>
+  <p><strong>痛点问题：</strong>自由搜索区县误降级至地级市（如恩阳区变巴中）、搜索无反馈、高频重复拉取无本地持久化、年份图标右侧裁切、首页大卡片定位同步缺加载态、停用外部端点因强行兜底依然调用外网。</p>
+  <p><strong>解决方案：</strong>区县级前端高精度逆向解析直取经纬度；搜索状态反馈与全局 Toast；本地持久化缓存秒开与低频拉取；年份控件防裁切胶囊样式；首页定位同步动态 Loading；彻底修复外部端点停用回退漏洞并联动服务端缓存即时清空。</p>
+</div>
 </body>
 </html>

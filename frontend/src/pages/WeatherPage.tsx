@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import * as echarts from "echarts";
 import {
   Calendar as CalendarIcon,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Cloud,
@@ -25,7 +26,7 @@ import {
   X,
 } from "lucide-react";
 import { weatherApi, type DailyWeather, type WeatherData } from "@/api/weather";
-import { CHINA_REGIONS, type RegionNode } from "@/lib/chinaRegions";
+import { CHINA_REGIONS, resolveRegionFromText, type RegionNode } from "@/lib/chinaRegions";
 import { LunarUtils } from "@/utils/lunar";
 import { useAuthStore } from "@/store/authStore";
 import { useThemeStore } from "@/store/themeStore";
@@ -59,6 +60,21 @@ export default function WeatherPage() {
   const [activeTab, setActiveTab] = useState<"forecast" | "almanac">("almanac");
   const [searchMode, setSearchMode] = useState<"cascade" | "search">("cascade");
   const [searchCityText, setSearchCityText] = useState("");
+  const [lastUpdatedText, setLastUpdatedText] = useState<string>("");
+  const [toast, setToast] = useState<{ msg: string; ok: boolean } | null>(null);
+  const toastTimer = useRef<number | null>(null);
+
+  const showToast = (msg: string, ok = true) => {
+    if (toastTimer.current) window.clearTimeout(toastTimer.current);
+    setToast({ msg, ok });
+    toastTimer.current = window.setTimeout(() => setToast(null), 3000);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (toastTimer.current) window.clearTimeout(toastTimer.current);
+    };
+  }, []);
 
   const [provinceIdx, setProvinceIdx] = useState<number>(() => {
     const sc = CHINA_REGIONS.findIndex((p) => p.n.includes("四川"));
@@ -76,61 +92,108 @@ export default function WeatherPage() {
   const chartRef = useRef<HTMLDivElement | null>(null);
   const chartInstance = useRef<echarts.ECharts | null>(null);
 
-  // 默认进入页面不做任何自动网络查询操作，显示万年历离线信息
+  // 页面载入：优先从本地持久化缓存还原天气数据，实现免拉取秒开；未缓存时仅呈现离线万年历
   useEffect(() => {
     let saved = "";
     try {
       const uid = user?.id || 0;
       saved = localStorage.getItem(`mengya_weather_city_${uid}`) || "";
+      const cachedRaw = localStorage.getItem(`mengya_weather_cache_${uid}`);
+      if (cachedRaw) {
+        const cached = JSON.parse(cachedRaw);
+        if (cached && cached.data) {
+          setWeatherData(cached.data);
+          if (cached.label || cached.city) {
+            setSearchCityText(cached.label || cached.city);
+          }
+          if (cached.cachedAt) {
+            const d = new Date(cached.cachedAt);
+            const timeStr = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+            setLastUpdatedText(`缓存于 ${timeStr}`);
+          }
+        }
+      }
     } catch {
       /* ignore */
     }
 
-    if (saved && saved !== "[object Object]") {
+    if (saved && saved !== "[object Object]" && !searchCityText) {
       setSearchCityText(saved);
     }
   }, [user?.id]);
 
-  const loadWeatherByCoords = async (lon: number, lat: number, label: string) => {
+  const loadWeatherByCoords = async (lon: number, lat: number, label: string, isSilent = false) => {
     setLoading(true);
     setError("");
     try {
       const data = await weatherApi.query({ lon, lat, label, days: 15 });
       setWeatherData(data);
+      const now = new Date();
+      const timeStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+      setLastUpdatedText(`更新于 ${timeStr}`);
       try {
         const uid = user?.id || 0;
         const cName = typeof data.city === "string" ? data.city : (data.city as any)?.name || label;
         localStorage.setItem(`mengya_weather_city_${uid}`, cName);
         localStorage.setItem("mengya_last_weather_city", cName);
+        localStorage.setItem(
+          `mengya_weather_cache_${uid}`,
+          JSON.stringify({ city: cName, label, coords: [lon, lat], data, cachedAt: Date.now() })
+        );
         window.dispatchEvent(new CustomEvent("mengya_weather_city_changed", { detail: { city: cName } }));
       } catch {
         /* ignore */
       }
+      if (!isSilent) {
+        showToast(`已成功获取「${label}」气象数据`);
+      }
     } catch (err: any) {
-      setError(err.message || "天气数据获取失败");
+      const errMsg = err.message || "天气数据获取失败";
+      setError(errMsg);
+      showToast(errMsg, false);
     } finally {
       setLoading(false);
     }
   };
 
   const loadWeatherByCity = async (cityName: string) => {
-    if (!cityName.trim()) return;
+    const text = cityName.trim();
+    if (!text) return;
+
+    // 1. 优先使用本地 3000+ 区县高精度行政区划树逆向解析（解决如"四川省巴中市恩阳区"、"恩阳区"精准匹配）
+    const matched = resolveRegionFromText(text);
+    if (matched && matched.coords) {
+      setSearchCityText(matched.label);
+      return loadWeatherByCoords(matched.coords[0], matched.coords[1], matched.label);
+    }
+
+    // 2. 本地未命中时回退到后端地理编码与天气查询
     setLoading(true);
     setError("");
     try {
-      const data = await weatherApi.query({ city: cityName.trim(), days: 15 });
+      const data = await weatherApi.query({ city: text, days: 15 });
       setWeatherData(data);
+      const now = new Date();
+      const timeStr = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+      setLastUpdatedText(`更新于 ${timeStr}`);
       try {
         const uid = user?.id || 0;
-        const cName = typeof data.city === "string" ? data.city : (data.city as any)?.name || cityName;
+        const cName = typeof data.city === "string" ? data.city : (data.city as any)?.name || text;
         localStorage.setItem(`mengya_weather_city_${uid}`, cName);
         localStorage.setItem("mengya_last_weather_city", cName);
+        localStorage.setItem(
+          `mengya_weather_cache_${uid}`,
+          JSON.stringify({ city: cName, label: text, data, cachedAt: Date.now() })
+        );
         window.dispatchEvent(new CustomEvent("mengya_weather_city_changed", { detail: { city: cName } }));
       } catch {
         /* ignore */
       }
+      showToast(`已成功获取「${text}」气象数据`);
     } catch (err: any) {
-      setError(err.message || "未找到该城市天气");
+      const errMsg = err.message || "未找到该城市天气";
+      setError(errMsg);
+      showToast(errMsg, false);
     } finally {
       setLoading(false);
     }
@@ -533,12 +596,12 @@ export default function WeatherPage() {
 
               <button
                 type="button"
-                className="btn-primary text-xs py-1.5 px-4 inline-flex items-center justify-center gap-1.5 shadow-2xs"
+                className="btn-primary text-xs py-1.5 px-4 inline-flex items-center justify-center gap-1.5 shadow-2xs min-w-[96px]"
                 onClick={handleCascadeQuery}
                 disabled={loading}
               >
                 {loading ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <MapPin className="h-3.5 w-3.5" />}
-                <span>查询天气</span>
+                <span>{loading ? "正在查询..." : "查询天气"}</span>
               </button>
             </div>
 
@@ -562,19 +625,20 @@ export default function WeatherPage() {
           <div className="mt-3.5 flex gap-2">
             <input
               className="input flex-1 text-xs py-1.5"
-              placeholder="输入中国城市名称，如：北京、杭州、成都..."
+              placeholder="输入中国省市区县名称，如：四川省巴中市恩阳区、杭州西湖区..."
               value={searchCityText}
               onChange={(e) => setSearchCityText(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && loadWeatherByCity(searchCityText)}
+              onKeyDown={(e) => e.key === "Enter" && !loading && loadWeatherByCity(searchCityText)}
+              disabled={loading}
             />
             <button
               type="button"
-              className="btn-primary text-xs py-1.5 px-4 inline-flex items-center gap-1.5"
+              className="btn-primary text-xs py-1.5 px-4 inline-flex items-center justify-center gap-1.5 min-w-[90px]"
               onClick={() => loadWeatherByCity(searchCityText)}
-              disabled={loading}
+              disabled={loading || !searchCityText.trim()}
             >
-              <Search className="h-3.5 w-3.5" />
-              <span>搜索</span>
+              {loading ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
+              <span>{loading ? "正在查询..." : "搜索"}</span>
             </button>
           </div>
         )}
@@ -605,10 +669,32 @@ export default function WeatherPage() {
           <div className="pointer-events-none absolute -right-12 -top-12 h-44 w-44 rounded-full bg-white/10 blur-xl" />
           <div className="relative flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
             <div>
-              <div className="flex items-center gap-2 text-sm opacity-90">
-                <MapPin className="h-4 w-4" />
-                <span className="font-medium">{displayCity}</span>
-                <span className="text-xs opacity-75">{curr.time} 更新</span>
+              <div className="flex flex-wrap items-center gap-2 text-sm opacity-90">
+                <div className="flex items-center gap-1.5 font-medium">
+                  <MapPin className="h-4 w-4" />
+                  <span>{displayCity}</span>
+                </div>
+                <span className="text-xs opacity-75">
+                  {curr.time} 气象 {lastUpdatedText ? `(${lastUpdatedText})` : ""}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (targetInfo?.node?.g) {
+                      loadWeatherByCoords(targetInfo.node.g[0], targetInfo.node.g[1], targetInfo.label);
+                    } else if (searchCityText) {
+                      loadWeatherByCity(searchCityText);
+                    } else {
+                      loadWeatherByCoords(104.0665, 30.5723, "四川省成都市");
+                    }
+                  }}
+                  disabled={loading}
+                  className="inline-flex items-center gap-1 rounded-full bg-white/20 hover:bg-white/30 active:scale-95 px-2.5 py-0.5 text-xs text-white transition cursor-pointer"
+                  title="刷新当前地点实时天气"
+                >
+                  <RefreshCw className={`h-3 w-3 ${loading ? "animate-spin" : ""}`} />
+                  <span>刷新</span>
+                </button>
               </div>
 
               <div className="mt-2 flex items-baseline gap-3">
@@ -779,33 +865,39 @@ export default function WeatherPage() {
 
       {activeTab === "almanac" && (
         <section className="space-y-4">
-          <div className="card p-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="card p-3 sm:p-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
             <div className="flex items-center gap-2">
-              <CalendarIcon className="h-5 w-5 text-brand-500" />
-              <div className="flex items-center gap-1.5">
-                <select
-                  className="input text-xs py-1 px-2 font-bold"
-                  value={almanacYear}
-                  onChange={(e) => setAlmanacYear(Number(e.target.value))}
-                >
-                  {Array.from({ length: 201 }, (_, i) => 1900 + i).map((y) => (
-                    <option key={y} value={y}>
-                      {y} 年
-                    </option>
-                  ))}
-                </select>
+              <CalendarIcon className="h-5 w-5 text-brand-500 shrink-0" />
+              <div className="flex items-center gap-2">
+                <div className="relative inline-flex items-center">
+                  <select
+                    className="appearance-none rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 pl-3 pr-7 py-1.5 text-xs font-bold shadow-2xs outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-400 min-w-[96px] cursor-pointer"
+                    value={almanacYear}
+                    onChange={(e) => setAlmanacYear(Number(e.target.value))}
+                  >
+                    {Array.from({ length: 201 }, (_, i) => 1900 + i).map((y) => (
+                      <option key={y} value={y}>
+                        {y} 年
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-2 h-3.5 w-3.5 text-gray-400 shrink-0" />
+                </div>
 
-                <select
-                  className="input text-xs py-1 px-2 font-bold"
-                  value={almanacMonth}
-                  onChange={(e) => setAlmanacMonth(Number(e.target.value))}
-                >
-                  {Array.from({ length: 12 }, (_, i) => i).map((m) => (
-                    <option key={m} value={m}>
-                      {m + 1} 月
-                    </option>
-                  ))}
-                </select>
+                <div className="relative inline-flex items-center">
+                  <select
+                    className="appearance-none rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800 dark:text-gray-100 pl-3 pr-6 py-1.5 text-xs font-bold shadow-2xs outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-400 min-w-[76px] cursor-pointer"
+                    value={almanacMonth}
+                    onChange={(e) => setAlmanacMonth(Number(e.target.value))}
+                  >
+                    {Array.from({ length: 12 }, (_, i) => i).map((m) => (
+                      <option key={m} value={m}>
+                        {m + 1} 月
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="pointer-events-none absolute right-2 h-3.5 w-3.5 text-gray-400 shrink-0" />
+                </div>
               </div>
             </div>
 

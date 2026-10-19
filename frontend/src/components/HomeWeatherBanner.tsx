@@ -324,18 +324,27 @@ export default function HomeWeatherBanner({ stage, onEditStage }: HomeWeatherBan
 
   // 加载天气数据（优先拉取用户最后一次查询的城市，无权限时自动获取管理员配置与友好提示）
   const [weatherHintToast, setWeatherHintToast] = useState<string | null>(null);
+  const [isLocationSyncing, setIsLocationSyncing] = useState(false);
+  const [syncTargetCity, setSyncTargetCity] = useState("");
 
-  const fetchWeather = () => {
-    let savedCity = "";
-    try {
-      const uid = user?.id || 0;
-      savedCity =
-        localStorage.getItem("mengya_last_weather_city") ||
-        localStorage.getItem(`mengya_weather_city_${uid}`) ||
-        "";
-      if (savedCity === "[object Object]") savedCity = "";
-    } catch {
-      /* ignore */
+  const fetchWeather = (isCityChange = false, newCity?: string) => {
+    let savedCity = newCity || "";
+    if (!savedCity) {
+      try {
+        const uid = user?.id || 0;
+        savedCity =
+          localStorage.getItem("mengya_last_weather_city") ||
+          localStorage.getItem(`mengya_weather_city_${uid}`) ||
+          "";
+        if (savedCity === "[object Object]") savedCity = "";
+      } catch {
+        /* ignore */
+      }
+    }
+
+    if (isCityChange) {
+      setIsLocationSyncing(true);
+      if (savedCity) setSyncTargetCity(savedCity);
     }
 
     weatherApi
@@ -345,14 +354,20 @@ export default function HomeWeatherBanner({ stage, onEditStage }: HomeWeatherBan
       })
       .catch(() => {
         // 优雅降级
+      })
+      .finally(() => {
+        if (isCityChange) {
+          setIsLocationSyncing(false);
+        }
       });
   };
 
   useEffect(() => {
-    fetchWeather();
+    fetchWeather(false);
 
-    const handleCityChanged = () => {
-      fetchWeather();
+    const handleCityChanged = (e: any) => {
+      const updatedCity = e?.detail?.city || "";
+      fetchWeather(true, updatedCity);
     };
 
     window.addEventListener("mengya_weather_city_changed", handleCityChanged);

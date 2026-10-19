@@ -202,13 +202,12 @@ def _http_get_group(group, params, default_url):
     """v1.73 多端点故障转移请求：
     按配置顺序遍历该组「启用」的端点（外部接口配置页管理），任一成功即返回；
     全部失败后按配置 retries 整轮重试（每轮重新遍历启用端点）；
-    返回第一个成功的 Response；全部失败返回 None（调用方走既有降级路径）。
-    超时：连接 5s + 读取 = 该组配置的 timeout（默认 8s）。
+    若该组端点已被管理员全部停用或未配置，严格遵循停用决策直接返回 None，严禁私自发起外网请求。
     """
     from . import service_config
     urls = service_config.get_enabled_urls(group)
     if not urls:
-        urls = [default_url]
+        return None
     timeout = service_config.get_timeout(group)
     retries = service_config.get_retries(group)
     for _round in range(retries + 1):
@@ -243,6 +242,9 @@ def geocode_city(city_name, province=None, district_city=None):
         }
         resp = _http_get_group('geocoding', params, GEOCODING_URL)
         if resp is None:
+            from . import service_config
+            if not service_config.get_enabled_urls('geocoding'):
+                raise WeatherError('地理编码服务已在管理后台停用或无可用端点', 503)
             raise WeatherError('城市解析服务暂时不可用，请稍后重试', 503)
 
         try:
@@ -365,7 +367,10 @@ def fetch_forecast(latitude, longitude, timezone='auto', days=DEFAULT_FORECAST_D
     }
     resp = _http_get_group('forecast', params, FORECAST_URL)
     if resp is None:
-        raise WeatherError('天气服务暂时不可用，请稍后重试', 503)
+        from . import service_config
+        if not service_config.get_enabled_urls('forecast'):
+            raise WeatherError('天气预报服务已在管理后台停用或无可用端点', 503)
+        raise WeatherError('天气预报服务暂时不可用，请稍后重试', 503)
 
     try:
         data = resp.json()

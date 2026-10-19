@@ -100,8 +100,8 @@ def _fetch_from_timor(year):
     from . import service_config
     urls = service_config.get_enabled_urls('holiday')
     if not urls:
-        # 兜底：库里无配置时回落内置默认（兼容历史 {year} 占位格式）
-        urls = [TIMOR_API.replace('{year}', '')]
+        # 管理员已停用节假日端点或无可用端点，进入离线模式，不发起外网请求
+        return {}
     timeout = service_config.get_timeout('holiday')
     retries = service_config.get_retries('holiday')
     last_err = None

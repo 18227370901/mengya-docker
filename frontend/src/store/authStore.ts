@@ -66,6 +66,17 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     localStorage.removeItem("mengya_access");
     localStorage.removeItem("mengya_refresh");
     localStorage.removeItem("mengya_last_active");
+    try {
+      const keys = Object.keys(localStorage);
+      for (const k of keys) {
+        if (k.startsWith("mengya_weather_")) {
+          localStorage.removeItem(k);
+        }
+      }
+      localStorage.removeItem("mengya_last_weather_city");
+    } catch {
+      /* ignore */
+    }
     set({ user: null, stage: null, token: null, permissions: {} });
   },
 
