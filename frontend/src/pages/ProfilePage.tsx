@@ -1,7 +1,7 @@
 import SetStageModal from "@/components/SetStageModal";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Bot, Baby, Bell, Edit3, Eye, EyeOff, Heart, HeartOff, HeartPulse, KeyRound, LogOut, Moon, Package, Plus, Settings, ShieldCheck, Sun, Trash2, UserCheck, Users, ClipboardList, X, Loader2, Sparkles } from "lucide-react";
+import { Bot, Baby, Bell, Edit3, Eye, EyeOff, Heart, HeartOff, HeartPulse, KeyRound, LogOut, Moon, Network, Package, Plus, Settings, ShieldCheck, Sun, Trash2, UserCheck, Users, ClipboardList, X, Loader2, Sparkles } from "lucide-react";
 import { useThemeStore } from "@/store/themeStore";
 import { authApi } from "@/api/auth";
 import { useAuthStore } from "@/store/authStore";
@@ -836,6 +836,14 @@ export default function ProfilePage() {
               <Sparkles className="h-5 w-5 text-amber-500" />
               <span className="text-xs font-medium text-gray-600">关怀贴士管理</span>
               <span className="text-[10px] text-gray-400">今日小锦囊/展示设置</span>
+            </button>
+            <button
+              className="flex flex-col items-center gap-1.5 rounded-xl border border-gray-100 py-4 hover:border-brand-200 hover:bg-brand-50/50 transition"
+              onClick={() => navigate("/admin/service-config")}
+            >
+              <Network className="h-5 w-5 text-sky-500" />
+              <span className="text-xs font-medium text-gray-600">外部接口配置</span>
+              <span className="text-[10px] text-gray-400">天气/节假日/搜索管线</span>
             </button>
           </div>
         </section>

@@ -187,15 +187,39 @@ def _region_match(candidate_val, region_name):
 HTTP_TIMEOUT = (5, 8)
 
 
-def _http_get(url, params):
+def _http_get(url, params, timeout=HTTP_TIMEOUT):
     """Open-Meteo GET 请求：① 禁代理直连；② 失败回落系统代理"""
     try:
-        return requests.get(url, params=params, timeout=HTTP_TIMEOUT,
+        return requests.get(url, params=params, timeout=timeout,
                              proxies={'http': None, 'https': None})
     except (requests.Timeout, requests.RequestException):
         pass
     # 回落：读系统代理/环境变量（默认 trust_env 行为）
-    return requests.get(url, params=params, timeout=HTTP_TIMEOUT)
+    return requests.get(url, params=params, timeout=timeout)
+
+
+def _http_get_group(group, params, default_url):
+    """v1.73 多端点故障转移请求：
+    按配置顺序遍历该组「启用」的端点（外部接口配置页管理），任一成功即返回；
+    全部失败后按配置 retries 整轮重试（每轮重新遍历启用端点）；
+    返回第一个成功的 Response；全部失败返回 None（调用方走既有降级路径）。
+    超时：连接 5s + 读取 = 该组配置的 timeout（默认 8s）。
+    """
+    from . import service_config
+    urls = service_config.get_enabled_urls(group)
+    if not urls:
+        urls = [default_url]
+    timeout = service_config.get_timeout(group)
+    retries = service_config.get_retries(group)
+    for _round in range(retries + 1):
+        for url in urls:
+            try:
+                resp = _http_get(url, params, timeout=(5, timeout))
+                if resp is not None and resp.status_code == 200:
+                    return resp
+            except Exception:
+                continue
+    return None
 
 
 def geocode_city(city_name, province=None, district_city=None):
@@ -217,11 +241,8 @@ def geocode_city(city_name, province=None, district_city=None):
             'language': 'zh',
             'format': 'json',
         }
-        try:
-            resp = _http_get(GEOCODING_URL, params)
-        except requests.Timeout:
-            raise WeatherError('城市解析服务超时，请稍后重试', 503)
-        except requests.RequestException:
+        resp = _http_get_group('geocoding', params, GEOCODING_URL)
+        if resp is None:
             raise WeatherError('城市解析服务暂时不可用，请稍后重试', 503)
 
         try:
@@ -342,11 +363,8 @@ def fetch_forecast(latitude, longitude, timezone='auto', days=DEFAULT_FORECAST_D
         'timezone': timezone or 'auto',
         'forecast_days': days,
     }
-    try:
-        resp = _http_get(FORECAST_URL, params)
-    except requests.Timeout:
-        raise WeatherError('天气服务超时，请稍后重试', 503)
-    except requests.RequestException:
+    resp = _http_get_group('forecast', params, FORECAST_URL)
+    if resp is None:
         raise WeatherError('天气服务暂时不可用，请稍后重试', 503)
 
     try:
@@ -374,7 +392,9 @@ def fetch_air_quality(latitude, longitude):
         'timezone': 'auto',
     }
     try:
-        resp = _http_get(AIR_QUALITY_URL, params)
+        resp = _http_get_group('air_quality', params, AIR_QUALITY_URL)
+        if resp is None:
+            return None
         data = resp.json()
         if data.get('error'):
             return None

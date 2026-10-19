@@ -2340,7 +2340,9 @@ class HealthRecordViewSet(viewsets.ModelViewSet):
         from django.utils import timezone
 
         records = request.data.get("records") or []
-        target = request.data.get("target", "mom")  # mom | baby
+        target = request.data.get("target", "mom")  # mom | mom_bmi | mom_vitals | baby
+        if target in ("mom_bmi", "mom_vitals"):
+            target = "mom"
         strategy = request.data.get("conflict_strategy", "skip")  # skip | overwrite
         if target not in ("mom", "baby"):
             return Response(
@@ -2430,10 +2432,51 @@ class HealthRecordViewSet(viewsets.ModelViewSet):
 
             try:
                 if target == "mom":
+                    from apps.core.services.vitals_calculator import VitalsCalculator
                     weight = _to_float(row.get("weight"))
-                    if weight is None or not (MOM_RANGE["weight"][0] <= weight <= MOM_RANGE["weight"][1]):
-                        _fail(f"体重数值无效（合理防呆范围 {MOM_RANGE['weight'][0]}~{MOM_RANGE['weight'][1]} kg）")
+                    sbp = _to_float(row.get("systolic_bp") or row.get("systolic") or row.get("sbp"))
+                    dbp = _to_float(row.get("diastolic_bp") or row.get("diastolic") or row.get("dbp"))
+                    pulse = _to_float(row.get("pulse") or row.get("heart_rate"))
+                    blood_sugar = _to_float(row.get("blood_sugar") or row.get("glucose") or row.get("sugar"))
+                    raw_gtype = str(row.get("glucose_type") or row.get("scene") or "").strip().lower()
+                    gtype_map = {
+                        "fasting": "fasting", "空腹": "fasting",
+                        "postprandial_1h": "postprandial_1h", "餐后1小时": "postprandial_1h", "餐后1h": "postprandial_1h",
+                        "postprandial_2h": "postprandial_2h", "餐后2小时": "postprandial_2h", "餐后2h": "postprandial_2h", "餐后": "postprandial_2h",
+                        "bedtime": "bedtime", "睡前": "bedtime",
+                        "random": "random", "随机": "random",
+                    }
+                    glucose_type = gtype_map.get(raw_gtype, "fasting")
+
+                    has_bp = (sbp is not None and dbp is not None)
+                    has_glu = (blood_sugar is not None)
+                    has_w = (weight is not None)
+
+                    if not (has_bp or has_glu or has_w):
+                        _fail("每行记录至少需包含体重、血压（收缩压与舒张压）或血糖中的一项有效数据。")
                         continue
+
+                    if (sbp is not None and dbp is None) or (sbp is None and dbp is not None):
+                        _fail("血压记录必须同时包含收缩压（高压）与舒张压（低压）。")
+                        continue
+                    if has_bp:
+                        if not (50.0 <= sbp <= 260.0 and 30.0 <= dbp <= 180.0):
+                            _fail("血压数值超出合理医学范围（收缩压50~260，舒张压30~180 mmHg）。")
+                            continue
+                        if sbp <= dbp:
+                            _fail("收缩压（高压）必须大于舒张压（低压）。")
+                            continue
+
+                    if has_glu:
+                        if not (1.0 <= blood_sugar <= 35.0):
+                            _fail("血糖数值超出合理医学范围（1.0~35.0 mmol/L）。")
+                            continue
+
+                    if has_w:
+                        if not (MOM_RANGE["weight"][0] <= weight <= MOM_RANGE["weight"][1]):
+                            _fail(f"体重数值无效（合理防呆范围 {MOM_RANGE['weight'][0]}~{MOM_RANGE['weight'][1]} kg）")
+                            continue
+
                     height = _to_float(row.get("height")) or inherit_height
                     waist = _to_float(row.get("waist"))
                     if waist is not None and not (MOM_RANGE["waist"][0] <= waist <= MOM_RANGE["waist"][1]):
@@ -2519,20 +2562,61 @@ class HealthRecordViewSet(viewsets.ModelViewSet):
                     bmi_val = None
                     if height and weight:
                         bmi_val = round(weight / ((height / 100.0) ** 2), 2)
-                    exam_items = {
+
+                    bp_eval = VitalsCalculator.evaluate_blood_pressure(sbp, dbp, pulse, stage_type=stage) if has_bp else None
+                    glu_eval = VitalsCalculator.evaluate_blood_sugar(blood_sugar, glucose_type, stage_type=stage) if has_glu else None
+
+                    existing_items = (existing.exam_items if existing and isinstance(existing.exam_items, dict) else {})
+                    effective_sbp = sbp if has_bp else existing_items.get("systolic_bp")
+                    effective_dbp = dbp if has_bp else existing_items.get("diastolic_bp")
+                    effective_pulse = pulse if pulse is not None else existing_items.get("pulse")
+                    effective_glu = blood_sugar if has_glu else existing_items.get("blood_sugar")
+                    effective_gtype = glucose_type if has_glu else existing_items.get("glucose_type", "fasting")
+
+                    exam_items = dict(existing_items)
+                    exam_items.update({
                         "stage": stage,
-                        "waist_circumference": waist,
-                        "pre_weight": inherit_pre_weight,
-                        "bmi": bmi_val,
-                        # v1.58：孕x周x天粒度（仅孕期阶段）
-                        "gestational_days": gestational_days,
-                    }
+                        "waist_circumference": waist or existing_items.get("waist_circumference"),
+                        "pre_weight": inherit_pre_weight or existing_items.get("pre_weight"),
+                        "bmi": bmi_val or existing_items.get("bmi"),
+                        "gestational_days": gestational_days if gestational_days is not None else existing_items.get("gestational_days"),
+                        "systolic_bp": effective_sbp,
+                        "diastolic_bp": effective_dbp,
+                        "pulse": effective_pulse,
+                        "bp_status": bp_eval["status"] if bp_eval else existing_items.get("bp_status"),
+                        "bp_status_label": bp_eval["status_label"] if bp_eval else existing_items.get("bp_status_label"),
+                        "blood_sugar": effective_glu,
+                        "glucose_type": effective_gtype,
+                        "glucose_type_label": glu_eval["glucose_type_label"] if glu_eval else existing_items.get("glucose_type_label"),
+                        "glucose_status": glu_eval["status"] if glu_eval else existing_items.get("glucose_status"),
+                        "glucose_status_label": glu_eval["status_label"] if glu_eval else existing_items.get("glucose_status_label"),
+                    })
                     if stage == "postpartum" and auto_postpartum_months is not None:
                         exam_items["postpartum_months"] = auto_postpartum_months
+
+                    completeness_data = {
+                        "systolic_bp": exam_items.get("systolic_bp"),
+                        "diastolic_bp": exam_items.get("diastolic_bp"),
+                        "pulse": exam_items.get("pulse"),
+                        "blood_sugar": exam_items.get("blood_sugar"),
+                        "glucose_type": exam_items.get("glucose_type"),
+                        "glucose_type_label": exam_items.get("glucose_type_label"),
+                        "bp_status": exam_items.get("bp_status"),
+                        "bp_status_label": exam_items.get("bp_status_label"),
+                        "glucose_status": exam_items.get("glucose_status"),
+                        "glucose_status_label": exam_items.get("glucose_status_label"),
+                        "weight": weight if weight is not None else (existing.weight if existing else None),
+                        "bmi": exam_items.get("bmi"),
+                    }
+                    exam_items["completeness"] = VitalsCalculator.build_metrics_completeness(completeness_data)
+
+                    effective_weight = weight if weight is not None else (existing.weight if existing else None)
+                    effective_height = height or (existing.height if existing else None)
+
                     if existing:
-                        existing.gestational_week = gestational_week
-                        existing.height = height or existing.height
-                        existing.weight = weight
+                        existing.gestational_week = gestational_week or existing.gestational_week
+                        existing.height = effective_height
+                        existing.weight = effective_weight
                         existing.exam_items = exam_items
                         existing.note = row.get("note") or existing.note
                         existing.save(update_fields=["gestational_week", "height", "weight", "exam_items", "note", "updated_at"])
@@ -2545,8 +2629,8 @@ class HealthRecordViewSet(viewsets.ModelViewSet):
                             record_type="prenatal_exam",
                             record_date=rec_date,
                             gestational_week=gestational_week,
-                            height=height,
-                            weight=weight,
+                            height=effective_height,
+                            weight=effective_weight,
                             exam_items=exam_items,
                             note=row.get("note") or f"CSV 批量导入（{stage_cn}）",
                         )
@@ -2892,18 +2976,50 @@ class HealthBmiAnalysisView(APIView):
         rec_type = "prenatal_exam"
         # v1.56：阶段语义归一化 pregnancy / postpartum / general（非孕期备孕·日常）
         stage_mark = {"postpartum": "postpartum", "general": "general"}.get(stage_type, "pregnancy")
-        exam_items = {
+        existing_items = (existing_same_day.exam_items if existing_same_day and isinstance(existing_same_day.exam_items, dict) else {})
+        sbp = data.get("systolic_bp") if data.get("systolic_bp") is not None else existing_items.get("systolic_bp")
+        dbp = data.get("diastolic_bp") if data.get("diastolic_bp") is not None else existing_items.get("diastolic_bp")
+        pulse = data.get("pulse") if data.get("pulse") is not None else existing_items.get("pulse")
+        glu = data.get("blood_sugar") if data.get("blood_sugar") is not None else existing_items.get("blood_sugar")
+        glu_type = data.get("glucose_type") if data.get("blood_sugar") is not None else existing_items.get("glucose_type", "fasting")
+
+        from apps.core.services.vitals_calculator import VitalsCalculator
+        bp_eval = VitalsCalculator.evaluate_blood_pressure(sbp, dbp, pulse, stage_type=stage_mark) if (sbp is not None and dbp is not None) else None
+        glu_eval = VitalsCalculator.evaluate_blood_sugar(glu, glu_type, stage_type=stage_mark) if glu is not None else None
+
+        exam_items = dict(existing_items)
+        exam_items.update({
             "stage": stage_mark,
-            "waist_circumference": data.get("waist_circumference_cm"),
+            "waist_circumference": data.get("waist_circumference_cm") or existing_items.get("waist_circumference"),
             "pre_weight": pre_weight,
             "bmi": evaluation["bmi"],
             "actual_gain": evaluation["actual_gain"],
             "gain_status": evaluation.get("gain_status", "normal"),
             "is_twins": bool(data.get("is_twins", False)),
             "postpartum_months": data.get("postpartum_months"),
-            # v1.58：孕x周x天粒子度存储（孕期阶段专用，供前端展示与后续推算）
             "gestational_days": gestational_days if stage_mark == "pregnancy" else None,
+            "systolic_bp": sbp,
+            "diastolic_bp": dbp,
+            "pulse": pulse,
+            "bp_status": bp_eval["status"] if bp_eval else existing_items.get("bp_status"),
+            "bp_status_label": bp_eval["status_label"] if bp_eval else existing_items.get("bp_status_label"),
+            "blood_sugar": glu,
+            "glucose_type": glu_type,
+            "glucose_type_label": glu_eval["glucose_type_label"] if glu_eval else existing_items.get("glucose_type_label"),
+            "glucose_status": glu_eval["status"] if glu_eval else existing_items.get("glucose_status"),
+            "glucose_status_label": glu_eval["status_label"] if glu_eval else existing_items.get("glucose_status_label"),
+        })
+        completeness_data = {
+            "systolic_bp": sbp, "diastolic_bp": dbp, "pulse": pulse,
+            "blood_sugar": glu, "glucose_type": glu_type,
+            "bp_status": exam_items.get("bp_status"), "bp_status_label": exam_items.get("bp_status_label"),
+            "glucose_status": exam_items.get("glucose_status"), "glucose_status_label": exam_items.get("glucose_status_label"),
+            "weight": current_weight, "bmi": evaluation["bmi"],
         }
+        exam_items["completeness"] = VitalsCalculator.build_metrics_completeness(completeness_data)
+        symptoms = data.get("symptoms", [])
+        if symptoms:
+            exam_items["symptoms"] = symptoms
         stage_prefix = (
             "非孕期" if stage_mark == "general" else "产后" if stage_mark == "postpartum"
             else f"孕{gestational_week}周{gestational_days}天" if gestational_days > 0 else f"孕{gestational_week}周"
@@ -2913,6 +3029,13 @@ class HealthBmiAnalysisView(APIView):
             f"孕前BMI {evaluation['bmi']} ({evaluation['category_label']}), "
             f"累计增重 {evaluation['actual_gain']}kg ({evaluation.get('gain_status_label', '')})"
         )
+        if sbp is not None and dbp is not None:
+            note_text += f", 血压 {sbp}/{dbp} mmHg"
+        if glu is not None:
+            note_text += f", 血糖 {glu} mmol/L({glu_type})"
+        user_custom_note = data.get("note")
+        if user_custom_note:
+            note_text += f" | {user_custom_note}"
         created_record_id = None
         # v1.57 record_action：created 首次归档 / updated 覆盖当日已有记录（保留记录 id 与创建时间）
         record_action = "created"
@@ -2974,6 +3097,538 @@ class HealthBmiAnalysisView(APIView):
                 "baseline_initialized": baseline_initialized,
             },
         })
+
+
+
+# ============ 妈妈生命体征（血压、血糖）分析与时序看板 ============
+
+def _build_vitals_timeseries(user, mother_id=None):
+    """构建妈妈血压与血糖全生命周期时序打卡历史及统计指标看板"""
+    from apps.core.models.health import HealthRecord
+    from apps.core.services.vitals_calculator import VitalsCalculator
+    from apps.core.models.mother import MotherProfile
+    from django.utils import timezone
+    from datetime import timedelta
+
+    timeseries_history = []
+    summary = {
+        "total_records": 0,
+        "latest_bp": None,
+        "latest_glucose": None,
+        "avg_systolic_7d": None,
+        "avg_diastolic_7d": None,
+        "avg_glucose_7d": None,
+        "abnormal_count": 0,
+    }
+
+    try:
+        user_records = HealthRecord.objects.filter(
+            user=user,
+            record_type="prenatal_exam",
+        )
+        if mother_id:
+            user_records = user_records.filter(mother_id=mother_id)
+        else:
+            pri_mom = MotherProfile.objects.filter(user=user, is_primary=True).first()
+            if pri_mom:
+                pri_qs = user_records.filter(mother=pri_mom)
+                if pri_qs.exists():
+                    user_records = pri_qs
+        user_records = list(user_records.order_by("record_date", "created_at"))
+
+        seven_days_ago = timezone.localdate() - timedelta(days=7)
+        systolic_list_7d = []
+        diastolic_list_7d = []
+        glucose_list_7d = []
+        abnormal_count = 0
+        latest_bp = None
+        latest_glucose = None
+
+        for r in user_records:
+            items = r.exam_items if isinstance(r.exam_items, dict) else {}
+            sbp = items.get("systolic_bp")
+            dbp = items.get("diastolic_bp")
+            pulse = items.get("pulse")
+            glu = items.get("blood_sugar")
+            raw_gtype = items.get("glucose_type", "fasting")
+            stage = items.get("stage") or ("pregnancy" if r.gestational_week else "pregnancy")
+
+            # 兼容既有脏数据中只有单项数值的情况
+            has_bp = (sbp is not None and dbp is not None)
+            has_glu = (glu is not None)
+            has_w = (r.weight is not None)
+
+            # 若该条记录既无血压也无血糖也无体重，则不作为生命体征有效时序
+            if not (has_bp or has_glu or has_w):
+                continue
+
+            bp_eval = None
+            if has_bp:
+                bp_eval = VitalsCalculator.evaluate_blood_pressure(sbp, dbp, pulse, stage_type=stage)
+                latest_bp = {
+                    "id": r.id,
+                    "record_date": str(r.record_date),
+                    "systolic": sbp,
+                    "diastolic": dbp,
+                    "pulse": pulse,
+                    "status": bp_eval["status"],
+                    "status_label": bp_eval["status_label"],
+                    "color": bp_eval["color"],
+                    "severity": bp_eval["severity"],
+                }
+                if r.record_date >= seven_days_ago:
+                    systolic_list_7d.append(sbp)
+                    diastolic_list_7d.append(dbp)
+                if bp_eval["status"] in ("elevated", "hypertension_stage1", "hypertension_severe"):
+                    abnormal_count += 1
+
+            glu_eval = None
+            if has_glu:
+                glu_eval = VitalsCalculator.evaluate_blood_sugar(glu, raw_gtype, stage_type=stage)
+                latest_glucose = {
+                    "id": r.id,
+                    "record_date": str(r.record_date),
+                    "glucose": glu,
+                    "glucose_type": raw_gtype,
+                    "glucose_type_label": glu_eval["glucose_type_label"],
+                    "status": glu_eval["status"],
+                    "status_label": glu_eval["status_label"],
+                    "color": glu_eval["color"],
+                    "severity": glu_eval["severity"],
+                }
+                if r.record_date >= seven_days_ago:
+                    glucose_list_7d.append(glu)
+                if glu_eval["status"] in ("elevated", "high", "hypoglycemia"):
+                    abnormal_count += 1
+
+            completeness_data = {
+                "systolic_bp": sbp,
+                "diastolic_bp": dbp,
+                "pulse": pulse,
+                "blood_sugar": glu,
+                "glucose_type": raw_gtype,
+                "glucose_type_label": glu_eval["glucose_type_label"] if glu_eval else items.get("glucose_type_label"),
+                "bp_status": bp_eval["status"] if bp_eval else items.get("bp_status"),
+                "bp_status_label": bp_eval["status_label"] if bp_eval else items.get("bp_status_label"),
+                "glucose_status": glu_eval["status"] if glu_eval else items.get("glucose_status"),
+                "glucose_status_label": glu_eval["status_label"] if glu_eval else items.get("glucose_status_label"),
+                "weight": r.weight,
+                "bmi": items.get("bmi"),
+            }
+            completeness = VitalsCalculator.build_metrics_completeness(completeness_data)
+
+            timeseries_history.append({
+                "id": r.id,
+                "record_date": str(r.record_date),
+                "stage": stage,
+                "gestational_week": r.gestational_week,
+                "gestational_days": items.get("gestational_days"),
+                "postpartum_months": items.get("postpartum_months"),
+                "systolic_bp": sbp,
+                "diastolic_bp": dbp,
+                "pulse": pulse,
+                "bp_status": bp_eval["status"] if bp_eval else None,
+                "bp_status_label": bp_eval["status_label"] if bp_eval else None,
+                "bp_color": bp_eval["color"] if bp_eval else None,
+                "bp_clinical_advice": bp_eval["clinical_advice"] if bp_eval else None,
+                "blood_sugar": glu,
+                "glucose_type": raw_gtype,
+                "glucose_type_label": glu_eval["glucose_type_label"] if glu_eval else items.get("glucose_type_label"),
+                "glucose_status": glu_eval["status"] if glu_eval else None,
+                "glucose_status_label": glu_eval["status_label"] if glu_eval else None,
+                "glucose_color": glu_eval["color"] if glu_eval else None,
+                "glucose_clinical_advice": glu_eval["clinical_advice"] if glu_eval else None,
+                "weight": r.weight,
+                "height": r.height,
+                "bmi": items.get("bmi"),
+                "symptoms": items.get("symptoms", []),
+                "completeness": completeness,
+                "note": r.note,
+                "ai_analysis": r.ai_analysis,
+            })
+
+        summary = {
+            "total_records": len(timeseries_history),
+            "latest_bp": latest_bp,
+            "latest_glucose": latest_glucose,
+            "avg_systolic_7d": round(sum(systolic_list_7d) / len(systolic_list_7d), 1) if systolic_list_7d else None,
+            "avg_diastolic_7d": round(sum(diastolic_list_7d) / len(diastolic_list_7d), 1) if diastolic_list_7d else None,
+            "avg_glucose_7d": round(sum(glucose_list_7d) / len(glucose_list_7d), 2) if glucose_list_7d else None,
+            "abnormal_count": abnormal_count,
+        }
+    except Exception:
+        pass
+
+    return timeseries_history, summary
+
+
+class HealthVitalsAnalysisView(APIView):
+    """妈妈生命体征（血压、血糖）录入、医学评估与时序看板视图"""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        check_permission_or_403(request.user, "menu_health", "您没有访问健康中心的权限")
+        check_permission_or_403(request.user, "health_record_view", "您没有查看健康档案的权限")
+        mother_id = request.query_params.get("mother_id")
+        timeseries, summary = _build_vitals_timeseries(request.user, mother_id=mother_id)
+        return Response({
+            "code": 0,
+            "message": "获取成功",
+            "data": {
+                "timeseries": timeseries,
+                "summary": summary,
+            },
+        })
+
+    def post(self, request):
+        check_permission_or_403(request.user, "menu_health", "您没有访问健康中心的权限")
+        check_permission_or_403(request.user, "health_record_create", "您没有添加健康记录的权限")
+        from apps.core.serializers.health import VitalsAnalysisInputSerializer
+        from apps.core.services.vitals_calculator import VitalsCalculator
+        from apps.core.services.gestation_engine import validate_gestational_week
+        from apps.core.services.stage_validator import validate_stage_transition
+        from apps.core.models.health import HealthRecord
+        from apps.core.models.mother import MotherProfile
+
+        serializer = VitalsAnalysisInputSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(
+                {"code": 4001, "message": "录入数据有误", "data": serializer.errors},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        data = serializer.validated_data
+
+        # 确定目标妈妈档案
+        mother_id = data.get("mother_id") or request.data.get("mother_id")
+        mother = None
+        if mother_id:
+            mother = MotherProfile.objects.filter(id=mother_id, user=request.user).first()
+        if not mother:
+            mother = MotherProfile.objects.filter(user=request.user, is_primary=True).first() or MotherProfile.objects.filter(user=request.user).first()
+
+        stage_type = data.get("stage_type", "pregnancy")
+        target_date = data.get("record_date") or timezone.localdate()
+        overwrite = bool(data.get("overwrite", False))
+
+        # 查重：同日记录冲突校验
+        existing_same_day_qs = HealthRecord.objects.filter(
+            user=request.user, record_type="prenatal_exam", record_date=target_date
+        )
+        if mother:
+            existing_same_day_qs = existing_same_day_qs.filter(mother=mother)
+        existing_same_day = existing_same_day_qs.order_by("-created_at").first()
+
+        if existing_same_day and not overwrite:
+            existing_items = existing_same_day.exam_items if isinstance(existing_same_day.exam_items, dict) else {}
+            existing_stage = existing_items.get("stage") or ("pregnancy" if existing_same_day.gestational_week else "pregnancy")
+            return Response(
+                {
+                    "code": 4090,
+                    "message": f"{target_date} 已存在当日打卡记录，请确认是否合并覆盖更新",
+                    "data": {
+                        "conflict": True,
+                        "conflict_code": 4090,
+                        "existing_id": existing_same_day.id,
+                        "existing_date": str(existing_same_day.record_date),
+                        "existing_stage": existing_stage,
+                        "existing_weight": existing_same_day.weight,
+                        "existing_systolic": existing_items.get("systolic_bp"),
+                        "existing_diastolic": existing_items.get("diastolic_bp"),
+                        "existing_sugar": existing_items.get("blood_sugar"),
+                        "overwrite_supported": True,
+                    },
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        # 孕周与阶段验证
+        gestational_week = data.get("gestational_week")
+        user_input_days = data.get("gestational_days")
+        gestational_days = 0
+        if stage_type == "pregnancy":
+            wk_check = validate_gestational_week(request.user, target_date, gestational_week, mother=mother)
+            if not wk_check["ok"]:
+                return Response(
+                    {"code": 4003, "message": wk_check["hint"], "data": {"expected_week": wk_check.get("expected")}},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            gestational_week = wk_check.get("week")
+            if user_input_days is not None:
+                gestational_days = max(0, min(6, int(user_input_days)))
+            else:
+                gestational_days = int(wk_check.get("days") or 0)
+        else:
+            gestational_week = None
+
+        is_st_ok, st_msg = validate_stage_transition(
+            user=request.user,
+            record_date=target_date,
+            stage_type=stage_type,
+            gestational_week=gestational_week,
+            gestational_days=gestational_days,
+            postpartum_months=data.get("postpartum_months"),
+            mother=mother,
+            exclude_record_id=existing_same_day.id if existing_same_day else None,
+        )
+        if not is_st_ok:
+            return Response(
+                {"code": 4005, "message": st_msg, "data": None},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # 提取指标并执行医学规则评估
+        sbp = data.get("systolic_bp")
+        dbp = data.get("diastolic_bp")
+        pulse = data.get("pulse")
+        blood_sugar = data.get("blood_sugar")
+        glucose_type = data.get("glucose_type", "fasting")
+        weight = data.get("current_weight_kg")
+        height = data.get("height_cm")
+        symptoms = data.get("symptoms", [])
+
+        bp_eval = None
+        if sbp is not None and dbp is not None:
+            bp_eval = VitalsCalculator.evaluate_blood_pressure(sbp, dbp, pulse, stage_type=stage_type)
+
+        glu_eval = None
+        if blood_sugar is not None:
+            glu_eval = VitalsCalculator.evaluate_blood_sugar(blood_sugar, glucose_type, stage_type=stage_type)
+
+        bmi_val = None
+        if weight and height:
+            bmi_val = round(weight / ((height / 100.0) ** 2), 2)
+        elif weight and existing_same_day and existing_same_day.height:
+            bmi_val = round(weight / ((existing_same_day.height / 100.0) ** 2), 2)
+
+        completeness_data = {
+            "systolic_bp": sbp,
+            "diastolic_bp": dbp,
+            "pulse": pulse,
+            "blood_sugar": blood_sugar,
+            "glucose_type": glucose_type,
+            "glucose_type_label": glu_eval["glucose_type_label"] if glu_eval else None,
+            "bp_status": bp_eval["status"] if bp_eval else None,
+            "bp_status_label": bp_eval["status_label"] if bp_eval else None,
+            "glucose_status": glu_eval["status"] if glu_eval else None,
+            "glucose_status_label": glu_eval["status_label"] if glu_eval else None,
+            "weight": weight if weight is not None else (existing_same_day.weight if existing_same_day else None),
+            "bmi": bmi_val,
+        }
+        completeness = VitalsCalculator.build_metrics_completeness(completeness_data)
+
+        # 生成医学警戒与个性化调理建议
+        alerts = VitalsCalculator.detect_vitals_alerts(
+            bp_eval=bp_eval,
+            glucose_eval=glu_eval,
+            symptoms=symptoms,
+            stage_type=stage_type,
+        )
+        lifestyle_diet = VitalsCalculator.get_lifestyle_and_diet_recommendations(
+            bp_eval=bp_eval,
+            glucose_eval=glu_eval,
+            stage_type=stage_type,
+        )
+
+        # 构造 AI 解读上下文并调用
+        ai_result = None
+        request_ai = data.get("request_ai", True)
+        recent_history, _ = _build_vitals_timeseries(request.user, mother_id=mother.id if mother else None)
+
+        if request_ai:
+            from apps.core.services.ai_service import ai_analyze_vitals
+            stage_display = (
+                f"孕{gestational_week}周{gestational_days}天" if stage_type == "pregnancy" and gestational_days > 0
+                else f"孕{gestational_week}周" if stage_type == "pregnancy"
+                else f"产后{data.get('postpartum_months', 1)}个月" if stage_type == "postpartum"
+                else "备孕期/常规阶段"
+            )
+            vitals_context = {
+                "bp_eval": bp_eval,
+                "glucose_eval": glu_eval,
+                "completeness": completeness,
+                "symptoms": symptoms,
+                "history_trend": [
+                    {
+                        "record_date": h["record_date"],
+                        "systolic": h["systolic_bp"],
+                        "diastolic": h["diastolic_bp"],
+                        "blood_sugar": h["blood_sugar"],
+                        "glucose_type": h.get("glucose_type_label", ""),
+                    }
+                    for h in recent_history[-5:]
+                ],
+            }
+            ai_result = ai_analyze_vitals(vitals_context, stage_label=stage_display, user=request.user)
+
+        # 整理 exam_items 并持久化
+        existing_items = (existing_same_day.exam_items if existing_same_day and isinstance(existing_same_day.exam_items, dict) else {})
+        exam_items = dict(existing_items)
+        exam_items.update({
+            "stage": stage_type,
+            "gestational_days": gestational_days if stage_type == "pregnancy" else None,
+            "postpartum_months": data.get("postpartum_months") if stage_type == "postpartum" else None,
+            "systolic_bp": sbp if sbp is not None else existing_items.get("systolic_bp"),
+            "diastolic_bp": dbp if dbp is not None else existing_items.get("diastolic_bp"),
+            "pulse": pulse if pulse is not None else existing_items.get("pulse"),
+            "bp_status": bp_eval["status"] if bp_eval else existing_items.get("bp_status"),
+            "bp_status_label": bp_eval["status_label"] if bp_eval else existing_items.get("bp_status_label"),
+            "blood_sugar": blood_sugar if blood_sugar is not None else existing_items.get("blood_sugar"),
+            "glucose_type": glucose_type if blood_sugar is not None else existing_items.get("glucose_type", "fasting"),
+            "glucose_type_label": glu_eval["glucose_type_label"] if glu_eval else existing_items.get("glucose_type_label"),
+            "glucose_status": glu_eval["status"] if glu_eval else existing_items.get("glucose_status"),
+            "glucose_status_label": glu_eval["status_label"] if glu_eval else existing_items.get("glucose_status_label"),
+            "symptoms": symptoms,
+            "bmi": bmi_val or existing_items.get("bmi"),
+            "completeness": completeness,
+        })
+
+        note_prefix = (
+            f"孕{gestational_week}周{gestational_days}天" if stage_type == "pregnancy" and gestational_days > 0
+            else f"孕{gestational_week}周" if stage_type == "pregnancy"
+            else f"产后{data.get('postpartum_months', 1)}个月" if stage_type == "postpartum"
+            else "生命体征打卡"
+        )
+        note_parts = [note_prefix + "："]
+        if bp_eval:
+            note_parts.append(f"血压 {sbp}/{dbp} mmHg ({bp_eval['status_label']})")
+        if glu_eval:
+            note_parts.append(f"血糖 {blood_sugar} mmol/L ({glu_eval['glucose_type_label']} · {glu_eval['status_label']})")
+        if data.get("note"):
+            note_parts.append(f"备注: {data['note']}")
+        full_note = " ； ".join(note_parts)
+
+        effective_weight = weight if weight is not None else (existing_same_day.weight if existing_same_day else None)
+        effective_height = height if height is not None else (existing_same_day.height if existing_same_day else None)
+
+        record_action = "created"
+        created_record_id = None
+        if existing_same_day:
+            existing_same_day.gestational_week = gestational_week
+            existing_same_day.height = effective_height
+            existing_same_day.weight = effective_weight
+            existing_same_day.exam_items = exam_items
+            existing_same_day.note = full_note
+            if ai_result and ai_result.get("response"):
+                existing_same_day.ai_analysis = ai_result["response"]
+            if mother:
+                existing_same_day.mother = mother
+            existing_same_day.save(update_fields=["gestational_week", "height", "weight", "exam_items", "note", "ai_analysis", "mother", "updated_at"])
+            created_record_id = existing_same_day.id
+            record_action = "updated"
+        else:
+            new_rec = HealthRecord.objects.create(
+                user=request.user,
+                mother=mother,
+                record_type="prenatal_exam",
+                record_date=target_date,
+                gestational_week=gestational_week,
+                height=effective_height,
+                weight=effective_weight,
+                exam_items=exam_items,
+                note=full_note,
+                ai_analysis=ai_result.get("response", "") if ai_result else "",
+            )
+            created_record_id = new_rec.id
+
+        # 审计日志
+        audit(
+            request,
+            "health_vitals_analyze",
+            "生命体征打卡并评估（覆盖更新）" if record_action == "updated" else "生命体征打卡并评估",
+            "health",
+            created_record_id or 0,
+            f"BP: {sbp}/{dbp}" if sbp else f"Glu: {blood_sugar}",
+            completeness.get("summary_text", ""),
+        )
+
+        timeseries, summary = _build_vitals_timeseries(request.user, mother_id=mother.id if mother else None)
+
+        return Response({
+            "code": 0,
+            "message": "已成功更新当日生命体征记录" if record_action == "updated" else "生命体征录入与评估成功",
+            "data": {
+                "created_record_id": created_record_id,
+                "record_action": record_action,
+                "bp_evaluation": bp_eval,
+                "glucose_evaluation": glu_eval,
+                "bmi": bmi_val,
+                "completeness": completeness,
+                "alerts": alerts,
+                "lifestyle_diet": lifestyle_diet,
+                "ai_analysis": ai_result,
+                "timeseries": timeseries,
+                "summary": summary,
+            },
+        })
+
+
+class HealthVitalsAiAnalysisView(APIView):
+    """单独触发生命体征 AI 深度解读接口"""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        check_permission_or_403(request.user, "menu_health", "您没有访问健康中心的权限")
+        check_permission_or_403(request.user, "health_record_view", "您没有查看健康档案的权限")
+        from apps.core.models.health import HealthRecord
+        from apps.core.services.ai_service import ai_analyze_vitals
+        from apps.core.services.vitals_calculator import VitalsCalculator
+
+        record_id = request.data.get("record_id")
+        rec = None
+        if record_id:
+            rec = HealthRecord.objects.filter(id=record_id, user=request.user).first()
+
+        if rec:
+            items = rec.exam_items if isinstance(rec.exam_items, dict) else {}
+            sbp = items.get("systolic_bp")
+            dbp = items.get("diastolic_bp")
+            pulse = items.get("pulse")
+            glu = items.get("blood_sugar")
+            raw_gtype = items.get("glucose_type", "fasting")
+            stage = items.get("stage") or ("pregnancy" if rec.gestational_week else "pregnancy")
+            symptoms = items.get("symptoms", [])
+
+            bp_eval = VitalsCalculator.evaluate_blood_pressure(sbp, dbp, pulse, stage_type=stage) if (sbp and dbp) else None
+            glu_eval = VitalsCalculator.evaluate_blood_sugar(glu, raw_gtype, stage_type=stage) if glu else None
+            completeness = items.get("completeness") or VitalsCalculator.build_metrics_completeness({
+                "systolic_bp": sbp, "diastolic_bp": dbp, "pulse": pulse,
+                "blood_sugar": glu, "glucose_type": raw_gtype,
+                "weight": rec.weight, "bmi": items.get("bmi"),
+            })
+
+            timeseries, _ = _build_vitals_timeseries(request.user, mother_id=rec.mother_id)
+            stage_display = (
+                f"孕{rec.gestational_week}周{items.get('gestational_days', 0)}天" if stage == "pregnancy" and items.get("gestational_days")
+                else f"孕{rec.gestational_week}周" if stage == "pregnancy"
+                else f"产后{items.get('postpartum_months', 1)}个月" if stage == "postpartum"
+                else "备孕期/常规阶段"
+            )
+            vitals_context = {
+                "bp_eval": bp_eval,
+                "glucose_eval": glu_eval,
+                "completeness": completeness,
+                "symptoms": symptoms,
+                "history_trend": [
+                    {
+                        "record_date": h["record_date"],
+                        "systolic": h["systolic_bp"],
+                        "diastolic": h["diastolic_bp"],
+                        "blood_sugar": h["blood_sugar"],
+                        "glucose_type": h.get("glucose_type_label", ""),
+                    }
+                    for h in timeseries[-5:]
+                ],
+            }
+            res = ai_analyze_vitals(vitals_context, stage_label=stage_display, user=request.user)
+            if res.get("response"):
+                rec.ai_analysis = res["response"]
+                rec.save(update_fields=["ai_analysis", "updated_at"])
+            return Response({"code": 0, "message": "AI解读生成完成", "data": res})
+
+        return Response({"code": 4004, "message": "未找到对应的健康记录", "data": None}, status=status.HTTP_404_NOT_FOUND)
 
 
 # ============ AI ============

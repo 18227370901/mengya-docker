@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
-import { Activity, Sparkles, AlertCircle, Calendar, CheckCircle2 } from "lucide-react";
+import { Activity, Sparkles, AlertCircle, Calendar, CheckCircle2, HeartPulse, ChevronDown } from "lucide-react";
 import { useAuthStore } from "@/store/authStore";
 import { computeGestation, type GestationAnchor } from "@/utils/gestation";
 import type { BmiAnalysisInput, PregnancyStage } from "@/types/health";
@@ -18,6 +18,17 @@ interface BmiFormCardProps {
   babies?: BabyProfile[];
 }
 
+
+const COMMON_SYMPTOMS = [
+  "无明显不适",
+  "头晕乏力",
+  "下肢轻微浮肿",
+  "视物模糊/眼花",
+  "胸闷心慌",
+  "口渴多尿",
+  "睡眠欠佳",
+  "情绪焦虑",
+];
 const MEDICAL_HISTORY_OPTIONS = [
   { key: "gdm", label: "妊娠糖尿病 (GDM)" },
   { key: "hypertension", label: "妊娠高血压 / 浮肿" },
@@ -133,6 +144,15 @@ export default function BmiFormCard({ onSubmit, loading, initialHeight, initialP
   const [postpartumMonths, setPostpartumMonths] = useState<string>("");
   const [isTwins, setIsTwins] = useState<boolean>(false);
   const [medicalHistory, setMedicalHistory] = useState<string[]>([]);
+  // 选填同时记录血压血糖折叠卡
+  const [showVitalsSection, setShowVitalsSection] = useState(false);
+  const [systolic, setSystolic] = useState("");
+  const [diastolic, setDiastolic] = useState("");
+  const [pulse, setPulse] = useState("");
+  const [bloodSugar, setBloodSugar] = useState("");
+  const [glucoseType, setGlucoseType] = useState("fasting");
+  const [symptoms, setSymptoms] = useState<string[]>([]);
+  const [note, setNote] = useState("");
   const [errorMsg, setErrorMsg] = useState<string>("");
 
   // v1.58 孕周双基准自动推算（与后端一致）：预产期 280 天模型 > 首次打卡锚点线性外推
@@ -245,6 +265,27 @@ export default function BmiFormCard({ onSubmit, loading, initialHeight, initialP
       payload.postpartum_months = isNaN(pmNum) ? 1 : pmNum;
     }
     // v1.56：general 非孕期阶段无需孕周/产后月龄
+
+    // 选填：同时记录血压与血糖体征
+    if (systolic && !isNaN(parseInt(systolic, 10))) {
+      payload.systolic_bp = parseInt(systolic, 10);
+    }
+    if (diastolic && !isNaN(parseInt(diastolic, 10))) {
+      payload.diastolic_bp = parseInt(diastolic, 10);
+    }
+    if (pulse && !isNaN(parseInt(pulse, 10))) {
+      payload.pulse = parseInt(pulse, 10);
+    }
+    if (bloodSugar && !isNaN(parseFloat(bloodSugar))) {
+      payload.blood_sugar = parseFloat(bloodSugar);
+      payload.glucose_type = glucoseType as any;
+    }
+    if (symptoms.length > 0) {
+      payload.symptoms = symptoms;
+    }
+    if (note && note.trim()) {
+      payload.note = note.trim();
+    }
 
     onSubmit(payload);
   };
@@ -552,6 +593,152 @@ export default function BmiFormCard({ onSubmit, loading, initialHeight, initialP
               );
             })}
           </div>
+        </div>
+
+        {/* ❤️ 选填：同时记录血压与血糖 */}
+        <div className="rounded-xl border border-rose-100 bg-rose-50/20 p-3.5 dark:border-rose-950/40 dark:bg-rose-950/10">
+          <button
+            type="button"
+            onClick={() => setShowVitalsSection(!showVitalsSection)}
+            className="flex w-full items-center justify-between text-xs font-semibold text-rose-800 dark:text-rose-300"
+          >
+            <span className="flex items-center gap-1.5">
+              <HeartPulse className="h-4 w-4 text-rose-500" />
+              同时记录血压与血糖（选填，未测可收起留空）
+            </span>
+            <span className="flex items-center gap-1 text-[11px] text-gray-400">
+              {showVitalsSection ? "收起" : "展开录入"}
+              <ChevronDown className={`h-3.5 w-3.5 transition-transform ${showVitalsSection ? "rotate-180" : ""}`} />
+            </span>
+          </button>
+
+          {showVitalsSection && (
+            <div className="mt-3 space-y-3 border-t border-rose-100/60 pt-3 dark:border-gray-800">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                <div>
+                  <label className="text-xs text-gray-500 dark:text-gray-400 block mb-1">
+                    收缩压 (高压, mmHg)
+                  </label>
+                  <input
+                    type="number"
+                    min={50}
+                    max={260}
+                    placeholder="如 118"
+                    value={systolic}
+                    onChange={(e) => setSystolic(e.target.value)}
+                    className="input text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 dark:text-gray-400 block mb-1">
+                    舒张压 (低压, mmHg)
+                  </label>
+                  <input
+                    type="number"
+                    min={30}
+                    max={180}
+                    placeholder="如 76"
+                    value={diastolic}
+                    onChange={(e) => setDiastolic(e.target.value)}
+                    className="input text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 dark:text-gray-400 block mb-1">
+                    脉搏 (心率, bpm)
+                  </label>
+                  <input
+                    type="number"
+                    min={30}
+                    max={220}
+                    placeholder="如 75"
+                    value={pulse}
+                    onChange={(e) => setPulse(e.target.value)}
+                    className="input text-xs"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="text-xs text-gray-500 dark:text-gray-400 block mb-1">
+                    血糖读数 (mmol/L)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min={1}
+                    max={35}
+                    placeholder="如 5.20"
+                    value={bloodSugar}
+                    onChange={(e) => setBloodSugar(e.target.value)}
+                    className="input text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 dark:text-gray-400 block mb-1">
+                    测定场景
+                  </label>
+                  <select
+                    value={glucoseType}
+                    onChange={(e) => setGlucoseType(e.target.value)}
+                    className="input text-xs"
+                  >
+                    <option value="fasting">空腹 (清晨未进食)</option>
+                    <option value="postprandial_1h">餐后 1 小时 (第一口饭算起)</option>
+                    <option value="postprandial_2h">餐后 2 小时 (第一口饭算起)</option>
+                    <option value="bedtime">睡前</option>
+                    <option value="random">随机 (非定时)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs text-gray-500 dark:text-gray-400 block mb-1">
+                  伴随身体不适症状（可多选）
+                </label>
+                <div className="flex flex-wrap gap-1.5">
+                  {COMMON_SYMPTOMS.map((symptom) => {
+                    const active = symptoms.includes(symptom);
+                    return (
+                      <button
+                        key={symptom}
+                        type="button"
+                        onClick={() =>
+                          setSymptoms((prev) =>
+                            prev.includes(symptom)
+                              ? prev.filter((s) => s !== symptom)
+                              : [...prev, symptom]
+                          )
+                        }
+                        className={`rounded-lg px-2.5 py-1 text-xs transition-colors ${
+                          active
+                            ? "bg-rose-500 text-white font-medium"
+                            : "bg-white text-gray-600 border border-gray-200 hover:border-rose-300 dark:bg-gray-800 dark:border-gray-700 dark:text-gray-300"
+                        }`}
+                      >
+                        {symptom}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xs text-gray-500 dark:text-gray-400 block mb-1">
+                  备注 / 生活备忘 (选填)
+                </label>
+                <input
+                  type="text"
+                  maxLength={100}
+                  placeholder="如：测前有散步，睡眠良好"
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  className="input text-xs"
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="flex items-center justify-between border-t border-orange-100/60 pt-3 dark:border-gray-800">

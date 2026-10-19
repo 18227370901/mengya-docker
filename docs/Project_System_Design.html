@@ -2232,5 +2232,27 @@ estart: unless-stopped；
   </ul>
 </div>
 
+
+<div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;padding:24px;margin-bottom:24px;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+  <h3 style="color:#0f172a;font-size:18px;margin-bottom:12px;border-bottom:2px solid #3b82f6;padding-bottom:8px;">10.37 外部接口服务配置统一管理与多源高可用容灾管线 (v1.73)</h3>
+  <p style="color:#475569;font-size:14px;line-height:1.6;">统一抽象天气、节假日日历、公网搜索及私有 SearXNG 调用管线，支持管理员端界面动态配置、实时连通性测试与三级高可用降级。</p>
+</div>
+
+<div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;padding:24px;margin-bottom:24px;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+  <h3 style="color:#0f172a;font-size:18px;margin-bottom:12px;border-bottom:2px solid #ec4899;padding-bottom:8px;">10.38 妈妈健康中心生命体征监测（血压/血糖）与智能双轨分析体系 (v1.75)</h3>
+  <p style="color:#475569;font-size:14px;line-height:1.6;">采用方案 A 二级子看板架构，建立符合中国产科权威指南的严谨临床标准，支持灵活非全字段录入、未录入数据展示说明、同日多次打卡无损合并与双通道 AI 专家解读。</p>
+</div>
+
+<div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;padding:24px;margin-bottom:24px;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+  <h3 style="color:#0f172a;font-size:18px;margin-bottom:12px;border-bottom:2px solid #10b981;padding-bottom:8px;">10.39 妈妈健康中心体验深化与功能对等重构 (v1.76)</h3>
+  <p style="color:#475569;font-size:14px;line-height:1.6;">深化健康打卡按钮智能情景适配、CSV 专属三向分流、测量日期动态联动重算与档案溯源、以及体重/BMI 与血压血糖互补折叠卡对等扩展，彻底解决字段混杂与场景不匹配痛点。</p>
+  <ul style="color:#334155;line-height:1.6;margin-top:10px;">
+    <li><strong>健康打卡智能适配与校验解耦</strong>：BMI 子页面聚焦体重身高，血压血糖模块默认收缩；血压血糖子页面打卡按钮自适应为“记录血压/血糖”，体重腹围模块默认收缩；顶部双标签快速切换，仅校验当前活动模块。</li>
+    <li><strong>CSV 导入三向专属分流与独立模板</strong>：精准分流为 <code>mom_bmi</code>、<code>mom_vitals</code> 与 <code>baby</code>，提供专属中英文 CSV 模板，列校验精准对应，后端 API 无损兼容。</li>
+    <li><strong>测量日期动态联动推算与档案溯源</strong>：选择测量日期后自动调用 <code>computeGestation</code> / <code>autoPostpartumMonths</code> 毫秒级重算孕周天数与产后月数，显式渲染来源档案徽章并支持多宝基准切换。</li>
+    <li><strong>体重/BMI 模块互补选填折叠卡</strong>：在 <code>BmiFormCard</code> 底部新增血压、血糖、伴随症状与生活备忘折叠卡，提交时全量打包归档至后端生命体征库。</li>
+  </ul>
+</div>
+
 </body>
 </html>

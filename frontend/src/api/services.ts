@@ -1,6 +1,7 @@
 import api from "./client";
 import type { ApiResponse, ChatSessionDetail, ChatSessionSummary, HealthRecord, ShoppingList, ShoppingListItem, AIChatResult, BabyShoppingListResponse, BabyShoppingCategories, AIRecommendResult } from "@/types";
-import type { BmiAnalysisInput, BmiAnalysisResult, BmiTimeSeriesRecord, SearXNGConfig, SearXNGTestResult, CsvImportResult } from "@/types/health";
+import type { BmiAnalysisInput, BmiAnalysisResult, BmiTimeSeriesRecord, SearXNGConfig, SearXNGTestResult, CsvImportResult, VitalsAnalysisInput, VitalsAnalysisResult, VitalsTimeSeriesRecord, VitalsSummary, VitalsAiResult } from "@/types/health";
+import type { ServiceConfigData, ServiceConfigPayload, ServiceTestResponse } from "@/types/serviceConfig";
 export const shoppingApi = {
   list: () => api.get<ApiResponse<ShoppingList[]>>("/shopping-lists/").then((r) => r.data.data),
 
@@ -45,6 +46,16 @@ export const searxngConfigApi = {
     api.post<ApiResponse<SearXNGTestResult>>("/admin/searxng-config/test/", data).then((r) => r.data.data),
 };
 
+// v1.73 外部接口服务配置（天气 / 节假日 / AI 公网搜索引擎管线）
+export const serviceConfigApi = {
+  get: () => api.get<ApiResponse<ServiceConfigData>>("/admin/service-config/").then((r) => r.data.data),
+  update: (data: ServiceConfigPayload) =>
+    api.put<ApiResponse<ServiceConfigData>>("/admin/service-config/", data).then((r) => r.data.data),
+  test: (data: ServiceConfigPayload) =>
+    api.post<ApiResponse<ServiceTestResponse>>("/admin/service-config/test/", data).then((r) => r.data.data),
+  restore: () => api.post<ApiResponse<ServiceConfigData>>("/admin/service-config/restore/").then((r) => r.data.data),
+};
+
 export const healthApi = {
   list: (params?: { record_type?: string }) =>
     api.get<ApiResponse<HealthRecord[]>>("/health/records/", { params }).then((r) => r.data.data),
@@ -75,6 +86,18 @@ export const healthApi = {
     api.get<ApiResponse<{ timeseries: BmiTimeSeriesRecord[] }>>("/health/bmi-analysis/", { params }).then((r) => r.data.data),
   analyzeBmi: (data: BmiAnalysisInput & { mother_id?: number | null }) =>
     api.post<ApiResponse<BmiAnalysisResult>>("/health/bmi-analysis/", data).then((r) => r.data.data),
+
+  // 妈妈生命体征（血压、血糖）全时序与统计看板
+  getVitalsTimeseries: (params?: { mother_id?: number | null }) =>
+    api.get<ApiResponse<{ timeseries: VitalsTimeSeriesRecord[]; summary: VitalsSummary }>>("/health/vitals-analysis/", { params }).then((r) => r.data.data),
+
+  // 妈妈生命体征录入与评估
+  analyzeVitals: (data: VitalsAnalysisInput) =>
+    api.post<ApiResponse<VitalsAnalysisResult>>("/health/vitals-analysis/", data).then((r) => r.data.data),
+
+  // 触发 AI 专家深度解读生命体征
+  analyzeVitalsAi: (data: { record_id?: number }) =>
+    api.post<ApiResponse<VitalsAiResult>>("/health/vitals-ai-analyze/", data).then((r) => r.data.data),
 };
 
 export const aiApi = {

@@ -1,7 +1,7 @@
 import { useAuthStore } from "@/store/authStore";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Baby, Calendar, CalendarCheck, LineChart, Plus, Trash2, HeartPulse, FileUp, Sparkles, ChevronRight, Edit3, Check, Loader2, X } from "lucide-react";
+import { Baby, Calendar, CalendarCheck, LineChart, Plus, Trash2, HeartPulse, FileUp, Sparkles, ChevronRight, Edit3, Check, Loader2, X, Scale, Droplet } from "lucide-react";
 import { calculateBabyAge } from "@/utils/stage";
 import { healthApi } from "@/api/services";
 import { authApi } from "@/api/auth";
@@ -13,8 +13,9 @@ import VaccineCalendar from "@/components/VaccineCalendar";
 import HealthCalendar from "@/components/HealthCalendar";
 import HealthTimelineView from "@/components/health/HealthTimelineView";
 import BmiAnalysisView from "@/components/health/BmiAnalysisView";
+import VitalsAnalysisView from "@/components/health/VitalsAnalysisView";
 import UnifiedHealthCheckIn from "@/components/health/UnifiedHealthCheckIn";
-import CsvImportModal from "@/components/health/CsvImportModal";
+import CsvImportModal, { type ImportTarget } from "@/components/health/CsvImportModal";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import PaginationBar, { useListPagination } from "@/components/ui/PaginationBar";
 
@@ -53,7 +54,7 @@ export default function HealthPage() {
       : "general"
   );
   const [showImport, setShowImport] = useState(false);
-  const [importTarget, setImportTarget] = useState<"mom" | "baby">("mom");
+  const [importTarget, setImportTarget] = useState<ImportTarget>("mom_bmi");
   const [toast, setToast] = useState("");
   const [calendarMonth, setCalendarMonth] = useState(() => new Date());
   // v1.59/v1.60：跨组件同步触发器、宝宝性别基准与最新分析报告联动
@@ -61,6 +62,8 @@ export default function HealthPage() {
   const [refreshTick, setRefreshTick] = useState(0);
   const [latestAnalysisResult, setLatestAnalysisResult] = useState<BmiAnalysisResult | null>(null);
   const [babyGender, setBabyGender] = useState<"boy" | "girl">("boy");
+  const [momSubTab, setMomSubTab] = useState<"bmi" | "vitals">("bmi");
+  const [checkInFocusModule, setCheckInFocusModule] = useState<"bmi" | "vitals">("bmi");
 
   // 多妈妈与多宝宝档案状态
   const [mothers, setMothers] = useState<MotherProfile[]>([]);
@@ -338,8 +341,16 @@ export default function HealthPage() {
   }, [tab]);
 
   /** 打开 CSV 批量导入弹窗：导入对象根据当前子页面自动联动匹配 */
-  const openImport = (targetOverride?: "mom" | "baby") => {
-    setImportTarget(targetOverride || (tab === "growth" ? "baby" : "mom"));
+  const openImport = (targetOverride?: ImportTarget) => {
+    if (targetOverride) {
+      setImportTarget(targetOverride);
+    } else if (tab === "growth") {
+      setImportTarget("baby");
+    } else if (tab === "mom" && momSubTab === "vitals") {
+      setImportTarget("mom_vitals");
+    } else {
+      setImportTarget("mom_bmi");
+    }
     setShowImport(true);
   };
 
@@ -348,8 +359,16 @@ export default function HealthPage() {
     date?: string,
     targetMode?: "mom_pregnancy" | "mom_postpartum" | "mom_general" | "baby",
     targetBabyId?: number | null,
-    existingRecord?: HealthRecord | null
+    existingRecord?: HealthRecord | null,
+    focusModuleOverride?: "bmi" | "vitals"
   ) => {
+    if (focusModuleOverride) {
+      setCheckInFocusModule(focusModuleOverride);
+    } else if (tab === "mom" && momSubTab === "vitals") {
+      setCheckInFocusModule("vitals");
+    } else {
+      setCheckInFocusModule("bmi");
+    }
     setCheckInDate(date || undefined);
     setHintRecord(existingRecord || null);
 
@@ -492,6 +511,13 @@ export default function HealthPage() {
 
   // v1.58：首次孕期打卡锚点（打卡弹窗无预产期时孕周自动推算 孕x周x天）
   const gestationAnchor = useMemo(() => extractGestationAnchor(records), [records]);
+  const currentMomGestation = useMemo(() => {
+    const anchor = currentMother?.due_date
+      ? { date: currentMother.due_date, week: 40 }
+      : gestationAnchor;
+    if (!anchor) return null;
+    return computeGestation(anchor, new Date().toISOString().slice(0, 10));
+  }, [currentMother?.due_date, gestationAnchor]);
 
   // 生长曲线数据源：严格按当前激活宝宝物理隔离，杜绝多宝宝数据混入同一曲线与历史表
   const currentBabyGrowthRecords = useMemo(() => {
@@ -548,7 +574,25 @@ export default function HealthPage() {
         {(tab === "mom" || tab === "growth") && (
           <div className="flex items-center gap-2">
             {hasPermission("health_record_create") && (
-              <button className="btn-secondary gap-1.5" onClick={() => openImport()} title="健康数据 CSV 批量导入">
+              <button
+                className="btn-secondary gap-1.5"
+                onClick={() =>
+                  openImport(
+                    tab === "growth"
+                      ? "baby"
+                      : momSubTab === "vitals"
+                      ? "mom_vitals"
+                      : "mom_bmi"
+                  )
+                }
+                title={
+                  tab === "growth"
+                    ? "宝宝成长数据 CSV 批量导入"
+                    : momSubTab === "vitals"
+                    ? "血压/血糖体征数据 CSV 批量导入"
+                    : "妈妈体重/BMI CSV 批量导入"
+                }
+              >
                 <FileUp className="h-4 w-4" /> 导入数据
               </button>
             )}
@@ -565,11 +609,21 @@ export default function HealthPage() {
                       : bmiStageType === "postpartum"
                       ? "mom_postpartum"
                       : "mom_general",
-                    tab === "growth" ? currentBaby?.id : null
+                    tab === "growth" ? currentBaby?.id : null,
+                    null,
+                    tab === "mom" && momSubTab === "vitals" ? "vitals" : "bmi"
                   )
                 }
               >
-                <Plus className="h-4 w-4" /> 健康打卡
+                {tab === "mom" && momSubTab === "vitals" ? (
+                  <>
+                    <HeartPulse className="h-4 w-4" /> 记录血压/血糖
+                  </>
+                ) : (
+                  <>
+                    <Plus className="h-4 w-4" /> 健康打卡
+                  </>
+                )}
               </button>
             ) : (
               <span className="text-xs text-gray-400">管理员已关闭您的健康记录录入权限</span>
@@ -624,6 +678,7 @@ export default function HealthPage() {
         initialBabyId={hintRecord?.baby ?? checkInBabyId ?? (tab === "growth" ? (selectedBabyId || currentBaby?.id || null) : null)}
         babies={babies}
         initialRecord={hintRecord}
+        initialFocusModule={checkInFocusModule}
         allRecords={records}
         onSaved={(archiveHint, analysisResult) => {
           showToast(archiveHint);
@@ -701,18 +756,59 @@ export default function HealthPage() {
             </div>
           </div>
 
-          {/* 妈妈·孕产档案：BMI 分析（状态卡 + 表单 + 时序看板 + 历史表 + 医学评估，按当前妈妈隔离） */}
-          <BmiAnalysisView
-            refreshTrigger={refreshTick}
-            onRecordChanged={load}
-            externalAnalysisResult={latestAnalysisResult}
-            stageType={bmiStageType}
-            onStageTypeChange={(newSt) => setBmiStageType(newSt)}
-            fallbackHeight={latestMomHeight}
-            fallbackPreWeight={latestMomPreWeight}
-            motherId={currentMother?.id}
-            babies={babies}
-          />
+          {/* 妈妈·孕产档案二级子看板导航：体重/BMI vs 血压/血糖 */}
+          <div className="flex items-center gap-2 rounded-2xl bg-white p-1.5 border border-pink-100 shadow-2xs dark:border-gray-800 dark:bg-gray-800">
+            <button
+              type="button"
+              onClick={() => setMomSubTab("bmi")}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-xs font-bold transition-all ${
+                momSubTab === "bmi"
+                  ? "bg-gradient-to-r from-rose-500 to-pink-500 text-white shadow-md shadow-rose-200 dark:shadow-none"
+                  : "text-gray-500 hover:text-gray-800 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-700/50"
+              }`}
+            >
+              <Scale className="h-4 w-4" />
+              <span>体重与 BMI 监测分析</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setMomSubTab("vitals")}
+              className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-xs font-bold transition-all ${
+                momSubTab === "vitals"
+                  ? "bg-gradient-to-r from-rose-500 to-pink-500 text-white shadow-md shadow-rose-200 dark:shadow-none"
+                  : "text-gray-500 hover:text-gray-800 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-700/50"
+              }`}
+            >
+              <HeartPulse className="h-4 w-4" />
+              <span>血压与血糖监测分析</span>
+            </button>
+          </div>
+
+          {momSubTab === "bmi" ? (
+            <BmiAnalysisView
+              refreshTrigger={refreshTick}
+              onRecordChanged={load}
+              externalAnalysisResult={latestAnalysisResult}
+              stageType={bmiStageType}
+              onStageTypeChange={(newSt) => setBmiStageType(newSt)}
+              fallbackHeight={latestMomHeight}
+              fallbackPreWeight={latestMomPreWeight}
+              motherId={currentMother?.id}
+              babies={babies}
+            />
+          ) : (
+            <VitalsAnalysisView
+              refreshTrigger={refreshTick}
+              onRecordChanged={load}
+              stageType={bmiStageType}
+              onStageTypeChange={(newSt) => setBmiStageType(newSt)}
+              motherId={currentMother?.id}
+              currentGestationalWeek={currentMomGestation?.week}
+              currentGestationalDays={currentMomGestation?.days}
+              babies={babies}
+              gestationAnchor={gestationAnchor}
+            />
+          )}
         </div>
       ) : tab === "growth" ? (
         <div className="space-y-5">

@@ -95,7 +95,7 @@ def _get_ssl_ctx():
 
 # ==================== 1. DuckDuckGo 引擎 ====================
 
-def _search_duckduckgo(query: str, max_results: int = 5, timeout: float = 1.0) -> list:
+def _search_duckduckgo(query: str, max_results: int = 5, timeout: float = 1.0, url: str = None) -> list:
     """优先尝试 DuckDuckGo（带 1.0s 快速超时熔断）"""
     results = []
 
@@ -119,11 +119,11 @@ def _search_duckduckgo(query: str, max_results: int = 5, timeout: float = 1.0) -
         if results:
             return results
 
-    # 方式 B：尝试 DuckDuckGo Lite HTTP 直连
+    # 方式 B：DuckDuckGo Lite HTTP 直连（v1.73：端点地址由外部接口配置管理）
     try:
-        url = "https://lite.duckduckgo.com/lite/"
+        url = (url or "https://lite.duckduckgo.com/lite/").rstrip("/")
         data = urllib.parse.urlencode({"q": query}).encode("utf-8")
-        req = urllib.request.Request(url, data=data, headers={
+        req = urllib.request.Request(url + "/", data=data, headers={
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Content-Type": "application/x-www-form-urlencoded",
         })
@@ -145,11 +145,14 @@ def _search_duckduckgo(query: str, max_results: int = 5, timeout: float = 1.0) -
 
 # ==================== 2. Google 引擎 ====================
 
-def _search_google(query: str, max_results: int = 5, timeout: float = 1.0) -> list:
+def _search_google(query: str, max_results: int = 5, timeout: float = 1.0, url: str = None) -> list:
     """尝试 Google 搜索（带 1.0s 快速超时熔断）"""
     results = []
     try:
-        url = "https://www.google.com/search?q=" + urllib.parse.quote(query) + "&hl=zh-CN"
+        base = (url or "https://www.google.com/search").rstrip("/")
+        if not base.endswith("/search"):
+            base = base + "/search"
+        url = base + "?q=" + urllib.parse.quote(query) + "&hl=zh-CN"
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
@@ -182,11 +185,14 @@ def _search_google(query: str, max_results: int = 5, timeout: float = 1.0) -> li
 
 # ==================== 3. 微软 Bing 引擎 (核心基石) ====================
 
-def _search_bing(query: str, max_results: int = 5, timeout: float = 2.5) -> list:
+def _search_bing(query: str, max_results: int = 5, timeout: float = 2.5, url: str = None) -> list:
     """微软 Bing 中文搜索（高可用核心基石，国内外均毫秒级畅通）"""
     results = []
     try:
-        url = "https://cn.bing.com/search?q=" + urllib.parse.quote(query)
+        base = (url or "https://cn.bing.com/search").rstrip("/")
+        if not base.endswith("/search"):
+            base = base + "/search"
+        url = base + "?q=" + urllib.parse.quote(query)
         headers = {
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -223,11 +229,14 @@ def _search_bing(query: str, max_results: int = 5, timeout: float = 2.5) -> list
 
 # ==================== 4. 360 搜索 (国内权威高可用) ====================
 
-def _search_so(query: str, max_results: int = 5, timeout: float = 2.0) -> list:
+def _search_so(query: str, max_results: int = 5, timeout: float = 2.0, url: str = None) -> list:
     """360 综合搜索 (so.com)（国内权威高可用引擎）"""
     results = []
     try:
-        url = "https://www.so.com/s?q=" + urllib.parse.quote(query)
+        base = (url or "https://www.so.com/s").rstrip("/")
+        if not base.endswith("/s"):
+            base = base + "/s"
+        url = base + "?q=" + urllib.parse.quote(query)
         headers = {
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -263,11 +272,14 @@ def _search_so(query: str, max_results: int = 5, timeout: float = 2.0) -> list:
 
 # ==================== 5. 搜狗引擎 (国内问答与百科备用) ====================
 
-def _search_sogou(query: str, max_results: int = 5, timeout: float = 2.0) -> list:
+def _search_sogou(query: str, max_results: int = 5, timeout: float = 2.0, url: str = None) -> list:
     """搜狗中文搜索（国内权威问答与百科引擎）"""
     results = []
     try:
-        url = "https://www.sogou.com/web?query=" + urllib.parse.quote(query)
+        base = (url or "https://www.sogou.com/web").rstrip("/")
+        if not base.endswith("/web"):
+            base = base + "/web"
+        url = base + "?query=" + urllib.parse.quote(query)
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Accept-Language": "zh-CN,zh;q=0.9",
@@ -299,11 +311,14 @@ def _search_sogou(query: str, max_results: int = 5, timeout: float = 2.0) -> lis
 
 # ==================== 6. 百度搜索 (国内头部中文引擎) ====================
 
-def _search_baidu(query: str, max_results: int = 5, timeout: float = 1.5) -> list:
+def _search_baidu(query: str, max_results: int = 5, timeout: float = 1.5, url: str = None) -> list:
     """百度搜索 (baidu.com)"""
     results = []
     try:
-        url = "https://www.baidu.com/s?wd=" + urllib.parse.quote(query)
+        base = (url or "https://www.baidu.com/s").rstrip("/")
+        if not base.endswith("/s"):
+            base = base + "/s"
+        url = base + "?wd=" + urllib.parse.quote(query)
         headers = {
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -338,11 +353,14 @@ def _search_baidu(query: str, max_results: int = 5, timeout: float = 1.5) -> lis
 
 # ==================== 7. 雅虎搜索 (全球经典备用) ====================
 
-def _search_yahoo(query: str, max_results: int = 5, timeout: float = 1.2) -> list:
+def _search_yahoo(query: str, max_results: int = 5, timeout: float = 1.2, url: str = None) -> list:
     """雅虎全球搜索 (Yahoo Search)"""
     results = []
     try:
-        url = "https://search.yahoo.com/search?p=" + urllib.parse.quote(query)
+        base = (url or "https://search.yahoo.com/search").rstrip("/")
+        if not base.endswith("/search"):
+            base = base + "/search"
+        url = base + "?p=" + urllib.parse.quote(query)
         headers = {
             "User-Agent": (
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -375,7 +393,7 @@ def _search_yahoo(query: str, max_results: int = 5, timeout: float = 1.2) -> lis
 
 
 def _search_searxng(query: str, max_results: int = 5) -> list:
-    """私有化 SearXNG 元搜索引擎探测"""
+    """私有化 SearXNG 元搜索引擎探测（web_search_with_source 首引擎，保留兼容）"""
     try:
         from apps.core.services.searxng_client import SearXNGClient
         return SearXNGClient.search(query, max_results=max_results)
@@ -385,30 +403,73 @@ def _search_searxng(query: str, max_results: int = 5) -> list:
 
 # ==================== 多源聚合入口 ====================
 
-_ENGINE_PIPELINE = [
-    ("SearXNG", _search_searxng),
-    ("DuckDuckGo", _search_duckduckgo),
-    ("Google", _search_google),
-    ("Bing", _search_bing),
-    ("360搜索", _search_so),
-    ("搜狗搜索", _search_sogou),
-    ("百度搜索", _search_baidu),
-    ("雅虎搜索", _search_yahoo),
-]
+# v1.73 引擎解析器注册表：key → 搜索函数（外部接口配置页按 key 管理地址/超时/开关/顺序）
+_ENGINE_FUNCS = {
+    "duckduckgo": _search_duckduckgo,
+    "google": _search_google,
+    "bing": _search_bing,
+    "so": _search_so,
+    "sogou": _search_sogou,
+    "baidu": _search_baidu,
+    "yahoo": _search_yahoo,
+}
+
+
+def search_with_engine(key: str, url: str, query: str, max_results: int = 5, timeout: float = 1.0) -> list:
+    """按引擎 key 调用对应解析器（供一键测试与动态管线复用）；
+    url/timeout 由外部接口配置传入，失败返回 []（静默降级）"""
+    fn = _ENGINE_FUNCS.get(key)
+    if not fn:
+        return []
+    try:
+        res = fn(query, max_results=max_results, timeout=timeout, url=url)
+        return res or []
+    except Exception:
+        return []
+
+
+def _build_pipeline() -> list:
+    """v1.73 从外部接口配置读取启用的公网引擎（按配置顺序），返回 [(key, url, timeout, fn)]"""
+    from . import service_config
+    engines = service_config.get_enabled_engines()
+    pipeline = []
+    for eng in engines:
+        fn = _ENGINE_FUNCS.get(eng.get("key"))
+        if fn:
+            pipeline.append((eng["key"], eng["url"], eng["timeout"], fn))
+    return pipeline
 
 
 def web_search_with_source(query: str, max_results: int = 5) -> tuple[list, str]:
-    """多引擎回退搜索入口：
-    按 DuckDuckGo -> Google -> Bing -> 360搜索 -> 搜狗搜索 -> 百度搜索 -> 雅虎搜索 顺序依次探测；
+    """多引擎故障转移搜索入口（v1.73 动态化）：
+    ① SearXNG 私有实例优先（可达即用，地址在 SearXNG 配置弹窗维护）；
+    ② 按「外部接口配置」页启用的公网引擎顺序依次探测（地址/超时/开关/顺序均管理员可控）；
+    全部失败后按配置 retries 轮数整轮重试。
     返回 (results_list, engine_name)
     """
-    for engine_name, search_func in _ENGINE_PIPELINE:
-        try:
-            res = search_func(query, max_results=max_results)
+    # ① SearXNG 私有实例优先
+    try:
+        from apps.core.services.searxng_client import SearXNGClient
+        if SearXNGClient.is_available():
+            res = SearXNGClient.search(query, max_results=max_results)
             if res:
-                return res, engine_name
-        except Exception:
-            continue
+                return res, "SearXNG"
+    except Exception:
+        pass
+
+    # ② 配置的公网引擎管线（含重试）
+    from . import service_config
+    pipeline = _build_pipeline()
+    retries = service_config.get_retries('search_pipeline')
+    labels = service_config.ENGINE_LABELS
+    for _round in range(retries + 1):
+        for key, url, timeout, fn in pipeline:
+            try:
+                res = fn(query, max_results=max_results, timeout=timeout, url=url)
+                if res:
+                    return res, labels.get(key, key)
+            except Exception:
+                continue
     return [], ""
 
 
@@ -442,7 +503,8 @@ def search_and_summarize(query: str, max_results: int = 5) -> tuple[str, str]:
 # ==================== AI 助手专用：SearXNG 优先检索链路 (v1.55) ====================
 
 def _is_ai_fallback_enabled() -> bool:
-    """读取管理员控制的公网引擎兜底开关（默认关闭：SearXNG 不通时直接调用 AI）"""
+    """读取管理员控制的公网引擎兜底开关（v1.56 起默认开启：SearXNG 不通时自动回退公网引擎管线；
+    管理员可在 AI 配置页「搜索引擎配置」弹窗随时关闭）"""
     from django.conf import settings
     return bool(getattr(settings, "AI_SEARCH_FALLBACK_ENABLED", False))
 

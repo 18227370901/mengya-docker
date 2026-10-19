@@ -1,5 +1,20 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, ChevronDown, ChevronUp, Download, FileSpreadsheet, FileUp, Info, Loader2, Sparkles, Upload, X } from "lucide-react";
+import {
+  Scale,
+  HeartPulse,
+  Baby,
+  AlertTriangle,
+  ChevronDown,
+  ChevronUp,
+  Download,
+  FileSpreadsheet,
+  FileUp,
+  Info,
+  Loader2,
+  Sparkles,
+  Upload,
+  X,
+} from "lucide-react";
 import { healthApi } from "@/api/services";
 import { useAuthStore } from "@/store/authStore";
 import type { CsvImportResult } from "@/types/health";
@@ -13,7 +28,7 @@ interface CsvImportModalProps {
   motherId?: number | null;
 }
 
-type ImportTarget = "mom" | "baby";
+export type ImportTarget = "mom_bmi" | "mom_vitals" | "baby" | "mom";
 type ConflictStrategy = "skip" | "overwrite";
 
 interface ColumnSpec {
@@ -25,16 +40,16 @@ interface ColumnSpec {
   example: string;
 }
 
-const MOM_COLUMNS: ColumnSpec[] = [
+const MOM_BMI_COLUMNS: ColumnSpec[] = [
   { key: "date", en: "date", cn: "日期", required: true, desc: "格式 YYYY-MM-DD，不能晚于今天", example: "2026-09-01" },
-  { key: "weight", en: "weight", cn: "体重", required: true, desc: "单位 kg，合理防呆范围 25~250 kg", example: "58.20" },
+  { key: "weight", en: "weight", cn: "体重", required: true, desc: "单位 kg，合理范围 25~250 kg", example: "58.20" },
   { key: "waist", en: "waist", cn: "腹围", required: false, desc: "单位 cm，腹围测量值（选填）", example: "86.0" },
   {
     key: "stage",
     en: "stage",
     cn: "阶段",
     required: false,
-    desc: "pregnancy(孕期) | postpartum(产后) | general(非孕期/备孕)，支持输入中英文，留空默认按个人档案智能识别",
+    desc: "pregnancy(孕期) | postpartum(产后) | general(非孕期/备孕)，留空默认按个人档案智能识别",
     example: "pregnancy",
   },
   {
@@ -42,11 +57,31 @@ const MOM_COLUMNS: ColumnSpec[] = [
     en: "week",
     cn: "孕周",
     required: false,
-    desc: "仅孕期有效。若档案已设置预产期，此列可留空由系统自动推算为 x周x天；亦可手填(如 20 或 20.5)",
+    desc: "仅孕期有效。若档案已设置预产期，此列可留空由系统自动推算为 x周x天；亦可手填(如 20)",
     example: "20",
   },
-  { key: "note", en: "note", cn: "备注", required: false, desc: "打卡说明与生活备忘（选填）", example: "孕检打卡" },
+  { key: "note", en: "note", cn: "备注", required: false, desc: "打卡说明与生活备忘（选填）", example: "早晨空腹体重" },
 ];
+
+const MOM_VITALS_COLUMNS: ColumnSpec[] = [
+  { key: "date", en: "date", cn: "日期", required: true, desc: "格式 YYYY-MM-DD，不能晚于今天", example: "2026-09-01" },
+  { key: "systolic", en: "systolic", cn: "收缩压", required: false, desc: "单位 mmHg（高压，选填）", example: "118" },
+  { key: "diastolic", en: "diastolic", cn: "舒张压", required: false, desc: "单位 mmHg（低压，选填）", example: "76" },
+  { key: "pulse", en: "pulse", cn: "脉搏", required: false, desc: "单位 次/分（心率，选填）", example: "75" },
+  { key: "blood_sugar", en: "blood_sugar", cn: "血糖", required: false, desc: "单位 mmol/L（血糖值，选填）", example: "5.20" },
+  { key: "glucose_type", en: "glucose_type", cn: "测定场景", required: false, desc: "fasting(空腹) | postprandial_1h | postprandial_2h | bedtime | random", example: "fasting" },
+  {
+    key: "stage",
+    en: "stage",
+    cn: "阶段",
+    required: false,
+    desc: "pregnancy(孕期) | postpartum(产后) | general(非孕期/备孕)，留空默认按个人档案智能识别",
+    example: "pregnancy",
+  },
+  { key: "note", en: "note", cn: "备注", required: false, desc: "测定说明与生活备忘（选填）", example: "晨起静息血压与空腹血糖" },
+];
+
+const MOM_COLUMNS = MOM_BMI_COLUMNS;
 
 const BABY_COLUMNS: ColumnSpec[] = [
   { key: "date", en: "date", cn: "日期", required: true, desc: "格式 YYYY-MM-DD，不能晚于今天", example: "2026-09-01" },
@@ -64,6 +99,11 @@ const COLUMN_ALIASES: Record<string, string[]> = {
   week: ["week", "孕周", "周数", "周"],
   height: ["height", "身高", "身长", "身高cm", "身高(cm)", "身高（cm）"],
   head: ["head", "头围", "头围cm", "头围(cm)", "头围（cm）"],
+  systolic: ["systolic", "systolic_bp", "收缩压", "高压", "sbp", "收缩压(mmhg)", "收缩压（mmhg）"],
+  diastolic: ["diastolic", "diastolic_bp", "舒张压", "低压", "dbp", "舒张压(mmhg)", "舒张压（mmhg）"],
+  pulse: ["pulse", "脉搏", "心率", "脉搏(次/分)", "heart_rate"],
+  blood_sugar: ["blood_sugar", "sugar", "glucose", "血糖", "血糖值", "血糖(mmol/l)", "血糖（mmol/l）"],
+  glucose_type: ["glucose_type", "scene", "测定场景", "场景", "血糖类型", "测定时间"],
   note: ["note", "备注", "说明", "记录说明"],
 };
 
@@ -99,12 +139,12 @@ function normalizeStage(stageStr: string): string {
 }
 
 function matchColumnKey(headerText: string, target: ImportTarget): string | null {
-  const clean = headerText.trim().toLowerCase().replace(/[\(\)\（\）\s_\-]/g, "");
-  const cols = target === "mom" ? MOM_COLUMNS : BABY_COLUMNS;
+  const clean = headerText.trim().toLowerCase().replace(/[()（）\s_\-]/g, "");
+  const cols = target === "baby" ? BABY_COLUMNS : target === "mom_vitals" ? MOM_VITALS_COLUMNS : MOM_BMI_COLUMNS;
   for (const c of cols) {
     const aliases = COLUMN_ALIASES[c.key] || [c.key, c.en, c.cn];
     for (const a of aliases) {
-      const aClean = a.trim().toLowerCase().replace(/[\(\)\（\）\s_\-]/g, "");
+      const aClean = a.trim().toLowerCase().replace(/[()（）\s_\-]/g, "");
       if (clean === aClean || clean.includes(aClean) || aClean.includes(clean)) {
         return c.key;
       }
@@ -121,20 +161,19 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
     return "general";
   }, [user?.is_pregnant, user?.baby_birthday]);
 
-  const [target, setTarget] = useState<ImportTarget>(() => initialTarget || "mom");
+  const [target, setTarget] = useState<ImportTarget>(() => (initialTarget === "mom" ? "mom_bmi" : initialTarget || "mom_bmi"));
 
   useEffect(() => {
     if (isOpen) {
       if (initialTarget) {
-        setTarget(initialTarget);
+        setTarget(initialTarget === "mom" ? "mom_bmi" : initialTarget);
       }
-      setRawText("");
-      setFileName("");
-      setError("");
       setResult(null);
+      setError("");
       setStageMismatchConfirm(null);
     }
   }, [isOpen, initialTarget]);
+
   const [strategy, setStrategy] = useState<ConflictStrategy>("skip");
   const [rawText, setRawText] = useState("");
   const [fileName, setFileName] = useState("");
@@ -150,7 +189,8 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
     defaultProfileLabel: string;
   } | null>(null);
 
-  const columns = target === "mom" ? MOM_COLUMNS : BABY_COLUMNS;
+  const columns = target === "baby" ? BABY_COLUMNS : target === "mom_vitals" ? MOM_VITALS_COLUMNS : MOM_BMI_COLUMNS;
+  const isMom = target === "mom_bmi" || target === "mom_vitals" || target === "mom";
 
   /** 前端智能 CSV 解析：支持中英文表头识别、动态列映射与无表头纯数据自适应 */
   const parsedRows = useMemo(() => {
@@ -161,7 +201,7 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
       .filter(Boolean);
     if (lines.length === 0) return [];
 
-    const firstLineCols = lines[0].split(/[,，\t]/).map((c) => c.replace(/^["\']|["\']$/g, "").trim());
+    const firstLineCols = lines[0].split(/[,，\t]/).map((c) => c.replace(/^["']|["']$/g, "").trim());
 
     // 判定首行是否为表头行（只要存在匹配关键词且非纯日期格式即判定为表头）
     const headerKeyMap: Array<string | null> = firstLineCols.map((c) => matchColumnKey(c, target));
@@ -172,14 +212,19 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
 
     for (const line of dataLines) {
       if (/^(date|日期)[,，\t]/i.test(line)) continue;
-      const cols = line.split(/[,，\t]/).map((c) => c.replace(/^["\']|["\']$/g, "").trim());
+      const cols = line.split(/[,，\t]/).map((c) => c.replace(/^["']|["']$/g, "").trim());
       const row: Record<string, string> = {};
 
       if (hasHeader) {
         headerKeyMap.forEach((key, idx) => {
           if (key) row[key] = cols[idx] ?? "";
         });
-      } else if (target === "mom") {
+      } else if (target === "mom_vitals") {
+        const defaultKeys = ["date", "systolic", "diastolic", "pulse", "blood_sugar", "glucose_type", "stage", "note"];
+        defaultKeys.forEach((key, idx) => {
+          row[key] = cols[idx] ?? "";
+        });
+      } else if (target === "mom_bmi" || target === "mom") {
         row.date = cols[0] ?? "";
         row.weight = cols[1] ?? "";
         const rest = cols.slice(2);
@@ -231,7 +276,9 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
     let missValue = 0;
     parsedRows.forEach((r) => {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(r.date || "")) badDate += 1;
-      if (target === "mom" && !r.weight) missValue += 1;
+      if (target === "mom_bmi" && !r.weight) missValue += 1;
+      if (target === "mom_vitals" && !r.systolic && !r.diastolic && !r.blood_sugar) missValue += 1;
+      if (target === "mom" && !r.weight && !r.systolic && !r.diastolic && !r.blood_sugar) missValue += 1;
       if (target === "baby" && !r.height && !r.weight && !r.head) missValue += 1;
     });
     if (badDate) issues.push(`${badDate} 行日期格式异常（标准格式：YYYY-MM-DD）`);
@@ -255,23 +302,37 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
   const downloadTemplate = (lang: "cn" | "en") => {
     let content = "";
     let filename = "";
-    if (target === "mom") {
+    if (target === "mom_vitals") {
       if (lang === "cn") {
-        filename = "妈妈体重打卡导入模板(中文表头).csv";
+        filename = "妈妈血压血糖体征导入模板(中文表头).csv";
+        content =
+          "日期,收缩压,舒张压,脉搏,血糖,测定场景,阶段,备注\n" +
+          "2026-09-01,118,76,75,5.20,空腹,孕期,晨起血压血糖\n" +
+          "2026-09-08,122,80,78,,,孕期,单录血压(收缩压+舒张压)\n" +
+          "2026-09-15,,,,6.40,餐后2小时,孕期,单录餐后血糖\n";
+      } else {
+        filename = "mom_vitals_import_template(en).csv";
+        content =
+          "date,systolic,diastolic,pulse,blood_sugar,glucose_type,stage,note\n" +
+          "2026-09-01,118,76,75,5.20,fasting,pregnancy,morning bp and glucose\n" +
+          "2026-09-08,122,80,78,,,pregnancy,bp only\n" +
+          "2026-09-15,,,,6.40,postprandial_2h,pregnancy,postprandial glucose\n";
+      }
+    } else if (target === "mom_bmi" || target === "mom") {
+      if (lang === "cn") {
+        filename = "妈妈体重与BMI监测导入模板(中文表头).csv";
         content =
           "日期,体重,腹围,阶段,孕周,备注\n" +
-          "2026-09-01,58.20,86.0,孕期,20,孕中期打卡(孕周可手填)\n" +
-          "2026-09-08,58.60,87.0,孕期,,孕周留空将按预产期自动推算\n" +
-          "2026-09-15,59.00,,产后,,产后恢复期打卡\n" +
-          "2026-09-22,57.50,,非孕期,,备孕或日常记录\n";
+          "2026-09-01,58.20,86.0,孕期,20,早晨空腹体重\n" +
+          "2026-09-08,58.80,87.0,孕期,21,按周体重监测\n" +
+          "2026-09-22,57.50,,产后,,产后体重恢复\n";
       } else {
-        filename = "mom_weight_import_template(en).csv";
+        filename = "mom_bmi_import_template(en).csv";
         content =
           "date,weight,waist,stage,week,note\n" +
-          "2026-09-01,58.20,86.0,pregnancy,20,prenatal exam\n" +
-          "2026-09-08,58.60,87.0,pregnancy,,auto calculate gestation\n" +
-          "2026-09-15,59.00,,postpartum,,postpartum recovery\n" +
-          "2026-09-22,57.50,,general,,general routine\n";
+          "2026-09-01,58.20,86.0,pregnancy,20,morning fasting weight\n" +
+          "2026-09-08,58.80,87.0,pregnancy,21,weekly weight monitoring\n" +
+          "2026-09-22,57.50,,postpartum,,postpartum recovery\n";
       }
     } else {
       if (lang === "cn") {
@@ -298,19 +359,19 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
     URL.revokeObjectURL(url);
   };
 
-  const executeImport = async (mode: "imported_type" | "default_profile" = "imported_type") => {
-    setSubmitting(true);
-    setError("");
-    setResult(null);
+  /** 执行导入 API 调用 */
+  const executeImport = async (mode: "default_profile" | "imported_type") => {
     const currentMismatch = stageMismatchConfirm;
     setStageMismatchConfirm(null);
+    setSubmitting(true);
+    setError("");
     try {
       let rowsToSubmit = parsedRows;
       let targetStageResolved: "pregnancy" | "postpartum" | "general" = defaultProfileStage;
 
-      if (target === "mom") {
+      if (isMom) {
         if (mode === "default_profile") {
-          // 按照宝宝默认档案类型导入数据
+          // 强制将所有记录阶段覆盖为用户当前档案默认阶段
           rowsToSubmit = parsedRows.map((r) => ({
             ...r,
             stage: defaultProfileStage,
@@ -324,10 +385,10 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
       }
 
       const res = await healthApi.batchImport({
-        target,
+        target: (target === "baby" ? "baby" : "mom") as "mom" | "baby",
         conflict_strategy: strategy,
         records: rowsToSubmit,
-        mother_id: target === "mom" && motherId ? motherId : undefined,
+        mother_id: isMom && motherId ? motherId : undefined,
       });
       setResult(res);
       if (res.errors.length === 0) {
@@ -339,7 +400,7 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
             : "CSV 导入完成";
         onImported(
           `${modeText}：新增 ${res.created} 条，覆盖 ${res.updated} 条，跳过 ${res.skipped} 条`,
-          target === "mom" ? targetStageResolved : undefined
+          isMom ? targetStageResolved : undefined
         );
       }
     } catch (err: any) {
@@ -351,16 +412,14 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError("");
-    setResult(null);
     if (parsedRows.length === 0) {
-      setError("未解析到有效数据行，请检查 CSV 内容或下载模板对照格式");
+      setError("未识别到有效数据行，请上传 CSV 文件或直接粘贴 CSV 内容");
       return;
     }
 
     // 检查阶段与当前宝宝默认档案是否不一致
     const distinctStages = Array.from(new Set(parsedRows.map((r) => r.stage).filter(Boolean)));
-    const hasMismatch = target === "mom" && distinctStages.length > 0 && distinctStages.some((st) => st !== defaultProfileStage);
+    const hasMismatch = isMom && distinctStages.length > 0 && distinctStages.some((st) => st !== defaultProfileStage);
 
     if (hasMismatch) {
       const importedLabel = distinctStages.map((st) => STAGE_LABELS[st] || st).join(" / ");
@@ -395,7 +454,7 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
           <div>
             <h3 className="text-base font-bold text-gray-800 dark:text-gray-100">健康数据 CSV 批量导入</h3>
             <p className="text-xs text-gray-400">
-              支持中英文表头自由导入 · 孕周自动推算免手算 · 单次上限 500 条
+              支持中英文表头自由导入 · 专属模板一键下载 · 单次上限 500 条
             </p>
           </div>
         </div>
@@ -408,14 +467,15 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
             </div>
           )}
 
-          {/* 1. 导入对象 */}
+          {/* 1. 导入对象专属切换 */}
           <div>
-            <label className="label">① 导入对象</label>
-            <div className="flex gap-2">
+            <label className="label">① 导入对象与业务场景</label>
+            <div className="grid grid-cols-3 gap-2">
               {(
                 [
-                  { key: "mom" as ImportTarget, label: "妈妈体重打卡" },
-                  { key: "baby" as ImportTarget, label: "宝宝生长测量" },
+                  { key: "mom_bmi" as ImportTarget, label: "妈妈体重/BMI 历史", icon: Scale },
+                  { key: "mom_vitals" as ImportTarget, label: "妈妈血压/血糖体征", icon: HeartPulse },
+                  { key: "baby" as ImportTarget, label: "宝宝生长发育记录", icon: Baby },
                 ]
               ).map((opt) => (
                 <button
@@ -426,50 +486,57 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
                     setResult(null);
                     setStageMismatchConfirm(null);
                   }}
-                  className={`flex-1 rounded-xl py-2 text-xs font-semibold transition-all ${
+                  className={`flex items-center justify-center gap-1.5 rounded-2xl border px-3 py-2 text-xs font-semibold transition ${
                     target === opt.key
-                      ? "bg-brand-500 text-white shadow-xs"
-                      : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300"
+                      ? "border-brand-500 bg-brand-500 text-white shadow-xs"
+                      : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-700 dark:text-gray-200"
                   }`}
                 >
-                  {opt.label}
+                  <opt.icon className="h-3.5 w-3.5" />
+                  <span>{opt.label}</span>
                 </button>
               ))}
             </div>
           </div>
 
-          {/* 2. 字段规范与中英文对照 */}
-          <div className="rounded-2xl border border-orange-100 bg-orange-50/50 p-3.5 dark:border-gray-700 dark:bg-gray-800/60">
-            <div className="flex items-center justify-between text-xs">
-              <div className="flex items-center gap-1.5 font-semibold text-brand-700 dark:text-brand-300">
-                <FileSpreadsheet className="h-4 w-4 text-brand-500" />
-                <span>字段规范与中英文对照说明</span>
+          {/* 2. 规范与专属模板下载 */}
+          <div className="rounded-2xl border border-orange-100 bg-orange-50/40 p-3.5 dark:border-gray-700 dark:bg-gray-800/60">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300">
+                <Info className="h-4 w-4 text-brand-500" />
+                <span>
+                  {target === "mom_vitals"
+                    ? "血压/血糖体征导入规范（至少包含血压或血糖）"
+                    : target === "mom_bmi"
+                    ? "体重/BMI 导入规范（体重必填，阶段与孕周自动推算）"
+                    : "宝宝生长发育导入规范（身高、体重、头围至少一项）"}
+                </span>
               </div>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => downloadTemplate("cn")}
-                  className="inline-flex items-center gap-1 rounded-lg bg-white px-2 py-1 text-[11px] font-medium text-brand-600 shadow-xs hover:bg-orange-50 dark:bg-gray-700 dark:text-brand-300"
-                  title="下载中文表头 CSV 示例模板"
+                  className="btn-secondary flex items-center gap-1 px-2.5 py-1 text-xs"
+                  title="下载中文表头 CSV 模板"
                 >
-                  <Download className="h-3 w-3" />
-                  <span>下载中文模板</span>
+                  <Download className="h-3.5 w-3.5" />
+                  <span>中文模板</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => downloadTemplate("en")}
-                  className="inline-flex items-center gap-1 rounded-lg bg-white px-2 py-1 text-[11px] font-medium text-brand-600 shadow-xs hover:bg-orange-50 dark:bg-gray-700 dark:text-brand-300"
-                  title="下载英文表头 CSV 示例模板"
+                  className="btn-secondary flex items-center gap-1 px-2.5 py-1 text-xs"
+                  title="下载英文表头 CSV 模板"
                 >
-                  <Download className="h-3 w-3" />
-                  <span>下载英文模板</span>
+                  <Download className="h-3.5 w-3.5" />
+                  <span>英文模板</span>
                 </button>
                 <button
                   type="button"
-                  onClick={() => setShowSpecTable((v) => !v)}
-                  className="rounded-lg p-1 text-gray-400 hover:bg-white/80 hover:text-gray-600 dark:hover:bg-gray-700"
-                  title={showSpecTable ? "收起字段详情" : "展开字段详情"}
+                  onClick={() => setShowSpecTable(!showSpecTable)}
+                  className="flex items-center gap-0.5 text-xs text-brand-600 hover:text-brand-700 dark:text-brand-400"
                 >
+                  <span>{showSpecTable ? "收起字段说明" : "字段说明"}</span>
                   {showSpecTable ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                 </button>
               </div>
@@ -477,7 +544,7 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
 
             {/* 字段提示小标签 */}
             <div className="mt-2 flex flex-wrap gap-1.5 text-[11px]">
-              {columns.map((c) => (
+              {columns.map((c: ColumnSpec) => (
                 <span
                   key={c.key}
                   className="inline-flex items-center gap-1 rounded-md bg-white/80 px-2 py-0.5 text-gray-700 dark:bg-gray-700 dark:text-gray-200"
@@ -503,7 +570,7 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-orange-100/40 dark:divide-gray-700">
-                    {columns.map((c) => (
+                    {columns.map((c: ColumnSpec) => (
                       <tr key={c.key}>
                         <td className="py-1.5 font-medium text-gray-800 dark:text-gray-200">{c.cn}</td>
                         <td className="py-1.5 font-mono text-gray-500 dark:text-gray-400">{c.en}</td>
@@ -515,36 +582,27 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
                           )}
                         </td>
                         <td className="py-1.5 text-gray-600 dark:text-gray-300">{c.desc}</td>
-                        <td className="py-1.5 font-mono text-gray-500">{c.example}</td>
+                        <td className="py-1.5 font-mono text-gray-500 dark:text-gray-400">{c.example}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             )}
-
-            {/* 特色贴心说明 */}
-            <div className="mt-2.5 flex items-start gap-1.5 rounded-xl bg-amber-500/10 p-2 text-[11px] text-amber-800 dark:text-amber-300">
-              <Sparkles className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-600" />
-              <div>
-                <b>智能推算功能：</b>
-                {target === "mom"
-                  ? "stage 阶段支持 pregnancy(孕期) | postpartum(产后) | general(非孕期/备孕)。当为孕期时，若您已设置预产期档案，week（孕周）列可留空，系统将根据打卡日期全自动推算为精准的 x周x天，无需手动繁琐换算！"
-                  : "宝宝生长测量支持导入历史身高、体重与头围。三项指标中至少填写一项即可，系统将自动关联生长发育曲线。"}
-              </div>
-            </div>
           </div>
 
-          {/* 3. CSV 内容输入 */}
+          {/* 3. 上传或粘贴 CSV */}
           <div>
-            <label className="label">③ 选择 CSV 文件或直接粘贴数据</label>
+            <label className="label">② 上传文件或直接粘贴 CSV 内容</label>
             <div className="flex flex-col gap-2">
-              <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-brand-200 py-3 text-xs text-brand-600 transition hover:bg-brand-50 dark:border-brand-900 dark:hover:bg-brand-950/30">
-                <Upload className="h-4 w-4" />
-                {fileName || "点击选择 .csv / .txt 文件（支持 UTF-8 编码）"}
+              <label className="flex cursor-pointer items-center justify-center gap-2 rounded-2xl border border-dashed border-gray-300 bg-gray-50/60 p-4 transition hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-900/40 dark:hover:bg-gray-900/70">
+                <Upload className="h-5 w-5 text-gray-400" />
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  {fileName ? `已选文件：${fileName}（点击可重新选择）` : "点击选择本地 .csv 文件，或将文件拖曳至此"}
+                </span>
                 <input
                   type="file"
-                  accept=".csv,.txt"
+                  accept=".csv,text/csv,text/plain"
                   className="hidden"
                   onChange={(e) => {
                     const f = e.target.files?.[0];
@@ -552,155 +610,193 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
                   }}
                 />
               </label>
-              <textarea
-                rows={5}
-                className="input text-[11px] leading-relaxed font-mono"
-                placeholder={
-                  target === "mom"
-                    ? "可直接粘贴数据（首行中文或英文表头均可自动识别）：\n日期,体重,腹围,阶段,孕周,备注\n2026-09-01,58.2,86,孕期,20,定期产检\n2026-09-08,58.6,87,pregnancy,,孕周留空自动推算"
-                    : "可直接粘贴数据（首行中文或英文表头均可自动识别）：\n日期,身高,体重,头围,备注\n2026-09-01,92.0,13.8,48.5,满月体检\n2026-09-08,92.5,14.0,48.6,日常测量"
-                }
-                value={rawText}
-                onChange={(e) => {
-                  setRawText(e.target.value);
-                  setResult(null);
-                  setStageMismatchConfirm(null);
-                }}
-              />
+
+              <div className="relative">
+                <textarea
+                  rows={4}
+                  className="input font-mono text-xs"
+                  placeholder="亦可直接将 CSV 纯文本复制粘贴到此处..."
+                  value={rawText}
+                  onChange={(e) => {
+                    setRawText(e.target.value);
+                    setFileName("");
+                  }}
+                />
+                {rawText && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRawText("");
+                      setFileName("");
+                    }}
+                    className="absolute right-2.5 top-2.5 text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+                  >
+                    清空
+                  </button>
+                )}
+              </div>
             </div>
           </div>
 
-          {/* 预览 */}
-          {parsedRows.length > 0 && (
-            <div className="space-y-1.5 rounded-2xl bg-gray-50 p-3.5 text-[11px] text-gray-500 dark:bg-gray-900/50 dark:text-gray-400">
-              <p>
-                已解析 <b className="text-gray-700 dark:text-gray-200">{parsedRows.length}</b> 行数据
-                {parsedRows.length >= 500 && "（已达单次 500 条上限，超出部分将被忽略）"}
-                ，首行解析预览：
-                <span className="ml-1 font-mono text-brand-600 dark:text-brand-400">
-                  {parsedRows[0].date} · {target === "mom" ? `体重 ${parsedRows[0].weight || "—"}kg · 阶段: ${parsedRows[0].stage || "默认按档案"}${parsedRows[0].week ? ` (孕${parsedRows[0].week}周)` : ""}` : `身高 ${parsedRows[0].height || "—"}cm · 体重 ${parsedRows[0].weight || "—"}kg`}
-                </span>
-              </p>
-              {previewIssues.length > 0 && (
-                <div className="flex items-start gap-1.5 text-amber-600 dark:text-amber-400">
-                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                  <span>预检提示：{previewIssues.join("；")}</span>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* 4. 冲突策略 */}
+          {/* 4. 同日记录冲突策略 */}
           <div>
-            <label className="label">④ 同日已有打卡记录时的处理策略</label>
-            <div className="flex gap-2">
-              {(
-                [
-                  { key: "skip" as ConflictStrategy, label: "跳过冲突（推荐）", desc: "当日已有记录则跳过该行，保留原数据" },
-                  { key: "overwrite" as ConflictStrategy, label: "覆盖当日", desc: "以导入数据覆盖当日已有记录" },
-                ]
-              ).map((opt) => (
-                <button
-                  key={opt.key}
-                  type="button"
-                  onClick={() => setStrategy(opt.key)}
-                  title={opt.desc}
-                  className={`flex-1 rounded-2xl border px-3 py-2 text-xs font-medium transition-all ${
-                    strategy === opt.key
-                      ? "border-brand-400 bg-brand-50 text-brand-700 dark:border-brand-600 dark:bg-brand-950/50 dark:text-brand-300"
-                      : "border-gray-200 bg-white text-gray-500 hover:border-gray-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-400"
-                  }`}
-                >
-                  {opt.label}
-                </button>
-              ))}
+            <label className="label">③ 同日已有记录处理策略</label>
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              <label
+                className={`flex cursor-pointer items-center gap-2 rounded-2xl border p-2.5 transition ${
+                  strategy === "skip"
+                    ? "border-brand-500 bg-brand-50/60 text-brand-700 dark:bg-brand-950/40 dark:text-brand-300"
+                    : "border-gray-200 text-gray-600 dark:border-gray-700 dark:text-gray-300"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="conflict_strategy"
+                  value="skip"
+                  checked={strategy === "skip"}
+                  onChange={() => setStrategy("skip")}
+                  className="text-brand-500 focus:ring-brand-400"
+                />
+                <div>
+                  <div className="font-semibold">跳过冲突（推荐）</div>
+                  <div className="text-[11px] text-gray-400">若该日期已有记录则保持原有数据不变</div>
+                </div>
+              </label>
+
+              <label
+                className={`flex cursor-pointer items-center gap-2 rounded-2xl border p-2.5 transition ${
+                  strategy === "overwrite"
+                    ? "border-brand-500 bg-brand-50/60 text-brand-700 dark:bg-brand-950/40 dark:text-brand-300"
+                    : "border-gray-200 text-gray-600 dark:border-gray-700 dark:text-gray-300"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="conflict_strategy"
+                  value="overwrite"
+                  checked={strategy === "overwrite"}
+                  onChange={() => setStrategy("overwrite")}
+                  className="text-brand-500 focus:ring-brand-400"
+                />
+                <div>
+                  <div className="font-semibold">覆盖已有</div>
+                  <div className="text-[11px] text-gray-400">若该日期已有记录则以本次 CSV 记录更新覆盖</div>
+                </div>
+              </label>
             </div>
           </div>
 
-          {/* 导入结果 */}
-          {result && (
-            <div className="space-y-2 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-3.5 text-[11px] text-emerald-800 dark:border-emerald-900/50 dark:bg-emerald-950/20 dark:text-emerald-300">
-              <p className="text-xs font-semibold">
-                导入完成：新增 {result.created} 条 · 覆盖 {result.updated} 条 · 跳过 {result.skipped} 条 · 失败 {result.errors.length} 条
-              </p>
-              {result.errors.length > 0 && (
-                <div className="max-h-28 space-y-0.5 overflow-y-auto border-t border-emerald-200/60 pt-1.5 dark:border-emerald-900/40">
-                  {result.errors.map((e, i) => (
-                    <p key={i}>
-                      第 {e.row} 行（{e.date || "—"}）：{e.reason}
-                    </p>
+          {/* 5. 解析预览 */}
+          {parsedRows.length > 0 && (
+            <div className="rounded-2xl border border-gray-100 bg-gray-50/60 p-3 text-xs dark:border-gray-700 dark:bg-gray-900/30">
+              <div className="flex items-center justify-between font-semibold text-gray-700 dark:text-gray-300">
+                <span className="flex items-center gap-1.5">
+                  <FileSpreadsheet className="h-4 w-4 text-emerald-500" />
+                  已识别 {parsedRows.length} 条数据
+                </span>
+                <span className="text-[11px] text-gray-400">首行示例：{parsedRows[0].date} ({parsedRows[0].weight || parsedRows[0].systolic || parsedRows[0].height || "已录"})</span>
+              </div>
+              {previewIssues.length > 0 && (
+                <div className="mt-2 space-y-1 text-[11px] text-amber-600 dark:text-amber-400">
+                  {previewIssues.map((issue, idx) => (
+                    <div key={idx} className="flex items-center gap-1">
+                      <AlertTriangle className="h-3 w-3 shrink-0" />
+                      <span>{issue}</span>
+                    </div>
                   ))}
                 </div>
               )}
             </div>
           )}
 
-          {/* 阶段与宝宝默认档案不一致确认提醒条 */}
-          {stageMismatchConfirm && (
-            <div className="space-y-3 rounded-2xl border-2 border-amber-300 bg-amber-50/95 p-4 text-xs shadow-lg dark:border-amber-700 dark:bg-amber-950/60">
-              <div className="flex items-start gap-2.5">
-                <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
-                <div className="space-y-1">
-                  <h4 className="text-sm font-bold text-amber-900 dark:text-amber-100">
-                    阶段类型与当前宝宝默认档案不一致提醒
-                  </h4>
-                  <p className="leading-relaxed text-amber-800 dark:text-amber-200">
-                    检测到您在导入数据中填写的阶段为
-                    <span className="mx-1 font-semibold text-brand-600 dark:text-brand-400">
-                      【{stageMismatchConfirm.importedLabel}】
-                    </span>
-                    ，而系统当前设置的默认宝宝档案阶段为
-                    <span className="mx-1 font-semibold text-purple-600 dark:text-purple-400">
-                      【{stageMismatchConfirm.defaultProfileLabel}】
-                    </span>
-                    。
-                  </p>
-                  <p className="text-[11px] text-amber-700 dark:text-amber-300">
-                    是否需要按照您填写的导入类型进行导入？请选择：
-                  </p>
+          {/* 6. 导入结果看板 */}
+          {result && (
+            <div className="rounded-2xl border border-gray-200 bg-white p-3.5 text-xs shadow-xs dark:border-gray-700 dark:bg-gray-800">
+              <div className="flex items-center gap-1.5 font-bold text-gray-800 dark:text-gray-100">
+                <Sparkles className="h-4 w-4 text-brand-500" />
+                <span>导入执行结果</span>
+              </div>
+              <div className="mt-2 grid grid-cols-4 gap-2 text-center text-xs">
+                <div className="rounded-xl bg-emerald-50 p-2 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
+                  <div className="font-bold text-base">{result.created}</div>
+                  <div className="text-[10px]">成功新增</div>
+                </div>
+                <div className="rounded-xl bg-blue-50 p-2 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300">
+                  <div className="font-bold text-base">{result.updated}</div>
+                  <div className="text-[10px]">覆盖更新</div>
+                </div>
+                <div className="rounded-xl bg-gray-100 p-2 text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                  <div className="font-bold text-base">{result.skipped}</div>
+                  <div className="text-[10px]">跳过重复</div>
+                </div>
+                <div className="rounded-xl bg-red-50 p-2 text-red-600 dark:bg-red-950/40 dark:text-red-300">
+                  <div className="font-bold text-base">{result.errors.length}</div>
+                  <div className="text-[10px]">异常条数</div>
                 </div>
               </div>
+              {result.errors.length > 0 && (
+                <div className="mt-3 max-h-36 overflow-y-auto rounded-xl bg-red-50/60 p-2.5 text-[11px] text-red-600 dark:bg-red-950/20 dark:text-red-400">
+                  <div className="font-semibold mb-1">部分行未成功导入：</div>
+                  {result.errors.map((e, idx) => (
+                    <div key={idx}>第 {e.row} 行: {e.reason}</div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
-              <div className="flex flex-wrap items-center justify-end gap-2 border-t border-amber-200/80 pt-2 dark:border-amber-800/60">
+          {/* 阶段不一致弹窗提示确认 */}
+          {stageMismatchConfirm && (
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3.5 text-xs text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/40 dark:text-amber-200">
+              <div className="flex items-center gap-1.5 font-bold">
+                <AlertTriangle className="h-4 w-4 text-amber-600" />
+                <span>导入阶段类型与当前档案状态不一致</span>
+              </div>
+              <p className="mt-1 text-[11px] leading-relaxed">
+                当前系统默认档案为【<strong>{stageMismatchConfirm.defaultProfileLabel}</strong>】，
+                而待导入 CSV 中包含【<strong>{stageMismatchConfirm.importedLabel}</strong>】阶段记录。请选择导入处理方式：
+              </p>
+              <div className="mt-2.5 flex items-center justify-end gap-2">
                 <button
                   type="button"
-                  onClick={() => setStageMismatchConfirm(null)}
-                  className="btn-secondary px-3 py-1.5 text-xs"
                   disabled={submitting}
-                >
-                  取消
-                </button>
-                <button
-                  type="button"
                   onClick={() => executeImport("default_profile")}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-semibold text-purple-700 transition hover:bg-purple-100 dark:border-purple-800 dark:bg-purple-950/60 dark:text-purple-300"
-                  disabled={submitting}
+                  className="btn-secondary px-3 py-1.5 text-xs"
                 >
-                  否：按宝宝默认档案类型（{stageMismatchConfirm.defaultProfileLabel}）导入
+                  转换并归档至【{stageMismatchConfirm.defaultProfileLabel}】
                 </button>
                 <button
                   type="button"
-                  onClick={() => executeImport("imported_type")}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-brand-500 px-3.5 py-1.5 text-xs font-semibold text-white shadow-xs transition hover:bg-brand-600"
                   disabled={submitting}
+                  onClick={() => executeImport("imported_type")}
+                  className="btn-primary px-3 py-1.5 text-xs"
                 >
-                  是：按导入类型（{stageMismatchConfirm.importedLabel}）导入
+                  保持 CSV 所填阶段直接导入
                 </button>
               </div>
             </div>
           )}
 
-          <div className="flex items-center justify-end gap-2 border-t border-gray-100 pt-4 dark:border-gray-700">
-            <button type="button" onClick={onClose} className="btn-secondary text-xs" disabled={submitting}>
-              关闭
+          <div className="flex items-center justify-end gap-2 border-t border-gray-100 pt-3 dark:border-gray-700">
+            <button type="button" onClick={onClose} className="btn-secondary px-4 py-2 text-xs">
+              取消
             </button>
             <button
               type="submit"
-              className="btn-primary gap-1.5 text-xs shadow-md shadow-brand-500/20"
               disabled={submitting || parsedRows.length === 0}
+              className="btn-primary gap-1.5 px-5 py-2 text-xs"
             >
-              {submitting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
-              {submitting ? "导入中…" : `导入 ${parsedRows.length} 条`}
+              {submitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <span>正在批量校验导入...</span>
+                </>
+              ) : (
+                <>
+                  <Upload className="h-4 w-4" />
+                  <span>立即执行批量导入 ({parsedRows.length} 条)</span>
+                </>
+              )}
             </button>
           </div>
         </form>

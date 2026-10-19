@@ -597,4 +597,4 @@ class FetalStorySerializer(serializers.ModelSerializer):
         ]
         read_only_fields = ["id", "view_count", "created_at"]
 
-from .health import BmiAnalysisInputSerializer
+from .health import BmiAnalysisInputSerializer, VitalsAnalysisInputSerializer

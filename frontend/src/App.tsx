@@ -106,6 +106,7 @@ import ProductAdminPage from "./pages/ProductAdminPage";
 import UserManagePage from "./pages/UserManagePage";
 import AuditLogPage from "./pages/AuditLogPage";
 import DailyTipsManagePage from "./pages/DailyTipsManagePage";
+import AdminServiceConfigPage from "./pages/AdminServiceConfigPage";
 import BrandListPage from "./pages/BrandListPage";
 import BrandDetailPage from "./pages/BrandDetailPage";
 import PregnancyWeeklyPage from "./pages/PregnancyWeeklyPage";
@@ -151,6 +152,7 @@ export default function App() {
         <Route path="/admin/users" element={<AdminGuard><UserManagePage /></AdminGuard>} />
         <Route path="/admin/audit-logs" element={<AdminGuard><AuditLogPage /></AdminGuard>} />
         <Route path="/admin/daily-tips" element={<AdminGuard><DailyTipsManagePage /></AdminGuard>} />
+        <Route path="/admin/service-config" element={<AdminGuard><AdminServiceConfigPage /></AdminGuard>} />
         <Route path="/brands" element={<BrandListPage />} />
         <Route path="/brands/:id" element={<BrandDetailPage />} />
         <Route path="/fetal-stories" element={<PermissionGuard perm="menu_fetal_stories"><FetalStoryPage /></PermissionGuard>} />

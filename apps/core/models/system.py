@@ -34,6 +34,9 @@ class SystemSetting(models.Model):
     daily_tip_display_count = models.IntegerField(default=5, verbose_name="今日关怀锦囊前台展示条数限制（0为不限制）")
     # 普通用户功能与菜单权限配置（JSON字典，颗粒度覆盖菜单及增删改查）
     default_user_permissions = models.JSONField(default=dict, blank=True, verbose_name="普通用户默认功能与菜单权限")
+    # v1.73 外部接口服务配置（内置默认调用地址统一管理）：
+    # {group: {endpoints|engines: [...], timeout, retries}}，结构与 service_config.DEFAULT_GROUPS 对齐
+    external_api_config = models.JSONField(default=dict, blank=True, verbose_name="外部接口服务配置")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
 
     @classmethod

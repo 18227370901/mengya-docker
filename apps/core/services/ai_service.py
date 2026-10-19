@@ -620,3 +620,197 @@ def fetch_model_list(api_key: str, base_url: str) -> dict:
     return {"success": True, "models": models,
             "message": f"成功获取 {len(models)} 个可用模型",
             "detail": ""}
+
+
+# ============ 妈妈生命体征（血压/血糖）AI 深度分析 ============
+
+def _local_vitals_answer(vitals_data: dict, stage_label: str = "") -> str:
+    """本地备用医学知识库：当公网大模型不可用或未配置时，生成高标准的临床解读"""
+    completeness = vitals_data.get("completeness") or {}
+    bp_eval = vitals_data.get("bp_eval")
+    glu_eval = vitals_data.get("glucose_eval")
+    symptoms = vitals_data.get("symptoms") or []
+    stage = stage_label or "孕产期"
+
+    recorded_items = completeness.get("recorded_items") or []
+    unrecorded_items = completeness.get("unrecorded_items") or []
+
+    lines = []
+    lines.append(f"### 🩺 萌小芽健康顾问 · 生命体征综合解读 ({stage})\n")
+
+    # 1. 录入数据与完备度说明
+    lines.append("#### 📋 本次录入数据与完备度评估")
+    if recorded_items:
+        rec_texts = [f"**{item['label']}**: {item['value']} ({item.get('status_label', '已记录')})" for item in recorded_items]
+        lines.append(f"- **已录入指标**：{' ｜ '.join(rec_texts)}")
+    else:
+        lines.append("- **已录入指标**：暂无有效测量数据")
+
+    if unrecorded_items:
+        unrec_texts = [f"**{item['label']}**（{item.get('hint', '')}）" for item in unrecorded_items]
+        lines.append(f"- **未录入指标说明**：{' ； '.join(unrec_texts)}")
+        lines.append("> 💡 *提示：健康中心支持按需单项或组合打卡，未录入指标不影响已录入项目的评估与趋势跟踪。*\n")
+    else:
+        lines.append("> ✨ *提示：本次指标全量录入，生命体征画像完整，建议继续保持定期记录习惯。*\n")
+
+    # 2. 核心指标临床判读
+    lines.append("#### 🔬 临床医学判读与生理机制")
+    if bp_eval:
+        sbp = bp_eval.get("systolic")
+        dbp = bp_eval.get("diastolic")
+        bp_label = bp_eval.get("status_label", "正常")
+        lines.append(f"- **血压分析 ({sbp}/{dbp} mmHg · {bp_label})**：")
+        lines.append(f"  {bp_eval.get('clinical_advice', '')}")
+        if bp_eval.get("pulse_info"):
+            p_info = bp_eval["pulse_info"]
+            lines.append(f"  脉搏记录：{p_info.get('pulse')} 次/分（{p_info.get('label')}），{p_info.get('desc')}")
+    else:
+        lines.append("- **血压分析**：本次未提供血压测量值。孕产期血管张力随孕周变化明显，建议每周自测 2~3 次以排查隐性高血压。")
+
+    if glu_eval:
+        glu_val = glu_eval.get("glucose")
+        glu_type = glu_eval.get("glucose_type_label", "空腹")
+        glu_label = glu_eval.get("status_label", "正常")
+        lines.append(f"- **血糖分析 ({glu_type} {glu_val} mmol/L · {glu_label})**：")
+        lines.append(f"  {glu_eval.get('clinical_advice', '')}")
+    else:
+        lines.append("- **血糖分析**：本次未提供血糖测量值。孕 24~28 周糖耐量筛查前后，建议关注餐后碳水摄入与空腹血糖波动。")
+
+    if symptoms:
+        lines.append(f"- **伴随症状关注**：记录到您勾选了【{'、'.join(symptoms)}】。若症状持续或有加重趋势，请引起重视并向产科医生反映。")
+
+    lines.append("")
+
+    # 3. 膳食与生活方式干预建议
+    lines.append("#### 🥗 营养膳食与日常调理建议")
+    # 高血压或血糖异常饮食建议
+    if bp_eval and bp_eval.get("status") in ["elevated", "hypertension_stage1", "hypertension_severe"]:
+        lines.append("- **低钠高钾高钙 DASH 方案**：烹调时少放盐（每天<5g），少用味精、酱油和豆瓣酱；适量摄入菠菜、西兰花、西红柿及香蕉，保证每日 400~500ml 低脂牛奶或强化钙豆浆。")
+        lines.append("- **体位与休息**：建议夜间及午休采取左侧卧位，有效减轻下腔静脉压迫，增加肾脏和胎盘血流量。")
+    if glu_eval and glu_eval.get("status") in ["elevated", "high"]:
+        lines.append("- **低 GI 粗细搭配与控糖**：主食减少精白米面与精细糕点，以燕麦、荞麦、黑米、杂豆替代 1/3 主食；进餐遵循「先汤菜、再蛋白质肉蛋、最后主食」顺序。")
+        lines.append("- **餐后温和活动**：早餐或正餐后 30 分钟进行 20 分钟轻柔散步，有助于骨骼肌摄取葡萄糖，显著平抑餐后血糖峰值。")
+    if (not bp_eval or bp_eval.get("status") == "normal") and (not glu_eval or glu_eval.get("status") == "normal"):
+        lines.append("- **均衡稳态饮食**：保持三餐规律，荤素搭配；补充优质蛋白与深色蔬菜，避免暴饮暴食或长时间空腹。")
+        lines.append("- **作息与情绪**：每天保证 8 小时高质量睡眠，适度进行孕妇瑜伽或散步，保持心情愉悦。")
+
+    lines.append("")
+
+    # 4. 就医红线与监测计划
+    lines.append("#### ⚠️ 就医红线提示与监测建议")
+    lines.append("- **立即就医指征 (红线警报)**：若出现**持续性搏动性头痛、眼花/视物模糊、突发上腹剧烈疼痛、严重下肢水肿波及大腿或面部、或者胎动突然明显减少/异常剧烈**，必须立即由家属陪同前往综合医院产科急诊！")
+    lines.append("- **建议监测计划**：建议在清晨起床后（静息 5 分钟、排尿后）及晚餐后 2 小时进行测量并打卡记录。")
+    lines.append("\n> 📌 *免责声明：本分析由萌芽母婴健康系统基于权威临床指南规则生成，仅供孕产期自我健康监测与营养生活调理参考，不能替代临床执业医师的面对面诊断与治疗处方。*")
+
+    return "\n".join(lines)
+
+
+def ai_analyze_vitals(vitals_data: dict, stage_label: str = "", user=None) -> dict:
+    """
+    妈妈生命体征（血压、血糖）AI 深度智能解读
+    结合临床指南、已录入与未录入完备度、伴随症状进行结构化分析
+    支持 OpenAI 优先 + 本地备用医学知识库平滑降级
+    """
+    start_time = time.time()
+    completeness = vitals_data.get("completeness") or {}
+    bp_eval = vitals_data.get("bp_eval")
+    glu_eval = vitals_data.get("glucose_eval")
+    symptoms = vitals_data.get("symptoms") or []
+    history_trend = vitals_data.get("history_trend") or []
+
+    recorded_summary = "、".join([item["label"] + ": " + item["value"] for item in completeness.get("recorded_items", [])]) or "无"
+    unrecorded_summary = "、".join([item["label"] for item in completeness.get("unrecorded_items", [])]) or "无"
+
+    bp_summary = (
+        f"收缩压 {bp_eval['systolic']} / 舒张压 {bp_eval['diastolic']} mmHg，临床判定：{bp_eval['status_label']} ({bp_eval.get('definition', '')})"
+        if bp_eval else "用户本次未录入血压"
+    )
+    glu_summary = (
+        f"{glu_eval.get('glucose_type_label', '空腹')} 血糖 {glu_eval['glucose']} mmol/L，临床判定：{glu_eval['status_label']} (参考区间: {glu_eval.get('target_range', '')})"
+        if glu_eval else "用户本次未录入血糖"
+    )
+    sym_summary = "、".join(symptoms) if symptoms else "无明显不适"
+
+    history_texts = []
+    for h in history_trend[:3]:
+        h_bp = f"血压 {h['systolic']}/{h['diastolic']}" if h.get("systolic") else ""
+        h_glu = f"血糖 {h['blood_sugar']}({h.get('glucose_type', '')})" if h.get("blood_sugar") else ""
+        h_items = [x for x in [h_bp, h_glu] if x]
+        if h_items:
+            history_texts.append(f"{h.get('record_date', '')}: {', '.join(h_items)}")
+    history_summary = "；".join(history_texts) if history_texts else "暂无更多近期记录"
+
+    system_prompt = (
+        "你是一位严谨、专业且富有亲和力的资深妇产科主治医师兼临床母婴营养顾问（萌芽平台健康顾问'萌小芽'）。"
+        "你的任务是根据用户本次录入的生命体征数据、临床评估分级以及未录入指标说明，生成一份结构清晰、语言温和通俗的医学分析与调理指导。"
+        "重要原则："
+        "1. 严格以《妊娠期高血压疾病诊治指南》与《妊娠期高血糖诊治指南》为标准，切勿随意夸大或轻视病情；"
+        "2. 必须客观区分【已录入指标】与【未录入指标】，未录入的数据切勿凭空编造；"
+        "3. 必须明确列出产科急症红线体征（如子痫前期警报）与免责声明。"
+    )
+
+    user_prompt = f"""
+请为这位正在孕育/抚育宝宝的妈妈生成专属生命体征深度健康解读报告：
+
+【用户画像与阶段】：{stage_label or '孕产期'}
+【伴随不适症状】：{sym_summary}
+
+【本次数据录入完备度情况】：
+- 已录入指标：{recorded_summary}
+- 未录入指标：{unrecorded_summary}
+- 录入总结说明：{completeness.get('summary_text', '')}
+
+【临床医学判定结果】：
+- 血压临床评估：{bp_summary}
+- 血糖临床评估：{glu_summary}
+- 近期历史趋势对比：{history_summary}
+
+请按照以下 4 个板块组织回答（使用清晰 Markdown 格式）：
+1. 🩺 录入数据与完备度说明（清晰客观指出本次记录了什么、未记录什么及监测意义）
+2. 🔬 临床医学判读与生理机制（结合孕周/阶段通俗解释生理影响，胎盘血供或代谢）
+3. 🥗 营养膳食与日常调理建议（针对血压/血糖的具体食谱搭配与运动建议）
+4. ⚠️ 就医红线提示与监测建议（子痫前期危险体征预警、产科急诊指征及免责声明）
+"""
+
+    configs = _build_config_list(user)
+    response_text = ""
+    used_config_name = ""
+    error_hints = []
+
+    for cfg in configs:
+        try:
+            resp = _call_openai(
+                user_prompt,
+                api_key=cfg["api_key"],
+                base_url=cfg["base_url"] or None,
+                model=cfg["model"] or None,
+                system=system_prompt,
+                timeout=25.0,
+                max_tokens=1500,
+            )
+            if resp and len(resp.strip()) > 30:
+                response_text = resp.strip()
+                used_config_name = cfg.get("name", "OpenAI")
+                break
+        except Exception as e:
+            error_hints.append(f"{cfg.get('name', 'config')}: {str(e)[:100]}")
+
+    latency_ms = int((time.time() - start_time) * 1000)
+
+    if not response_text:
+        response_text = _local_vitals_answer(vitals_data, stage_label=stage_label)
+        return {
+            "response": response_text,
+            "used_openai": False,
+            "used_config_name": "本地备用医学知识库",
+            "latency_ms": latency_ms,
+            "error_hint": "; ".join(error_hints) if error_hints else "",
+        }
+
+    return {
+        "response": response_text,
+        "used_openai": True,
+        "used_config_name": used_config_name,
+        "latency_ms": latency_ms,
+        "error_hint": "",
+    }

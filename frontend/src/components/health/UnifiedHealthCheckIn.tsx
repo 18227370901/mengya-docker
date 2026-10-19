@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
+  Scale,
   HeartPulse,
   Baby,
   PersonStanding,
@@ -46,6 +47,8 @@ interface UnifiedHealthCheckInProps {
   initialBabyId?: number | null;
   babies?: BabyProfile[];
   initialRecord?: HealthRecord | null;
+  /** 打卡模块侧重模式：bmi 突出体重BMI（血压血糖折叠） vs vitals 突出血压血糖（体重折叠） */
+  initialFocusModule?: "bmi" | "vitals";
   allRecords?: HealthRecord[];
 }
 
@@ -72,6 +75,7 @@ export default function UnifiedHealthCheckIn({
   babies,
   initialRecord,
   allRecords,
+  initialFocusModule,
 }: UnifiedHealthCheckInProps) {
   const effectiveAllowedModes = useMemo(() => {
     if (allowedModes && allowedModes.length > 0) return allowedModes;
@@ -136,6 +140,27 @@ export default function UnifiedHealthCheckIn({
   const [height, setHeight] = useState(() => (initialHeight ? String(initialHeight) : ""));
   const [weight, setWeight] = useState("");
   const [waist, setWaist] = useState("");
+  const [systolic, setSystolic] = useState("");
+  const [diastolic, setDiastolic] = useState("");
+  const [pulse, setPulse] = useState("");
+  const [bloodSugar, setBloodSugar] = useState("");
+  const [glucoseType, setGlucoseType] = useState<"fasting" | "postprandial_1h" | "postprandial_2h" | "bedtime" | "random">("fasting");
+  const [focusModule, setFocusModule] = useState<"bmi" | "vitals">(() => initialFocusModule || "bmi");
+  const [showVitalsSection, setShowVitalsSection] = useState(() => initialFocusModule === "vitals");
+  const [showBmiSection, setShowBmiSection] = useState(() => initialFocusModule !== "vitals");
+
+  useEffect(() => {
+    if (initialFocusModule) {
+      setFocusModule(initialFocusModule);
+      if (initialFocusModule === "vitals") {
+        setShowVitalsSection(true);
+        setShowBmiSection(false);
+      } else {
+        setShowVitalsSection(false);
+        setShowBmiSection(true);
+      }
+    }
+  }, [initialFocusModule, isOpen]);
   const [manualWeek, setManualWeek] = useState("");
   const [manualDays, setManualDays] = useState("");
   // v1.58：touched 标记——用户手动改过孕周/天数后尊重用户值；日期/模式变化时重置回自动推算
@@ -445,6 +470,10 @@ export default function UnifiedHealthCheckIn({
     e.preventDefault();
     setErrorMsg("");
     const w = Number(weight);
+    const hasWeightInput = Boolean(weight && !Number.isNaN(w) && w > 0);
+    const hasBpInput = Boolean(systolic || diastolic);
+    const hasSugarInput = Boolean(bloodSugar);
+    const hasVitalsInput = hasBpInput || hasSugarInput;
 
     // ===== 前端轻量校验 =====
     if (recordDate > todayStr) {
@@ -452,32 +481,42 @@ export default function UnifiedHealthCheckIn({
       return;
     }
     if (!isBabyMode) {
-      if (!weight || Number.isNaN(w) || w <= 0) {
-        setErrorMsg("请填写本次实测体重 (kg)");
+      if (!hasWeightInput && !hasVitalsInput) {
+        if (focusModule === "vitals") {
+          setErrorMsg("请至少录入一项血压或血糖数据（如需记录体重可展开下方体重卡片）");
+        } else {
+          setErrorMsg("请填写当前实测体重（如需记录血压血糖可展开下方体征卡片）");
+        }
         return;
       }
-      const effectiveHeight = height || (initialHeight ? String(initialHeight) : "");
-      const h = parseFloat(effectiveHeight);
-      if (!effectiveHeight || Number.isNaN(h) || h < 100 || h > 220) {
-        setErrorMsg("请填写身高（100~220 cm，首次打卡需录入一次，之后将自动继承）");
+      if (hasBpInput && (!systolic || !diastolic)) {
+        setErrorMsg("请同时填写收缩压和舒张压，或者两者均不填写");
         return;
+      }
+      if (hasWeightInput) {
+        const effectiveHeight = height || (initialHeight ? String(initialHeight) : "");
+        const h = parseFloat(effectiveHeight);
+        if (!effectiveHeight || Number.isNaN(h) || h < 100 || h > 220) {
+          setErrorMsg("录入体重时请填写身高（100~220 cm，首次打卡录入一次，之后自动继承）");
+          return;
+        }
       }
       if (momMode && !hasAutoBasis && !manualWeek) {
-        setErrorMsg("您还未设置预产期，请手动填写本次打卡的孕周");
+        setErrorMsg("孕期未设置预产期，请手动填写本次打卡的孕周");
         return;
       }
-      // v1.58：孕周显示值（自动推算或用户手改）必须为有效整数（1~42）
+      // v1.58：按显示值（自动推算或用户指定）校验为有效孕周（1~42）
       if (momMode) {
         const wk = parseInt(weekDisplay, 10);
         if (Number.isNaN(wk) || wk < 1 || wk > 42) {
-          setErrorMsg("请填写有效的孕周（1 ~ 42 周）");
+          setErrorMsg("请填写有效孕周（1 ~ 42 周）");
           return;
         }
       }
     } else {
       const hasAnyMeasure = babyHeight || babyWeight || babyHead;
       if (!hasAnyMeasure) {
-        setErrorMsg("宝宝测量至少填写身高、体重、头围中的一项");
+        setErrorMsg("宝宝成长记录请至少填写身高、体重、头围中的一项");
         return;
       }
     }
@@ -485,7 +524,7 @@ export default function UnifiedHealthCheckIn({
     setSaving(true);
     try {
       if (isBabyMode) {
-        // ===== 宝宝生长测量 → growth_measurement（生长曲线/日历）=====
+        // ===== 宝宝生长记录 → growth_measurement（生长曲线 / 日历等）=====
         const babyPayload: Partial<HealthRecord> = {
           record_type: "growth_measurement",
           record_date: recordDate,
@@ -500,33 +539,61 @@ export default function UnifiedHealthCheckIn({
         onSaved(`宝宝「${activeBaby?.name || "小萌宝"}」测量已归档：生长曲线 · 日历总览`);
       } else {
         // ===== 妈妈打卡（孕期/产后/非孕期）→ BMI 分析接口（自动孕周校验 + 基线继承 + 评估）=====
-        const payload: BmiAnalysisInput = {
-          stage_type: isPostpartumMode ? "postpartum" : isGeneralMode ? "general" : "pregnancy",
-          record_date: recordDate,
-          current_weight_kg: w,
-          height_cm: parseFloat(height || (initialHeight ? String(initialHeight) : "")),
-          waist_circumference_cm: waist ? Number(waist) : undefined,
-          medical_history: [],
-          is_twins: false,
-          mother_id: motherId || undefined,
-        };
-        if (momMode) {
-          // v1.58：周+天双输入——提交显示值（未手动编辑时为推算值，手动编辑后为用户值）；后端双基准校验周偏差
-          payload.gestational_week = parseInt(weekDisplay, 10);
-          const gd = parseInt(daysDisplay, 10);
-          if (!Number.isNaN(gd)) payload.gestational_days = Math.max(0, Math.min(6, gd));
-        } else if (isPostpartumMode) {
-          payload.postpartum_months = babyDays != null ? Math.max(0, Math.floor(babyDays / 30.44)) : 1;
+        if (hasWeightInput) {
+          const payload: BmiAnalysisInput = {
+            stage_type: isPostpartumMode ? "postpartum" : isGeneralMode ? "general" : "pregnancy",
+            record_date: recordDate,
+            current_weight_kg: w,
+            height_cm: parseFloat(height || (initialHeight ? String(initialHeight) : "")),
+            waist_circumference_cm: waist ? Number(waist) : undefined,
+            systolic_bp: systolic ? parseFloat(systolic) : undefined,
+            diastolic_bp: diastolic ? parseFloat(diastolic) : undefined,
+            pulse: pulse ? parseFloat(pulse) : undefined,
+            blood_sugar: bloodSugar ? parseFloat(bloodSugar) : undefined,
+            glucose_type: bloodSugar ? glucoseType : undefined,
+            medical_history: [],
+            is_twins: false,
+            mother_id: motherId || undefined,
+          };
+          if (momMode) {
+            // v1.58：周+天双输入——提交显示值（未手动编辑时为推算值，手动编辑后为用户值）；后端双基准校验周偏差
+            payload.gestational_week = parseInt(weekDisplay, 10);
+            const gd = parseInt(daysDisplay, 10);
+            if (!Number.isNaN(gd)) payload.gestational_days = Math.max(0, Math.min(6, gd));
+          } else if (isPostpartumMode) {
+            payload.postpartum_months = babyDays != null ? Math.max(0, Math.floor(babyDays / 30.44)) : 1;
+          }
+          const res = await healthApi.analyzeBmi(payload);
+          onSaved(
+            isPostpartumMode
+              ? "产后打卡已归档：孕产记录 · BMI 时序 · 日历"
+              : isGeneralMode
+              ? "非孕期打卡已归档：孕产记录 · BMI 时序 · 日历"
+              : "孕期打卡已归档：孕产记录 · BMI 时序与医学评估 · 日历",
+            res
+          );
+        } else {
+          // 单录血压或血糖（未录入体重）
+          const vitalsPayload: any = {
+            stage_type: isPostpartumMode ? "postpartum" : isGeneralMode ? "general" : "pregnancy",
+            record_date: recordDate,
+            systolic_bp: systolic ? parseFloat(systolic) : undefined,
+            diastolic_bp: diastolic ? parseFloat(diastolic) : undefined,
+            pulse: pulse ? parseFloat(pulse) : undefined,
+            blood_sugar: bloodSugar ? parseFloat(bloodSugar) : undefined,
+            glucose_type: bloodSugar ? glucoseType : undefined,
+            mother_id: motherId || undefined,
+          };
+          if (momMode) {
+            vitalsPayload.gestational_week = parseInt(weekDisplay, 10);
+            const gd = parseInt(daysDisplay, 10);
+            if (!Number.isNaN(gd)) vitalsPayload.gestational_days = Math.max(0, Math.min(6, gd));
+          } else if (isPostpartumMode) {
+            vitalsPayload.postpartum_months = babyDays != null ? Math.max(0, Math.floor(babyDays / 30.44)) : 1;
+          }
+          await healthApi.analyzeVitals(vitalsPayload);
+          onSaved("体征数据已归档：血压/血糖时序与产检记录已同步更新", null);
         }
-        const res = await healthApi.analyzeBmi(payload);
-        onSaved(
-          isPostpartumMode
-            ? "产后打卡已归档：孕产记录 · BMI 时序 · 日历"
-            : isGeneralMode
-            ? "非孕期打卡已归档：孕产记录 · BMI 时序 · 日历"
-            : "孕期打卡已归档：孕产记录 · BMI 时序与医学评估 · 日历",
-          res
-        );
       }
       onClose();
     } catch (err: any) {
@@ -552,14 +619,20 @@ export default function UnifiedHealthCheckIn({
           const payload: BmiAnalysisInput = {
             stage_type: isPostpartumMode ? "postpartum" : isGeneralMode ? "general" : "pregnancy",
             record_date: recordDate,
-            current_weight_kg: w,
-            height_cm: parseFloat(height || (initialHeight ? String(initialHeight) : "")),
+            current_weight_kg: hasWeightInput ? w : undefined,
+            height_cm: hasWeightInput ? parseFloat(height || (initialHeight ? String(initialHeight) : "")) : undefined,
             waist_circumference_cm: waist ? Number(waist) : undefined,
+            systolic_bp: systolic ? parseFloat(systolic) : undefined,
+            diastolic_bp: diastolic ? parseFloat(diastolic) : undefined,
+            pulse: pulse ? parseFloat(pulse) : undefined,
+            blood_sugar: bloodSugar ? parseFloat(bloodSugar) : undefined,
+            glucose_type: bloodSugar ? glucoseType : undefined,
             medical_history: [],
             is_twins: false,
+            mother_id: motherId || undefined,
           };
           if (momMode) {
-            // v1.58：周+天双输入（与首次提交同口径：显示值为准）
+            // v1.58：周+天双输入——提交显示值同理
             payload.gestational_week = parseInt(weekDisplay, 10);
             const gd = parseInt(daysDisplay, 10);
             if (!Number.isNaN(gd)) payload.gestational_days = Math.max(0, Math.min(6, gd));
@@ -569,7 +642,7 @@ export default function UnifiedHealthCheckIn({
           setConflict({ mode: "mom", info: conflictData, momPayload: payload });
         }
       } else {
-        // 透传后端孕周校验拦截等业务错误信息
+        // 透传后端校验、阶段阻断等业务错误信息
         const data = err?.response?.data;
         setErrorMsg(data?.message || err?.message || "保存失败，请稍后重试");
       }
@@ -578,15 +651,20 @@ export default function UnifiedHealthCheckIn({
     }
   };
 
-  /** v1.57：确认覆盖当日已有记录——妈妈链路携 overwrite 重发分析接口，宝宝链路调 update 原地更新 */
+  /** v1.57：确认覆盖当日已有记录，重新走路径携带 overwrite 重发原接口，避免单路 update 原样覆写 */
   const handleOverwrite = async () => {
     if (!conflict) return;
     setSaving(true);
     setErrorMsg("");
     try {
       if (conflict.mode === "mom" && conflict.momPayload) {
-        const res = await healthApi.analyzeBmi({ ...conflict.momPayload, overwrite: true });
-        onSaved("已覆盖当日打卡记录，孕产档案与 BMI 时序已同步更新", res);
+        if (conflict.momPayload.current_weight_kg != null) {
+          const res = await healthApi.analyzeBmi({ ...conflict.momPayload, overwrite: true });
+          onSaved("已覆盖当日打卡记录，孕产档案与 BMI 时序已同步更新", res);
+        } else {
+          await healthApi.analyzeVitals({ ...conflict.momPayload, overwrite: true });
+          onSaved("已覆盖当日打卡记录，生命体征时序已同步更新", null);
+        }
       } else if (conflict.mode === "baby" && conflict.babyPayload) {
         await healthApi.update(conflict.info.existing_id, conflict.babyPayload);
         onSaved("已覆盖当日宝宝测量记录，生长曲线已同步更新");
@@ -838,62 +916,332 @@ export default function UnifiedHealthCheckIn({
                     )}
                   </div>
                 )}
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                  <div>
-                    <label className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-                      <span>
-                        身高 (cm) {!initialHeight && !height ? <span className="font-bold text-red-500">*</span> : null}
-                      </span>
-                      {height || initialHeight ? (
-                        <span className="text-[10px] text-emerald-600 dark:text-emerald-400">已带入历史值</span>
-                      ) : (
-                        <span className="text-[10px] text-amber-500">首次必填</span>
-                      )}
-                    </label>
-                    <div>
-                      <input
-                        type="number"
-                        step="0.1"
-                        min={100}
-                        max={220}
-                        className="input font-medium"
-                        placeholder={height || initialHeight ? `已录入: ${height || initialHeight} cm` : "例如 165"}
-                        value={height}
-                        onChange={(e) => setHeight(e.target.value)}
-                        required={!initialHeight && !height}
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-xs text-gray-500 dark:text-gray-400">本次体重 (kg) *</label>
-                    <div>
-                      <input
-                        type="number"
-                        step="0.1"
-                        min={30}
-                        max={220}
-                        className="input"
-                        placeholder={weight ? `已录入: ${weight} kg` : "例如 58.2"}
-                        value={weight}
-                        onChange={(e) => setWeight(e.target.value)}
-                        required
-                      />
-                    </div>
-                  </div>
-                  <div>
-                    <label className="text-xs text-gray-500 dark:text-gray-400">腹围 (cm, 选填)</label>
-                    <input
-                      type="number"
-                      step="0.1"
-                      min={30}
-                      max={200}
-                      className="input"
-                      placeholder="例如 86.0"
-                      value={waist}
-                      onChange={(e) => setWaist(e.target.value)}
-                    />
-                  </div>
+                {/* 妈妈打卡模块聚焦切换条 */}
+                <div className="flex rounded-xl bg-gray-100/80 p-1 dark:bg-gray-800">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFocusModule("bmi");
+                      setShowBmiSection(true);
+                      setShowVitalsSection(false);
+                    }}
+                    className={`flex-1 flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-semibold transition-all ${
+                      focusModule === "bmi"
+                        ? "bg-white text-brand-600 shadow-xs dark:bg-gray-700 dark:text-brand-300"
+                        : "text-gray-500 hover:text-gray-700 dark:text-gray-400"
+                    }`}
+                  >
+                    <Scale className="h-3.5 w-3.5" />
+                    体重与 BMI 监测打卡
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFocusModule("vitals");
+                      setShowVitalsSection(true);
+                      setShowBmiSection(false);
+                    }}
+                    className={`flex-1 flex items-center justify-center gap-1.5 rounded-lg py-1.5 text-xs font-semibold transition-all ${
+                      focusModule === "vitals"
+                        ? "bg-white text-rose-600 shadow-xs dark:bg-gray-700 dark:text-rose-400"
+                        : "text-gray-500 hover:text-gray-700 dark:text-gray-400"
+                    }`}
+                  >
+                    <HeartPulse className="h-3.5 w-3.5" />
+                    血压与血糖监测打卡
+                  </button>
                 </div>
+
+                {focusModule === "bmi" ? (
+                  <>
+                    {/* BMI 模式：核心录入体重与身高 */}
+                    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                      <div>
+                        <label className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+                          <span>
+                            身高 (cm) {!initialHeight && !height ? <span className="font-bold text-red-500">*</span> : null}
+                          </span>
+                          {height || initialHeight ? (
+                            <span className="text-[10px] text-emerald-600 dark:text-emerald-400">已带入历史值</span>
+                          ) : (
+                            <span className="text-[10px] text-amber-500">首次必填</span>
+                          )}
+                        </label>
+                        <div>
+                          <input
+                            type="number"
+                            step="0.1"
+                            min={100}
+                            max={220}
+                            className="input font-medium"
+                            placeholder={height || initialHeight ? `已录入: ${height || initialHeight} cm` : "例如 165"}
+                            value={height}
+                            onChange={(e) => setHeight(e.target.value)}
+                            required={!initialHeight && !height && focusModule === "bmi"}
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500 dark:text-gray-400">本次实测体重 (kg) *</label>
+                        <div>
+                          <input
+                            type="number"
+                            step="0.1"
+                            min={30}
+                            max={220}
+                            className="input"
+                            placeholder={weight ? `已录入: ${weight} kg` : "例如 58.2"}
+                            value={weight}
+                            onChange={(e) => setWeight(e.target.value)}
+                            required={focusModule === "bmi"}
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label className="text-xs text-gray-500 dark:text-gray-400">腹围 (cm, 选填)</label>
+                        <input
+                          type="number"
+                          step="0.1"
+                          min={30}
+                          max={200}
+                          className="input"
+                          placeholder="例如 86.0"
+                          value={waist}
+                          onChange={(e) => setWaist(e.target.value)}
+                        />
+                      </div>
+                    </div>
+
+                    {/* 辅助折叠卡：选填血压与血糖 */}
+                    <div className="rounded-xl border border-rose-100 bg-rose-50/30 p-3 dark:border-rose-950/40 dark:bg-rose-950/10">
+                      <button
+                        type="button"
+                        onClick={() => setShowVitalsSection(!showVitalsSection)}
+                        className="flex w-full items-center justify-between text-xs font-semibold text-rose-800 dark:text-rose-300"
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <HeartPulse className="h-4 w-4 text-rose-500" />
+                          同时记录血压与血糖（选填，未测可收起留空）
+                        </span>
+                        <span className="text-[11px] text-gray-400">
+                          {showVitalsSection ? "收起" : "展开录入"}
+                        </span>
+                      </button>
+
+                      {showVitalsSection && (
+                        <div className="mt-3 space-y-3 border-t border-rose-100/60 pt-2.5 dark:border-gray-800">
+                          <div className="grid grid-cols-3 gap-2">
+                            <div>
+                              <label className="text-[11px] text-gray-500 block mb-1">高压 (mmHg)</label>
+                              <input
+                                type="number"
+                                min="50"
+                                max="260"
+                                placeholder="如 118"
+                                value={systolic}
+                                onChange={(e) => setSystolic(e.target.value)}
+                                className="input text-xs"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[11px] text-gray-500 block mb-1">低压 (mmHg)</label>
+                              <input
+                                type="number"
+                                min="30"
+                                max="180"
+                                placeholder="如 76"
+                                value={diastolic}
+                                onChange={(e) => setDiastolic(e.target.value)}
+                                className="input text-xs"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[11px] text-gray-500 block mb-1">脉搏 (bpm)</label>
+                              <input
+                                type="number"
+                                min="30"
+                                max="220"
+                                placeholder="如 75"
+                                value={pulse}
+                                onChange={(e) => setPulse(e.target.value)}
+                                className="input text-xs"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <label className="text-[11px] text-gray-500 block mb-1">血糖 (mmol/L)</label>
+                              <input
+                                type="number"
+                                step="0.01"
+                                min="1"
+                                max="35"
+                                placeholder="如 5.20"
+                                value={bloodSugar}
+                                onChange={(e) => setBloodSugar(e.target.value)}
+                                className="input text-xs"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[11px] text-gray-500 block mb-1">测定场景</label>
+                              <select
+                                value={glucoseType}
+                                onChange={(e) => setGlucoseType(e.target.value as any)}
+                                className="input text-xs"
+                              >
+                                <option value="fasting">空腹</option>
+                                <option value="postprandial_1h">餐后1小时</option>
+                                <option value="postprandial_2h">餐后2小时</option>
+                                <option value="bedtime">睡前</option>
+                                <option value="random">随机</option>
+                              </select>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {/* Vitals 模式：核心录入血压与血糖 */}
+                    <div className="rounded-xl border border-rose-100 bg-rose-50/30 p-3.5 space-y-3 dark:border-rose-950/40 dark:bg-rose-950/10">
+                      <div className="text-xs font-semibold text-rose-800 dark:text-rose-300 flex items-center gap-1.5">
+                        <HeartPulse className="h-4 w-4 text-rose-500" />
+                        血压与血糖测量（核心录入项）
+                      </div>
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <label className="text-[11px] text-gray-500 block mb-1">收缩压/高压 (mmHg)</label>
+                          <input
+                            type="number"
+                            min="50"
+                            max="260"
+                            placeholder="如 118"
+                            value={systolic}
+                            onChange={(e) => setSystolic(e.target.value)}
+                            className="input text-xs"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[11px] text-gray-500 block mb-1">舒张压/低压 (mmHg)</label>
+                          <input
+                            type="number"
+                            min="30"
+                            max="180"
+                            placeholder="如 76"
+                            value={diastolic}
+                            onChange={(e) => setDiastolic(e.target.value)}
+                            className="input text-xs"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[11px] text-gray-500 block mb-1">脉搏/心率 (bpm)</label>
+                          <input
+                            type="number"
+                            min="30"
+                            max="220"
+                            placeholder="如 75"
+                            value={pulse}
+                            onChange={(e) => setPulse(e.target.value)}
+                            className="input text-xs"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-2 border-t border-rose-100/60 pt-2.5 dark:border-gray-800">
+                        <div>
+                          <label className="text-[11px] text-gray-500 block mb-1">血糖读数 (mmol/L)</label>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="1"
+                            max="35"
+                            placeholder="如 5.20"
+                            value={bloodSugar}
+                            onChange={(e) => setBloodSugar(e.target.value)}
+                            className="input text-xs"
+                          />
+                        </div>
+                        <div>
+                          <label className="text-[11px] text-gray-500 block mb-1">测定场景</label>
+                          <select
+                            value={glucoseType}
+                            onChange={(e) => setGlucoseType(e.target.value as any)}
+                            className="input text-xs"
+                          >
+                            <option value="fasting">空腹</option>
+                            <option value="postprandial_1h">餐后1小时</option>
+                            <option value="postprandial_2h">餐后2小时</option>
+                            <option value="bedtime">睡前</option>
+                            <option value="random">随机</option>
+                          </select>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* 辅助折叠卡：选填体重与腹围 */}
+                    <div className="rounded-xl border border-gray-200 bg-gray-50/60 p-3 dark:border-gray-700 dark:bg-gray-800/40">
+                      <button
+                        type="button"
+                        onClick={() => setShowBmiSection(!showBmiSection)}
+                        className="flex w-full items-center justify-between text-xs font-semibold text-gray-700 dark:text-gray-300"
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <Scale className="h-4 w-4 text-brand-500" />
+                          同时记录体重与腹围（选填，未测可收起留空）
+                        </span>
+                        <span className="text-[11px] text-gray-400">
+                          {showBmiSection ? "收起" : "展开录入"}
+                        </span>
+                      </button>
+
+                      {showBmiSection && (
+                        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3 border-t border-gray-200/60 pt-2.5 dark:border-gray-700">
+                          <div>
+                            <label className="text-[11px] text-gray-500 block mb-1">身高 (cm)</label>
+                            <input
+                              type="number"
+                              step="0.1"
+                              min={100}
+                              max={220}
+                              className="input text-xs"
+                              placeholder={height || initialHeight ? `${height || initialHeight} cm` : "例如 165"}
+                              value={height}
+                              onChange={(e) => setHeight(e.target.value)}
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[11px] text-gray-500 block mb-1">本次体重 (kg)</label>
+                            <input
+                              type="number"
+                              step="0.1"
+                              min={30}
+                              max={220}
+                              className="input text-xs"
+                              placeholder="例如 58.2"
+                              value={weight}
+                              onChange={(e) => setWeight(e.target.value)}
+                            />
+                          </div>
+                          <div>
+                            <label className="text-[11px] text-gray-500 block mb-1">腹围 (cm)</label>
+                            <input
+                              type="number"
+                              step="0.1"
+                              min={30}
+                              max={200}
+                              className="input text-xs"
+                              placeholder="例如 86.0"
+                              value={waist}
+                              onChange={(e) => setWaist(e.target.value)}
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </>
+                )}
                 <p className="text-[11px] text-gray-400">
                   {height || initialHeight
                     ? `已带入历史身高（${height || initialHeight} cm），支持校准修改；后续打卡自动继承`

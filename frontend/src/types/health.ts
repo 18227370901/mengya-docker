@@ -10,7 +10,7 @@ export interface BmiAnalysisInput {
   /** 留空自动继承上次打卡基线（首次打卡时后端初始化） */
   height_cm?: number;
   pre_pregnancy_weight_kg?: number;
-  current_weight_kg: number;
+  current_weight_kg?: number;
   waist_circumference_cm?: number;
   stage_type: PregnancyStage;
   gestational_week?: number;
@@ -21,6 +21,13 @@ export interface BmiAnalysisInput {
   medical_history: string[];
   save_record?: boolean;
   mother_id?: number | null;
+  systolic_bp?: number;
+  diastolic_bp?: number;
+  pulse?: number;
+  blood_sugar?: number;
+  glucose_type?: "fasting" | "postprandial_1h" | "postprandial_2h" | "bedtime" | "random";
+  symptoms?: string[];
+  note?: string;
 }
 
 export interface CurvePoint {
@@ -168,4 +175,166 @@ export interface CsvImportResult {
   updated: number;
   skipped: number;
   errors: Array<{ row: number; date: string; reason: string }>;
+}
+
+
+// ============ 妈妈生命体征（血压、血糖）TypeScript 类型定义 ============
+
+export interface VitalsAnalysisInput {
+  record_date?: string;
+  overwrite?: boolean;
+  mother_id?: number | null;
+  stage_type: PregnancyStage;
+  gestational_week?: number;
+  gestational_days?: number;
+  postpartum_months?: number;
+  systolic_bp?: number;
+  diastolic_bp?: number;
+  pulse?: number;
+  blood_sugar?: number;
+  glucose_type?: "fasting" | "postprandial_1h" | "postprandial_2h" | "bedtime" | "random";
+  current_weight_kg?: number;
+  height_cm?: number;
+  symptoms?: string[];
+  note?: string;
+  request_ai?: boolean;
+}
+
+export interface VitalsBloodPressureEvaluation {
+  systolic: number;
+  diastolic: number;
+  pulse?: number | null;
+  pulse_info?: {
+    pulse: number;
+    status: string;
+    label: string;
+    desc: string;
+  } | null;
+  status: "hypotension" | "normal" | "elevated" | "hypertension_stage1" | "hypertension_severe";
+  status_label: string;
+  severity: "info" | "warning" | "danger";
+  color: "green" | "yellow" | "orange" | "red" | "blue";
+  definition: string;
+  clinical_advice: string;
+  stage_type: PregnancyStage;
+}
+
+export interface VitalsBloodSugarEvaluation {
+  glucose: number;
+  glucose_type: string;
+  glucose_type_label: string;
+  target_range: string;
+  status: "hypoglycemia" | "normal" | "elevated" | "high";
+  status_label: string;
+  severity: "info" | "warning" | "danger";
+  color: "green" | "yellow" | "orange" | "red" | "blue";
+  clinical_advice: string;
+  stage_type: PregnancyStage;
+}
+
+export interface MetricsCompletenessItem {
+  key: string;
+  label: string;
+  value?: string;
+  badge?: string;
+  status?: string;
+  status_label?: string;
+  hint?: string;
+}
+
+export interface MetricsCompleteness {
+  has_bp: boolean;
+  has_glucose: boolean;
+  has_weight: boolean;
+  has_pulse: boolean;
+  recorded_items: MetricsCompletenessItem[];
+  unrecorded_items: MetricsCompletenessItem[];
+  recorded_count: number;
+  unrecorded_count: number;
+  summary_text: string;
+}
+
+export interface VitalsSummary {
+  total_records: number;
+  latest_bp?: {
+    id?: number;
+    record_date: string;
+    systolic: number;
+    diastolic: number;
+    pulse?: number | null;
+    status: string;
+    status_label: string;
+    color: string;
+    severity: string;
+  } | null;
+  latest_glucose?: {
+    id?: number;
+    record_date: string;
+    glucose: number;
+    glucose_type: string;
+    glucose_type_label: string;
+    status: string;
+    status_label: string;
+    color: string;
+    severity: string;
+  } | null;
+  avg_systolic_7d?: number | null;
+  avg_diastolic_7d?: number | null;
+  avg_glucose_7d?: number | null;
+  abnormal_count: number;
+}
+
+export interface VitalsTimeSeriesRecord {
+  id: number;
+  record_date: string;
+  stage: PregnancyStage;
+  gestational_week?: number | null;
+  gestational_days?: number | null;
+  postpartum_months?: number | null;
+  systolic_bp?: number | null;
+  diastolic_bp?: number | null;
+  pulse?: number | null;
+  bp_status?: string | null;
+  bp_status_label?: string | null;
+  bp_color?: string | null;
+  bp_clinical_advice?: string | null;
+  blood_sugar?: number | null;
+  glucose_type?: string | null;
+  glucose_type_label?: string | null;
+  glucose_status?: string | null;
+  glucose_status_label?: string | null;
+  glucose_color?: string | null;
+  glucose_clinical_advice?: string | null;
+  weight?: number | null;
+  height?: number | null;
+  bmi?: number | null;
+  symptoms?: string[];
+  completeness?: MetricsCompleteness;
+  note?: string;
+  ai_analysis?: string;
+}
+
+export interface VitalsAiResult {
+  response: string;
+  used_openai: boolean;
+  used_config_name: string;
+  latency_ms: number;
+  error_hint?: string;
+}
+
+export interface VitalsAnalysisResult {
+  created_record_id?: number | null;
+  record_action?: "created" | "updated";
+  bp_evaluation?: VitalsBloodPressureEvaluation | null;
+  glucose_evaluation?: VitalsBloodSugarEvaluation | null;
+  bmi?: number | null;
+  completeness: MetricsCompleteness;
+  alerts: MedicalAlert[];
+  lifestyle_diet: {
+    diet: string[];
+    lifestyle: string[];
+  };
+  ai_analysis?: VitalsAiResult | null;
+  timeseries: VitalsTimeSeriesRecord[];
+  summary: VitalsSummary;
 }
