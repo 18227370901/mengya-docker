@@ -95,9 +95,11 @@ export const weatherApi = {
     days?: number;
   }) => api.get<{ code: number; message: string; data: WeatherData }>("/weather/query/", { params }).then((r) => r.data.data),
 
-  // 首页背景横幅轻量天气（30分钟缓存 + 今日班休）
-  homeWeather: (city?: string) =>
-    api.get<{ code: number; message: string; data: HomeWeatherResponse }>("/weather/home/", { params: city ? { city } : {} }).then((r) => r.data.data),
+  // 首页背景横幅轻量天气（30分钟缓存 + 今日班休，支持坐标秒级直查）
+  homeWeather: (params?: { city?: string; lat?: number | string; lon?: number | string } | string) => {
+    const q = typeof params === "string" ? { city: params } : params || {};
+    return api.get<{ code: number; message: string; data: HomeWeatherResponse }>("/weather/home/", { params: q }).then((r) => r.data.data);
+  },
 
   // 法定节假日班休数据
   getHolidays: (year: number) =>

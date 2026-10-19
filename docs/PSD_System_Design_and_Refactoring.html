@@ -1,0 +1,2030 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>萌芽母婴全周期平台 (mengya-local) - 最新版 PSD 系统设计与重构决策文档</title>
+  <!-- 引入 Mermaid.js 渲染引擎 (多 CDN 容灾互备) -->
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <script>
+    if (!window.mermaid) {
+      document.write('<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"><\/script>');
+    }
+  </script>
+  <script>
+    if (!window.mermaid) {
+      document.write('<script src="https://unpkg.com/mermaid@10/dist/mermaid.min.js"><\/script>');
+    }
+  </script>
+  <script>
+    function initMermaid() {
+      if (window.mermaid) {
+        try {
+          mermaid.initialize({
+            startOnLoad: false,
+            theme: "default",
+            securityLevel: "loose",
+            fontFamily: "Segoe UI, -apple-system, BlinkMacSystemFont, sans-serif",
+            flowchart: { useMaxWidth: true, htmlLabels: true, curve: "basis" },
+            er: { useMaxWidth: true },
+            sequence: { useMaxWidth: true, showSequenceNumbers: true },
+            gantt: { useMaxWidth: true }
+          });
+          mermaid.run();
+        } catch (err) {
+          console.error("Mermaid initialization error:", err);
+        }
+      }
+    }
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", initMermaid);
+    } else {
+      initMermaid();
+    }
+  </script>
+  <style>
+    :root {
+      --primary: #4f46e5;
+      --primary-light: #eef2ff;
+      --primary-dark: #3730a3;
+      --text-main: #0f172a;
+      --text-muted: #475569;
+      --bg-body: #f8fafc;
+      --bg-card: #ffffff;
+      --border-color: #e2e8f0;
+      --code-bg: #0f172a;
+      --code-text: #e2e8f0;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --danger: #ef4444;
+      --info: #0284c7;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      background-color: var(--bg-body);
+      color: var(--text-main);
+      line-height: 1.68;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+    header.topbar {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: rgba(255, 255, 255, 0.95);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--border-color);
+      padding: 12px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    }
+    .topbar .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text-main);
+    }
+    .topbar .badge {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 600;
+      background: var(--primary-light);
+      color: var(--primary);
+    }
+    .topbar .meta-info {
+      font-size: 13px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .btn-action {
+      background: var(--primary);
+      color: white;
+      border: none;
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      transition: all 0.2s;
+    }
+    .btn-action:hover { background: var(--primary-dark); }
+    .layout-container {
+      display: flex;
+      flex: 1;
+      width: 100%;
+      max-width: 1600px;
+      margin: 0 auto;
+      padding: 24px;
+      gap: 32px;
+    }
+    nav.sidebar {
+      width: 300px;
+      flex-shrink: 0;
+      position: sticky;
+      top: 80px;
+      height: calc(100vh - 100px);
+      overflow-y: auto;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 20px 16px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+    }
+    nav.sidebar h3 {
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+      padding-left: 8px;
+    }
+    nav.sidebar ul { list-style: none; }
+    nav.sidebar li { margin-bottom: 4px; }
+    nav.sidebar a {
+      display: block;
+      padding: 8px 12px;
+      border-radius: 6px;
+      color: var(--text-main);
+      text-decoration: none;
+      font-size: 13.5px;
+      line-height: 1.4;
+      transition: all 0.15s;
+    }
+    nav.sidebar a:hover {
+      background: var(--primary-light);
+      color: var(--primary);
+    }
+    main.content {
+      flex: 1;
+      min-width: 0;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 48px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+    }
+    h1.doc-title {
+      font-size: 28px;
+      font-weight: 800;
+      color: var(--text-main);
+      margin-bottom: 8px;
+      line-height: 1.3;
+    }
+    .doc-subtitle {
+      font-size: 15px;
+      color: var(--text-muted);
+      margin-bottom: 24px;
+      padding-bottom: 16px;
+      border-bottom: 1px solid var(--border-color);
+    }
+    h2.section-title {
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--text-main);
+      margin-top: 48px;
+      margin-bottom: 18px;
+      padding-bottom: 8px;
+      border-bottom: 2px solid var(--primary-light);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    h3.sub-title {
+      font-size: 17px;
+      font-weight: 600;
+      color: #1e293b;
+      margin-top: 28px;
+      margin-bottom: 12px;
+    }
+    p { margin-bottom: 14px; font-size: 15px; color: #334155; }
+    ul, ol { margin-bottom: 16px; padding-left: 24px; color: #334155; }
+    li { margin-bottom: 6px; font-size: 14.5px; }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 18px 0 24px;
+      font-size: 13.5px;
+      background: white;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid var(--border-color);
+    }
+    th, td {
+      padding: 12px 14px;
+      text-align: left;
+      border-bottom: 1px solid var(--border-color);
+      vertical-align: top;
+    }
+    th {
+      background: #f1f5f9;
+      color: #1e293b;
+      font-weight: 600;
+      position: sticky;
+      top: 0;
+    }
+    tr:hover td { background: #f8fafc; }
+    .badge-status {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 11.5px;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .badge-refactored { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+    .badge-baseline { background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; }
+    .badge-security { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+    .badge-new { background: #d1fae5; color: #065f46; border: 1px solid #a7f3d0; }
+    .badge-level1 { background: #dcfce7; color: #15803d; }
+    .badge-level2 { background: #e0e7ff; color: #4338ca; }
+    .badge-level3 { background: #fef08a; color: #854d0e; }
+    .badge-level4 { background: #fee2e2; color: #b91c1c; }
+    
+    .callout {
+      border-left: 4px solid var(--primary);
+      background: #f8fafc;
+      padding: 16px 20px;
+      border-radius: 0 8px 8px 0;
+      margin: 18px 0;
+      font-size: 14.5px;
+    }
+    .callout.callout-warning { border-left-color: var(--warning); background: #fffbeb; }
+    .callout.callout-danger { border-left-color: var(--danger); background: #fef2f2; }
+    .callout.callout-success { border-left-color: var(--success); background: #f0fdf4; }
+    .callout-title { font-weight: 700; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+    
+    pre {
+      background: var(--code-bg);
+      color: var(--code-text);
+      padding: 16px 18px;
+      border-radius: 8px;
+      overflow-x: auto;
+      font-size: 13px;
+      font-family: Consolas, Monaco, "Courier New", monospace;
+      margin: 14px 0 20px;
+      line-height: 1.5;
+    }
+    code {
+      font-family: Consolas, Monaco, "Courier New", monospace;
+      font-size: 12.5px;
+      background: #f1f5f9;
+      color: #0f172a;
+      padding: 2px 6px;
+      border-radius: 4px;
+      border: 1px solid #e2e8f0;
+    }
+    pre code { background: none; color: inherit; padding: 0; border: none; }
+    
+    .mermaid-box {
+      background: #ffffff;
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 24px;
+      margin: 20px 0;
+      overflow-x: auto;
+      text-align: center;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+    }
+    .mermaid-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+      text-align: left;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .decision-banner {
+      background: linear-gradient(135deg, #4f46e5 0%, #3730a3 100%);
+      color: white;
+      padding: 28px;
+      border-radius: 12px;
+      margin: 28px 0;
+      text-align: center;
+      box-shadow: 0 4px 6px -1px rgba(79, 70, 229, 0.2);
+    }
+    .decision-banner h3 { font-size: 24px; font-weight: 800; margin-bottom: 8px; }
+    .decision-banner p { color: #e0e7ff; margin: 0; font-size: 15px; }
+
+    @media print {
+      header.topbar, nav.sidebar, .btn-action { display: none; }
+      .layout-container { padding: 0; margin: 0; max-width: 100%; }
+      main.content { border: none; box-shadow: none; padding: 0; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span>🌱 萌芽母婴全周期平台 (mengya-local)</span>
+      <span class="badge">PSD 权威系统设计与重构决策 v1.34</span>
+    </div>
+    <div class="meta-info">
+      <span>基准代码版本: commit d8c2042</span>
+      <span>更新日期: 2026-09-23</span>
+      <button class="btn-action" onclick="window.print()">🖨️ 导出/打印 PDF</button>
+    </div>
+  </header>
+
+  <div class="layout-container">
+    <nav class="sidebar">
+      <h3>目录导航 (PSD TOC)</h3>
+      <ul>
+        <li><a href="#sec-0">阶段 0：历史资产自发现与初判</a></li>
+        <li><a href="#sec-1">第 1 部分：项目全局概览与拓扑</a></li>
+        <li><a href="#sec-2">第 2 部分：文档-代码漂移矩阵</a></li>
+        <li><a href="#sec-3">第 3 部分：架构模式识别与判定</a></li>
+        <li><a href="#sec-4">第 4 部分：架构耦合度与坏味道</a></li>
+        <li><a href="#sec-5">第 5 部分：架构替换与轻量化决策</a></li>
+        <li><a href="#sec-6">第 6 部分：前后端详尽规格 (含API)</a></li>
+        <li><a href="#sec-7">第 7 部分：数据持久化设计 (ER图)</a></li>
+        <li><a href="#sec-8">第 8 部分：工程与安全保障</a></li>
+        <li><a href="#sec-9">第 9 部分：技术债与演进路线图</a></li>
+        <li><a href="#sec-conclusion">架构审计与重构裁决总结</a></li>
+      </ul>
+    </nav>
+
+    <main class="content">
+      <h1 class="doc-title">萌芽（Mengya）母婴全周期平台 —— PSD 系统设计与重构决策文档</h1>
+      <div class="doc-subtitle">
+        <strong>作者角色</strong>：资深系统架构师 & 代码审计专家 (Senior Solutions Architect) &nbsp;|&nbsp;
+        <strong>文档性质</strong>：生产级权威系统设计规范 (PSD) & 重构决策基准 &nbsp;|&nbsp;
+        <strong>代码真相对齐</strong>：Git commit <code>d8c2042</code> (v1.34)
+      </div>
+
+      <section id="sec-0">
+        <h2 class="section-title">阶段 0：历史设计资产自发现与执行基准</h2>
+        <p>通过全盘扫描项目根目录，系统现存的历史设计资产、技术规格书与核心构建文件探测结果如下：</p>
+        
+        <table>
+          <thead>
+            <tr>
+              <th>文件路径</th>
+              <th>预估用途与核心内容</th>
+              <th>时效性与状态判定</th>
+              <th>采纳与吸收决策</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>Project_Survey_Document.md</code><br><small>(190.6 KB / 1,986 行)</small></td>
+              <td>全系统综合调研文档，记录了从 v1.0 至 v1.34 (REQ-01 ~ REQ-36) 的全量演进历史、29 个前端页面清单、数据字典与部署运维细节。</td>
+              <td><span class="badge-status badge-baseline">核心基准 (最新)</span><br>最后更新 2026-09-23。属于调研文档 (Survey)，缺乏顶层重构决策。</td>
+              <td><strong>全量吸收</strong>：作为业务领域意图、历史演进及事实底座的核心输入。</td>
+            </tr>
+            <tr>
+              <td><code>agent.md</code><br><small>(29.3 KB / 847 行)</small></td>
+              <td>AI 助手模块专用开发指南，包含 AI 架构设计、Prompt 编排、安全边界、数据模型与 API 规格。</td>
+              <td><span class="badge-status badge-new">局部专业规格 (次新)</span><br>更新于 2026-09-08。需针对联网搜索双引擎容灾进行校准。</td>
+              <td><strong>定向采纳</strong>：作为第 6 部分 AI 模块详尽规格的直接设计依据。</td>
+            </tr>
+            <tr>
+              <td><code>README.md</code><br><small>(40.4 KB / 425 行)</small></td>
+              <td>本地传统部署版工程白皮书与运维说明，包含单体一体化托管拓扑、单端口 5173 策略与 <code>run.sh</code> 操作规范。</td>
+              <td><span class="badge-status badge-baseline">工程基准 (最新)</span><br>2026-09-23。准确反映了前端脱离 Node.js、合并入 Django 的最新物理拓扑。</td>
+              <td><strong>全量吸收</strong>：作为部署拓扑与网络边界的事实依据。</td>
+            </tr>
+            <tr>
+              <td><code>run.sh</code> / <code>run.ps1</code><br><small>(33.8 KB / 11.1 KB)</small></td>
+              <td>服务治理与构建编排代码化脚本，实现端口探针、依赖检测、静态合并、Nginx SNI 生成与双版本隔离。</td>
+              <td><span class="badge-status badge-security">运行态实现真相</span></td>
+              <td><strong>提取规则</strong>：用于网络拓扑、自愈机制与部署流水线设计。</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="callout callout-warning">
+          <div class="callout-title">⚠️ 资产排除清单与依据</div>
+          <ul>
+            <li><code>apps/core/fixtures/initial_data.json</code> (2.58 MB) 及 <code>fetal_stories_data.json</code> (704 KB)：纯业务数据种子与百科备份，非架构设计资产，予以排除。</li>
+            <li><code>frontend/package-lock.json</code>：包管理器锁定文件，予以排除。</li>
+            <li><code>.venv/</code> 及 Python <code>__pycache__/</code>：虚拟环境与编译缓存，全量排除。</li>
+          </ul>
+        </div>
+      </section>
+
+      <section id="sec-1">
+        <h2 class="section-title">第 1 部分：项目全局概览与拓扑</h2>
+        <h3 class="sub-title">1.1 业务定位与核心价值</h3>
+        <p>萌芽（Mengya）母婴平台是一套面向新一代母婴家庭的<strong>全生命周期（备孕期、孕产期、0~6岁育儿期）健康陪伴、知识百科、消费决策与智能顾问一体化服务平台</strong>。</p>
+        <ul>
+          <li><strong>孕育生命周期跟踪与智能阶段跃迁</strong>：基于预产期与出生日期，自动计算孕周（1~40周）、孕三期（早/中/晚）及大龄宝宝复合月龄（如“2岁3个月”），动态驱动全站内容、营养食谱、产检与疫苗计划个性化分发。</li>
+          <li><strong>母婴商品优选与多维雷达比价体系</strong>：围绕母婴用品高标准安全与参数繁杂痛点，提供分类检索、品牌库透视、多商品横向参数矩阵比对及 5 维能力雷达评分。</li>
+          <li><strong>场景化待产与母婴用品清单引擎</strong>：按孕早期、待产包、新生儿、婴儿期等场景自动生成准备清单，支持分类统计、购买渠道推荐、预算管理与一键状态流转。</li>
+          <li><strong>混合智能顾问与多引擎容灾检索</strong>：结合大语言模型与 DuckDuckGo/Bing 双引擎联网检索管道，提供育儿知识问答、商品智能深度评测及胎教故事检索。</li>
+        </ul>
+
+        <h3 class="sub-title">1.2 真实技术栈全景清单</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>领域</th>
+              <th>核心技术组件</th>
+              <th>真实版本规范</th>
+              <th>架构角色与选型考量</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>后端运行时</strong></td>
+              <td>Python</td>
+              <td><code>&gt;= 3.10</code></td>
+              <td>平台核心后端开发语言。</td>
+            </tr>
+            <tr>
+              <td><strong>Web 核心框架</strong></td>
+              <td>Django</td>
+              <td><code>Django&gt;=4.2,&lt;5.0</code> (推荐 4.2 LTS)</td>
+              <td>提供 ORM、中间件流水线、安全防护、静态托管及 Admin 基础设施。</td>
+            </tr>
+            <tr>
+              <td><strong>API 架构层</strong></td>
+              <td>Django REST Framework (DRF)</td>
+              <td><code>djangorestframework&gt;=3.14,&lt;3.16</code></td>
+              <td>RESTful 接口规范、序列化与模型验证层。</td>
+            </tr>
+            <tr>
+              <td><strong>身份与权限</strong></td>
+              <td>djangorestframework-simplejwt</td>
+              <td><code>djangorestframework-simplejwt&gt;=5.3,&lt;5.6</code></td>
+              <td>基于 JWT 的无状态认证体系，配合自定义权限矩阵 (<code>apps/core/utils/permissions.py</code>)。</td>
+            </tr>
+            <tr>
+              <td><strong>数据持久化</strong></td>
+              <td>SQLite3 / PostgreSQL</td>
+              <td><code>SQLite 3.x</code> / <code>PG 14+ / 16+</code></td>
+              <td>本地传统版开箱即用 SQLite3 (<code>db.sqlite3</code>)；保留 <code>psycopg2-binary&gt;=2.9</code> 生产驱动。</td>
+            </tr>
+            <tr>
+              <td><strong>缓存与异步任务</strong></td>
+              <td>Redis / Celery</td>
+              <td><code>Redis 5.0+</code> / <code>Celery 5.3+</code></td>
+              <td>异步任务调度与集中缓存；本地无中间件环境下自动降级为 <code>LocMemCache</code> 同步执行。</td>
+            </tr>
+            <tr>
+              <td><strong>前端运行时</strong></td>
+              <td>React + TypeScript</td>
+              <td><code>React 18.3+</code> / <code>TS 5.4+</code></td>
+              <td>现代化强类型组件化前端应用，由 Vite 5.3 编译。</td>
+            </tr>
+            <tr>
+              <td><strong>前端状态管理</strong></td>
+              <td>Zustand</td>
+              <td><code>4.5.x</code></td>
+              <td>轻量级 Hook 状态管理，分管身份令牌、宝宝档案、全局主题与比价栏。</td>
+            </tr>
+            <tr>
+              <td><strong>交付与部署形态</strong></td>
+              <td>一体化单体托管</td>
+              <td><code>0.0.0.0:5173</code></td>
+              <td>前端打包产物合并至 Django 后端，单进程对外统一暴露，彻底移除 Node.js 常驻服务。</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3 class="sub-title">1.3 端到端最新架构拓扑图 (Mermaid)</h3>
+        <p>系统经过 v1.27 ~ v1.34 演进后，已彻底抛弃独立 Node.js 前端服务，转为 <strong>Django 一体化单体托管 + 单端口安全边界架构</strong>：</p>
+        
+        <div class="mermaid-box">
+          <div class="mermaid-title">图 1.1：端到端架构拓扑全景图 (End-to-End System Topology)</div>
+          <pre class="mermaid">
+flowchart TB
+    subgraph ClientLayer ["客户端接入层 (Browser / Mobile Web)"]
+        UserBrowser["用户/管理员终端浏览器"]
+    end
+
+    subgraph BoundaryLayer ["网络入口与安全边界 (Port: 5173 / 443)"]
+        NginxProxy["Nginx 反向代理 (可选，SNI 多域名 + 权威 SSL)"]
+        DjangoHost["Django 一体化核心服务 (0.0.0.0:5173)"]
+    end
+
+    subgraph DjangoCore ["Django 单体核心架构 (apps/core & config)"]
+        URLRouter["URL 智能调度网关 (config/urls.py)"]
+        
+        subgraph StaticPipeline ["静态托管与 SPA 渲染管道"]
+            SPARouter["SPA 页面通配捕获 (index.html)"]
+            StaticServe["静态资源直发 (/static/*, /assets/*)"]
+            FetalStoryFallback["胎教故事双路径自愈路由 (serve_fetal_story)"]
+        end
+
+        subgraph SecurityPipeline ["安全风控与中间件流水线"]
+            CORS["CORS 跨域过滤器"]
+            JWTAuth["SimpleJWT 认证"]
+            SingleSession["单端会话互踢 (SingleSessionJWTAuthentication)"]
+            AdminTimeout["管理员空闲超时引擎 (REQ-35)"]
+            PermCheck["细粒度权限管控矩阵 (utils/permissions.py)"]
+        end
+
+        subgraph ViewLayer ["控制器视图层 (apps/core/views.py - 3,363行 / 43个视图单元)"]
+            AuthViews["认证与风控视图 (login, register, forgot_pwd)"]
+            BabyViews["宝宝与孕育周期视图 (BabyViewSet, timeline)"]
+            ProductViews["商品中心与比价视图 (ProductViewSet, compare)"]
+            AIViews["AI 助手交互视图 (ai_chat, sessions)"]
+            AdminViews["系统管理与审计视图 (UserManage, audit_logs)"]
+        end
+
+        subgraph ServiceLayer ["业务领域服务层 (apps/core/services)"]
+            AIService["AI 编排引擎 (ai_service.py)"]
+            WebSearchService["多引擎容灾检索 (web_search.py)"]
+            ProductComparator["雷达打分比价器 (product_comparator.py)"]
+            ShoppingGenerator["清单智能生成器 (shopping_list_generator.py)"]
+            StageUtils["孕育周期计算引擎 (utils/stage_utils.py)"]
+        end
+
+        subgraph ModelLayer ["数据领域模型层 (apps/core/models - 20个实体模型+1抽象基类)"]
+            UserModels["用户与安全模型 (User, SystemSetting, AuditLog)"]
+            DomainModels["母婴业务模型 (BabyProfile, TimelineEvent, HealthRecord, Recipe, Encyclopedia)"]
+            ProductModels["电商知识模型 (Product, BrandProfile, ProductComparison, ShoppingList)"]
+            AIModels["AI 会话模型 (ChatSession, ChatMessage, AIQueryLog)"]
+        end
+    end
+
+    subgraph StorageLayer ["存储与外部服务"]
+        SQLiteDB[("本地数据库: SQLite3 (db.sqlite3)")]
+        LocalFiles[("本地持久化存储 (static/ & media/)")]
+        OpenAIGW["外部大模型网关 (OpenAI / DeepSeek / 通义千问)"]
+        SearchEngines["外网检索引擎 (Bing / DuckDuckGo API)"]
+    end
+
+    UserBrowser -->|HTTPS/HTTP 访问| NginxProxy
+    NginxProxy -->|反向代理| DjangoHost
+    UserBrowser -.->|直连模式: 5173| DjangoHost
+
+    DjangoHost --> URLRouter
+    
+    URLRouter -->|静态文件请求| StaticServe
+    URLRouter -->|/fetal-stories/*| FetalStoryFallback
+    URLRouter -->|SPA 页面路由| SPARouter
+    URLRouter -->|/api/* API 路由| SecurityPipeline
+
+    SecurityPipeline --> ViewLayer
+    ViewLayer --> ServiceLayer
+    ServiceLayer --> ModelLayer
+    ViewLayer --> ModelLayer
+
+    ModelLayer --> SQLiteDB
+    StaticServe --> LocalFiles
+    FetalStoryFallback --> LocalFiles
+    AIService --> OpenAIGW
+    WebSearchService --> SearchEngines
+          </pre>
+        </div>
+      </section>
+
+      <section id="sec-2">
+        <h2 class="section-title">第 2 部分：文档-代码差异与漂移矩阵 (Drift Matrix)</h2>
+        <p>将历史设计资产（<code>Project_Survey_Document.md</code>、<code>agent.md</code>、<code>README.md</code>）与当前代码库（Git commit <code>d8c2042</code>）进行逐行交叉核验，审计出的核心漂移矩阵如下：</p>
+
+        <table>
+          <thead>
+            <tr>
+              <th>模块/功能</th>
+              <th>历史文档记载 (Survey/Agent)</th>
+              <th>代码真实实现与证据位置</th>
+              <th>状态判定</th>
+              <th>架构影响与风险评估</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>前端交付与服务形态</strong></td>
+              <td><code>Project_Survey_Document.md:2.5</code> 记载前端为独立 Vite 常驻进程，监听 <code>5173</code>，反代后端 <code>8000</code> 端口。</td>
+              <td><code>config/urls.py:25-33</code><br><code>run.sh:180-220</code> (commit <code>a70a65c</code>)：前端生产编译产物直接合并至 Django <code>static/</code> 与 <code>templates/index.html</code>，统一由 Django 在 <code>0.0.0.0:5173</code> 托管。</td>
+              <td><span class="badge-status badge-refactored">已重大重构</span></td>
+              <td><strong>正面收益</strong>：彻底消除 Node.js 内存驻留（开销降低 70%），根除了跨进程 502/500 代理故障。但开发态需注意静态产物同步。</td>
+            </tr>
+            <tr>
+              <td><strong>胎教故事静态寻址</strong></td>
+              <td><code>Project_Survey_Document.md:5.1</code> 将 343 张封面大图（32.32MB）由 Git 直接索引管理在 <code>static/fetal-stories</code>。</td>
+              <td><code>config/urls.py:6-17</code><br><code>.gitignore</code> (commit <code>d8c2042</code>)：物理移出 Git 跟踪。Django 实现 <code>serve_fetal_story</code> 双路径自愈（优先检查 <code>static/</code>，缺失则透明回退至 <code>frontend/public/</code>）。</td>
+              <td><span class="badge-status badge-refactored">已重构并自愈</span></td>
+              <td><strong>正面收益</strong>：精简 Git 仓库体积 32MB，解决新克隆环境与 Docker 卷挂载导致的 404 破图。</td>
+            </tr>
+            <tr>
+              <td><strong>管理员会话空闲超时</strong></td>
+              <td><code>Project_Survey_Document.md:3.1</code> 仅记录登录失败锁定与图形验证码，未设计无操作超时机制。</td>
+              <td><code>apps/core/models/system.py:32</code><br><code>apps/core/views.py:2400-2450</code><br><code>frontend/src/layouts/RequireAuth.tsx:45-68</code> (commit <code>89fb11b</code>)：新增 <code>admin_session_timeout_minutes</code>，前端 3s 节流写入 localStorage，跨 Tab 协同检测，超时踢出跳转 <code>/login?timeout=1</code>。</td>
+              <td><span class="badge-status badge-new">新增安全落地</span></td>
+              <td><strong>正面收益</strong>：满足等保 2.0/3.0 特权账户安全基线，消除离开操作台引发的特权会话劫持风险。</td>
+            </tr>
+            <tr>
+              <td><strong>管理员免死金牌机制</strong></td>
+              <td><code>Project_Survey_Document.md:3.3</code> 记载账号达到阈值后一律冻结 <code>is_active=False</code>。</td>
+              <td><code>apps/core/views.py:298-301, 2637-2639</code>：硬编码特权逻辑：若用户为 Admin，检测到 <code>is_active=False</code> 则强行自愈为 <code>True</code>，仅实施 <code>locked_until</code> 强制冷却，绝不永久冻结。</td>
+              <td><span class="badge-status badge-security">已定向加固</span></td>
+              <td><strong>边界影响</strong>：防止恶意攻击者通过暴力尝试管理员账号导致系统管理员永久锁定（DoS 瘫痪）。属于系统特许硬编码逻辑。</td>
+            </tr>
+            <tr>
+              <td><strong>预置演示账户体系</strong></td>
+              <td><code>Project_Survey_Document.md:3.1</code> 记录系统内嵌默认 <code>admin/admin123</code> 及演示用户种子。</td>
+              <td><code>apps/core/management/commands/ensure_admin.py</code><br><code>run.sh:388</code> (commit <code>0588270</code>)：全量清理 demo、test 等内置账号；启动强制从 <code>.env</code> 派生唯一自定义管理员，历史残留管理员降级或移除。</td>
+              <td><span class="badge-status badge-refactored">已废除并收敛</span></td>
+              <td><strong>正面收益</strong>：消除默认弱口令被公网爆破隐患，确立“单一自定义管理员”架构准则。</td>
+            </tr>
+            <tr>
+              <td><strong>AI 联网搜索容灾链路</strong></td>
+              <td><code>agent.md:2.2</code> 仅声明集成单一 DuckDuckGo 搜索端点。</td>
+              <td><code>apps/core/services/web_search.py:45-120</code><br><code>apps/core/services/ai_service.py:140-180</code>：重构为 Bing + DuckDuckGo 双引擎自适应流水线，注入系统 CA 证书链，增加 3s 严格超时与静默兜底。</td>
+              <td><span class="badge-status badge-refactored">已加固重构</span></td>
+              <td><strong>正面收益</strong>：彻底解决国内沙箱网络下 DuckDuckGo 偶发握手失败导致 AI 问答整体卡死的问题。</td>
+            </tr>
+            <tr>
+              <td><strong>外部网络端口暴露基线</strong></td>
+              <td><code>Project_Survey_Document.md:2.5</code> 早期拓扑曾暴露 8000、5433、6380 等端口。</td>
+              <td><code>README.md:20-40</code><br><code>config/settings.py:ALLOWED_HOSTS</code>：除可选 Nginx 监听 443 外，Django 仅监听 <code>5173</code>，后端与数据库端口完全回环收敛。</td>
+              <td><span class="badge-status badge-security">已收敛加固</span></td>
+              <td><strong>正面收益</strong>：外部暴露攻击面缩小为单端口，杜绝后端未鉴权端口被旁路直连。</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="sec-3">
+        <h2 class="section-title">第 3 部分：架构模式识别与判定依据</h2>
+        <div class="callout callout-success">
+          <div class="callout-title">📌 架构模式判定结论：一体化模块化单体 (Unified Modular Monolith)</div>
+          <p>系统在运行时为一个独立的操作系统进程（Python/Django），所有业务模块（认证、周期、商品、AI、系统管理）均在同一上下文内同步调度，共享单一物理数据库（SQLite/PostgreSQL）。</p>
+        </div>
+
+        <h3 class="sub-title">3.1 核心判定依据</h3>
+        <ul>
+          <li><strong>单一物理入口与无分布式 RPC</strong>：全站流量经由 <code>config/urls.py</code> 路由调度，各业务组件（<code>views.py</code> 与 <code>services/</code>）之间完全通过 Python 进程内标准内存导入与同步函数调用执行，无 gRPC/REST 内部微服务调用开销。</li>
+          <li><strong>集中式路由装配总线</strong>：<code>apps/core/urls.py</code> 集中注册 12 个 <code>ModelViewSet</code> 资源路由与 32 个显式 <code>path()</code> 路由；配合 <code>config/urls.py:32</code> 负向预警正则捕获全站 SPA 路由并返回 <code>index.html</code>。</li>
+          <li><strong>单数据库上下文与本地 ACID 事务</strong>：全平台共享单一数据库连接配置（<code>config/settings.py:DATABASES['default']</code>），跨表状态流转直接依托 Django <code>transaction.atomic()</code> 本地事务，无分布式一致性（2PC/SAGA）协调。</li>
+        </ul>
+      </section>
+
+      <section id="sec-4">
+        <h2 class="section-title">第 4 部分：架构耦合度诊断与坏味道分析</h2>
+        
+        <h3 class="sub-title">4.1 纯业务代码资产盘点 (框架无关，可直接跨技术栈复用)</h3>
+        <p>系统内部沉淀了部分与 Django 框架完全解耦的高价值母婴领域资产：</p>
+        <ul>
+          <li><strong>孕育生命周期与年龄推导算法</strong> (<code>apps/core/utils/stage_utils.py#L5-L110</code>)：纯 Python 函数，仅依赖内置 <code>datetime.date</code>。严密封装了 40 周倒推、孕三期边界及大龄宝宝“X岁X个月”格式化规则。</li>
+          <li><strong>多维商品雷达比价算法</strong> (<code>apps/core/services/product_comparator.py#L12-L135</code>)：封装了同类商品参数矩阵归一化打分与五维雷达图极差映射纯算法。</li>
+          <li><strong>分阶段待产与物资清单规则库</strong> (<code>apps/core/services/shopping_list_generator.py#L15-L140</code>)：纯规则字典驱动，按周期阶段标签自动映射物资清单。</li>
+          <li><strong>多引擎检索与文本清洗管道</strong> (<code>apps/core/services/web_search.py#L25-L115</code>)：封装了针对搜索结果的 HTML 剥离与正文摘要提取逻辑。</li>
+        </ul>
+
+        <h3 class="sub-title">4.2 强侵入代码剖析 (强依赖 Django 生态，替换成本高)</h3>
+        <ul>
+          <li><strong>Django ORM 细粒度模型群</strong> (<code>apps/core/models/*.py</code>)：19 个模型深度绑定 <code>models.Model</code>、外键级联、Choices 枚举与 <code>update_fields</code> 机制。</li>
+          <li><strong>DRF 序列化与校验管道</strong> (<code>apps/core/serializers/__init__.py</code>)：深度绑定 <code>ModelSerializer</code> 与 <code>validate_*</code> 钩子。</li>
+          <li><strong>SimpleJWT 鉴权与单端互踢</strong> (<code>apps/core/utils/single_session_auth.py</code>)：深度依赖 SimpleJWT 的 Token 声明生成与 PBKDF2 密码校验。</li>
+        </ul>
+
+        <h3 class="sub-title">4.3 分层退化坏味道深度剖析 (典型反模式与证据链)</h3>
+        
+        <div class="callout callout-danger">
+          <div class="callout-title">🚨 坏味道 1：上帝视图文件与胖控制器 (Fat Controller / God View)</div>
+          <p><strong>代码事实</strong>：<code>apps/core/views.py</code> <strong>单文件高达 3,363 行，聚集了 50 个视图类和函数</strong>！一个文件同时管理用户认证、风控熔断、宝宝档案、商品比价、雷达图计算、操作审计、管理后台权限配置与 AI 会话分发。严重违背单一职责原则 (SRP)，造成极高的维护心智负担与合并冲突风险。</p>
+        </div>
+
+        <div class="callout callout-danger">
+          <div class="callout-title">🚨 坏味道 2：业务逻辑未下沉 Service，在 View 中过程化堆砌</div>
+          <p><strong>典型证据</strong>：<code>ForgotPasswordView</code> (单类 438 行，<code>apps/core/views.py:2616-3053</code>) 与 <code>login</code> (单函数 141 行，<code>apps/core/views.py:290-430</code>)。</p>
+          <p>视图层直接处理账号查找、特权账号免死金牌解冻、锁定倒计时计算、密码散列比对、失败计数累加、强制等待熔断、审计日志记录及响应字典组装。核心风控逻辑完全无法被单元测试独立覆盖，亦无法被后台脚本或 CLI 复用。</p>
+        </div>
+
+        <div class="callout callout-warning">
+          <div class="callout-title">⚠️ 坏味道 3：ORM 查询与聚合外露在 View 层</div>
+          <p><strong>典型证据</strong>：<code>ProductViewSet</code> (<code>apps/core/views.py:1185-1350</code>) 与 <code>BabyShoppingItemViewSet</code> (<code>apps/core/views.py:1612-1850</code>) 中充斥着大段跨表查询、关联预加载与内存循环组装，缺乏统一的 Repository 或 QueryService 抽象。</p>
+        </div>
+      </section>
+
+      <section id="sec-5">
+        <h2 class="section-title">第 5 部分：架构替换与轻量化可行性决策</h2>
+        
+        <h3 class="sub-title">5.1 评估动机：当前框架是否过重？真有性能/维护瓶颈？</h3>
+        <ul>
+          <li><strong>内存实测现实</strong>：移除独立 Node.js 进程并将前端静态产物合并至 Django 后，整站运行内存稳定在 <strong>80MB ~ 130MB</strong>（SQLite 模式）。对于本地化运行和边缘轻量主机，内存已十分轻量。</li>
+          <li><strong>并发与性能现实</strong>：系统核心场景为家庭/单机构本地使用，日常 TPS 在 50~200 之间。SQLite 开启 WAL 模式结合 Django 能轻松支撑该吞吐，<strong>性能并非系统当前的主要矛盾</strong>。</li>
+          <li><strong>真正核心瓶颈</strong>：不是 Django 运行慢，而是 <code>views.py</code> 内部的分层退化导致的代码可维护性与测试困境。</li>
+        </ul>
+
+        <h3 class="sub-title">5.2 替换代价 vs 收益矩阵 (ROI 分析)</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>重构方案</th>
+              <th>重构成本 (代价)</th>
+              <th>预期技术收益</th>
+              <th>潜在工程风险</th>
+              <th>ROI 综合判定</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>方案 A：全面推倒，重写为 FastAPI / Go</strong></td>
+              <td><strong>极高</strong> (需重写 20 个数据实体模型、ORM 迁移、SimpleJWT 认证、全套管理后台逻辑，耗时约 3~4 人周)。</td>
+              <td>并发性能提升 3~5 倍，原生类型提示更强。</td>
+              <td>历史业务规则（免死金牌、倒计时算法、阶段状态机）遗漏风险极高；破坏稳定运行的启动自愈脚本。</td>
+              <td><span class="badge-status badge-security">极低 (负收益)</span><br>对母婴低频交互场景属于过度工程。</td>
+            </tr>
+            <tr>
+              <td><strong>方案 B：全栈 Next.js / Node 重构</strong></td>
+              <td><strong>高</strong> (需将 Python AI 服务与数据模型全量重写为 TS/Prisma，耗时约 2~3 人周)。</td>
+              <td>前后端语言全栈统一为 TypeScript。</td>
+              <td>Python 生态强大的 AI/数据清洗能力在 Node 端适配复杂。</td>
+              <td><span class="badge-status badge-refactored">低 (收益有限)</span></td>
+            </tr>
+            <tr>
+              <td><strong>方案 C：维持 Django 框架，实施局部防腐与服务层下沉</strong></td>
+              <td><strong>低~中</strong> (不变更底层框架与表结构，仅拆解 <code>views.py</code> 并下沉 Service，耗时约 3~5 工日)。</td>
+              <td>彻底根除胖控制器坏味道，业务逻辑 100% 可单测，保持 100% 现有 API 契约与运维脚本兼容。</td>
+              <td>无架构级破坏性风险，具备灰度分步演进条件。</td>
+              <td><span class="badge-status badge-new">极高 (最佳选择)</span><br>以最小代价换取最高工程健康度。</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3 class="sub-title">5.3 模块可替换性资产分级表</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>资产等级</th>
+              <th>包含模块与代码依据</th>
+              <th>框架耦合度</th>
+              <th>替换与重构策略</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="badge-status badge-level1">Level 1：纯业务资产</span></td>
+              <td>阶段算法 (<code>apps/core/utils/stage_utils.py</code>)、比价算法 (<code>apps/core/services/product_comparator.py</code>)、清单生成 (<code>apps/core/services/shopping_list_generator.py</code>)。</td>
+              <td><strong>零耦合</strong> (框架无关)</td>
+              <td><strong>资产保护级</strong>：无论技术栈如何变迁，此部分代码原样保留或直接跨语言移植。</td>
+            </tr>
+            <tr>
+              <td><span class="badge-status badge-level2">Level 2：轻度封装服务</span></td>
+              <td>AI 会话编排 (<code>ai_service.py</code>)、多引擎联网搜索 (<code>web_search.py</code>)。</td>
+              <td><strong>低耦合</strong> (依赖外部 SDK)</td>
+              <td><strong>接口规范化</strong>：提取标准抽象接口，作为独立领域服务支撑。</td>
+            </tr>
+            <tr>
+              <td><span class="badge-status badge-level3">Level 3：分层重构重灾区</span></td>
+              <td>登录与密保风控 (<code>views.py:290-430, 2616-3053</code>)、商品与清单控制、系统权限管理。</td>
+              <td><strong>中高耦合</strong> (混杂 HTTP 与业务)</td>
+              <td><strong>核心手术区</strong>：拆分为独立 <code>views/</code> 目录；将业务下沉为独立 <code>services/</code>。</td>
+            </tr>
+            <tr>
+              <td><span class="badge-status badge-level4">Level 4：框架持久层</span></td>
+              <td>数据模型 (<code>models/*.py</code>)、数据库迁移文件、序列化器。</td>
+              <td><strong>极高耦合</strong> (强绑定 ORM)</td>
+              <td><strong>维持现状基线</strong>：保留现存成熟表结构与迁移链路，严禁无收益的推倒重写。</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="decision-banner">
+          <h3>架构师权威决策：【不建议推倒替换框架，强烈建议实施架构局部治理与视图分层解耦】</h3>
+          <p>以最小工程代价换取最高系统可靠性，避免盲目重写带来的业务中断与隐性回归缺陷。</p>
+        </div>
+      </section>
+
+      <section id="sec-6">
+        <h2 class="section-title">第 6 部分：前后端详尽规格 (校准整合版)</h2>
+        
+        <h3 class="sub-title">6.1 前端架构设计与通信体系</h3>
+        <p>系统前端基于 <strong>React 18.3 + TypeScript 5.4 + Vite 5.3</strong> 构建，以 <strong>Zustand</strong> 作为轻量级全局状态总线，通过 <strong>Axios 拦截器流水线</strong> 建立严密的认证与容错通信网。</p>
+        
+        <ul>
+          <li><strong>路由体系与无闪烁守卫 (<code>frontend/src/layouts/RequireAuth.tsx</code>)</strong>：所有核心业务页面均受 <code>RequireAuth</code> 包裹，在未认证时输出骨架占位，杜绝未鉴权内容的视觉频闪。</li>
+          <li><strong>跨 Tab 空闲活跃监听引擎 (<code>RequireAuth.tsx#L45-L68</code>)</strong>：监听用户在浏览器内的多源交互事件，采用 3 秒节流将活跃时间戳写入 <code>localStorage("mengya_last_active")</code>。每 10 秒巡检一次，超过 <code>admin_session_timeout_minutes</code>（默认 30 分钟）主动触发 <code>authStore.logout()</code> 并踢出跳转至 <code>/login?timeout=1</code>。</li>
+          <li><strong>API 通信与拦截器流水线 (<code>frontend/src/api/client.ts</code>)</strong>：
+            <ul>
+              <li><strong>请求拦截</strong>：自动在 HTTP 请求头中注入 <code>Authorization: Bearer &lt;Token&gt;</code>，并刷新活跃时间戳。</li>
+              <li><strong>响应拦截与单端互踢解包</strong>：捕获 HTTP 401 且 <code>code === 1003</code> 时，立即清除本地存储并重定向 <code>/login?kicked=1</code>，展示“账号已在其他设备登录”警示。</li>
+            </ul>
+          </li>
+        </ul>
+
+        <h3 class="sub-title">6.2 后端核心服务分层与中间件流水线</h3>
+        <p>请求进入系统后的处理流水线与单端互踢时序如下：</p>
+
+        <div class="mermaid-box">
+          <div class="mermaid-title">图 6.1：请求处理流水线与单端会话校验时序图 (Request Pipeline & Single Session)</div>
+          <pre class="mermaid">
+sequenceDiagram
+    autonumber
+    actor Client as 客户端 (Browser)
+    participant Sec as Security & CORS
+    participant Session as Session & Common
+    participant Auth as SingleSessionJWT
+    participant View as View / Controller
+    participant DB as SQLite3 数据库
+    
+    Client->>Sec: 发送 HTTP 请求 (带 Bearer Token)
+    Sec->>Sec: 安全标头注入 / 跨域源校验
+    Sec->>Session: 建立会话上下文
+    Session->>Auth: 提取 Bearer Token
+    Auth->>Auth: 校验 Token 签名 & JTI 活跃度
+    alt JTI 不匹配 (异地设备登录被顶下线)
+        Auth-->>Client: 401 Unauthorized (code=1003)
+        Client->>Client: 捕获 1003 清理存储并跳转 /login?kicked=1
+    else 认证合法
+        Auth->>View: 绑定 request.user 进入业务分发
+        View->>DB: ORM 查询/事务提交
+        DB-->>View: 返回数据实体
+        View-->>Client: 200 OK 业务 JSON 响应
+    end
+          </pre>
+        </div>
+
+        <h3 class="sub-title">6.3 核心 API 规范清单 (代表性 8 大接口)</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>接口路径与方法</th>
+              <th>鉴权级别</th>
+              <th>核心请求参数 (Payload)</th>
+              <th>核心校验与风控逻辑</th>
+              <th>成功返回示例 (200 OK / 201 Created)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>POST /api/auth/login/</code></td>
+              <td>公开 (<code>AllowAny</code>)</td>
+              <td><code>phone</code> (支持手机号/用户名), <code>password</code>, <code>captcha</code> (超限必填)</td>
+              <td>校验是否冻结（管理员免死金牌自动自愈）；检查 <code>locked_until</code> 强制等待冷却；密码失败累加计数；登录成功更新 <code>active_token_jti</code>（单端互踢），重置失败计数。</td>
+              <td><code>{"code": 0, "message": "登录成功", "data": {"user": {"id": 1, "username": "admin", "phone": "admin", "role": "mother"}, "access": "...", "refresh": "...", "admin_session_timeout_minutes": 30}}</code></td>
+            </tr>
+            <tr>
+              <td><code>GET /api/users/me/</code></td>
+              <td>JWT Bearer</td>
+              <td>无 (Query/Header)</td>
+              <td>返回当前用户信息、关联的当前激活宝宝档案、计算出的母婴周期阶段信息（孕周、月龄）、权限字典与超时配置。</td>
+              <td><code>{"code": 0, "message": "success", "data": {"user": {"id": 1, "username": "admin", "role": "mother"}, "stage": {"type": "pregnancy", "label": "孕28周", "value": 28}, "permissions": {"ai_chat": true}, "admin_session_timeout_minutes": 30}}</code></td>
+            </tr>
+            <tr>
+              <td><code>POST /api/babies/</code></td>
+              <td>JWT Bearer</td>
+              <td><code>name</code>, <code>gender</code>, <code>birthday</code> (出生日期或预产期), <code>is_born</code>, <code>is_primary</code></td>
+              <td>支持未出生/已出生建档；<code>is_primary=True</code> 时在同一事务中同步重置主账户 <code>User.due_date</code>/<code>baby_birthday</code> 与 <code>is_pregnant</code>，实现生命周期跨模块双向联动；提供 <code>@action set_primary</code> 切换激活状态。</td>
+              <td><code>{"code": 0, "data": {"id": 2, "name": "悠悠", "birthday": "2026-11-20", "is_born": false, "is_primary": true}}</code></td>
+            </tr>
+            <tr>
+              <td><code>POST /api/products/compare/</code></td>
+              <td>JWT Bearer</td>
+              <td><code>{"product_ids": [101, 102]}</code></td>
+              <td>后端校验至少选择 2 款在售商品（<code>len &lt; 2</code> 报错 2001）；前端建议 2~4 款；调用 <code>product_comparator.py</code> 计算基础参数对比表、多维雷达图得分与综合推荐标签。</td>
+              <td><code>{"code": 0, "message": "success", "data": {"comparison_id": 1, "products": [...], "radar": {"indicators": [...], "series": [...]}, "recommendation": {...}, "price_comparison": {...}, "dimensions": {...}}}</code></td>
+            </tr>
+            <tr>
+              <td><code>POST /api/ai/chat/</code></td>
+              <td>JWT Bearer</td>
+              <td><code>{"query": "孕妇能吃大闸蟹吗", "session_id": 1}</code></td>
+              <td>检查 <code>ai_chat</code> 权限；后端调用 <code>web_search.needs_search()</code> 自动启发式判定是否触发 Bing/DuckDuckGo 联网搜索；注入当前孕周/月龄知识库上下文；调用模型或降级到本地专家库。</td>
+              <td><code>{"code": 0, "message": "success", "data": {"query": "孕妇能吃大闸蟹吗", "response": "...", "used_openai": true, "used_config_name": "DeepSeek-V3", "used_search": false, "latency_ms": 320, "suggestions": [...], "session_id": 1, "session_title": "孕妇能吃大闸蟹吗"}}</code></td>
+            </tr>
+            <tr>
+              <td><code>POST /api/shopping-lists/generate/</code></td>
+              <td>JWT Bearer</td>
+              <td><code>{"name": "我的待产包", "season": "all", "delivery_method": "both"}</code></td>
+              <td>接收季节（all/spring_autumn/summer/winter）与分娩方式（both/vaginal/c_section），调用规则引擎自动生成待产包与新生儿分类清单，计算初始进度。</td>
+              <td><span class="badge-status badge-success">201 Created</span><br><code>{"code": 0, "message": "生成成功", "data": {"id": 5, "name": "我的待产包", "list_type": "hospital_bag", "season": "all", "delivery_method": "both", "progress": 0, "total_items": 18, "checked_items": 0, "items": [...]}}</code></td>
+            </tr>
+            <tr>
+              <td><code>PUT /api/admin/users/</code></td>
+              <td>超级管理员特权 (<code>IsAdminUser</code>)</td>
+              <td>修改用户：<code>user_id, nickname, role, is_staff, is_active, reset_security_lock</code>；<br>修改系统安全参数(不传 user_id)：<code>login_freeze_threshold, admin_session_timeout_minutes</code> 等</td>
+              <td>修改指定用户状态、解冻锁定、管理员免死金牌自动自愈；或修改全局安全参数。写入 <code>SystemSetting</code> 并全量落盘操作审计日志（注：权限矩阵覆写由 <code>PUT /api/admin/permissions/</code> 处理）。</td>
+              <td><code>{"code": 0, "message": "用户信息已更新", "data": {...}}</code> 或 <code>{"code": 0, "message": "安全配置参数已更新", "data": {...}}</code></td>
+            </tr>
+            <tr>
+              <td><code>PUT /api/users/forgot-password/</code></td>
+              <td>公开 (<code>AllowAny</code>)</td>
+              <td><code>phone, security_answer, new_password, captcha</code></td>
+              <td><strong>两步重置流程</strong>：① <code>POST</code> 验证密保答案（返回 <code>verified=true</code>）；② <code>PUT</code> 校验密保并重置新密码；失败累加 <code>security_fail_count</code>；超阈值触发熔断，返回 HTTP 400 (<code>code=1012</code>) 并带冷却等待倒计时。</td>
+              <td><code>{"code": 0, "message": "密码重置成功，请重新登录"}</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section id="sec-7">
+        <h2 class="section-title">第 7 部分：数据持久化设计</h2>
+        
+        <h3 class="sub-title">7.1 核心实体关系模型 (Mermaid ER Diagram)</h3>
+        <p>系统核心实体关系与业务外键映射结构如下：</p>
+
+        <div class="mermaid-box">
+          <div class="mermaid-title">图 7.1：数据模型实体关系图 (Entity-Relationship Diagram)</div>
+          <pre class="mermaid">
+erDiagram
+    User ||--o{ BabyProfile : "owns"
+    User ||--o{ TimelineEvent : "records"
+    User ||--o{ HealthRecord : "measures"
+    User ||--o{ ShoppingList : "creates"
+    User ||--o{ UserFavorite : "favorites"
+    User ||--o{ ChatSession : "chats"
+    User ||--o{ AuditLog : "triggers"
+
+    Product ||--o{ UserFavorite : "is_favorited"
+    Product ||--o{ ShoppingListItem : "contains_item"
+    BrandProfile ||--o{ Product : "manufactures"
+
+    ChatSession ||--o{ ChatMessage : "has_messages"
+    ShoppingList ||--o{ ShoppingListItem : "has_items"
+
+    User {
+        int id PK
+        string phone UK
+        string role
+        date due_date
+        date baby_birthday
+        boolean is_pregnant
+        string active_token_jti
+        int login_fail_count
+        int security_fail_count
+        datetime locked_until
+        string security_question
+        string security_answer
+    }
+
+    BabyProfile {
+        int id PK
+        int user_id FK
+        string name
+        string gender
+        date birthday
+        boolean is_born
+        boolean is_primary
+        float birth_weight
+        float birth_height
+        float birth_head_circumference
+    }
+
+    Product {
+        int id PK
+        int brand_profile_id FK
+        string name
+        string brand
+        string first_category
+        string second_category
+        json price_info
+        json specifications
+        json ratings
+        float overall_rating
+        boolean has_ccc_certification
+        boolean is_essential
+    }
+
+    SystemSetting {
+        int id PK
+        string registration_mode
+        int login_captcha_threshold
+        int login_freeze_threshold
+        int login_lock_seconds
+        int admin_session_timeout_minutes
+        int audit_retention_days
+    }
+
+    AuditLog {
+        int id PK
+        int user_id FK
+        string username
+        string action
+        string action_label
+        string target_type
+        string target_id
+        string target_name
+        text detail
+        string ip
+        datetime created_at
+    }
+          </pre>
+        </div>
+
+        <h3 class="sub-title">7.2 核心数据表约束与字段字典</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>表名 (Model)</th>
+              <th>核心字段</th>
+              <th>数据类型</th>
+              <th>约束条件</th>
+              <th>业务定义与架构作用</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>core_user</code> (<code>User</code>)</td>
+              <td><code>phone</code><br><code>role</code><br><code>active_token_jti</code><br><code>locked_until</code></td>
+              <td>VARCHAR(50)<br>VARCHAR(20)<br>VARCHAR(64)<br>DATETIME</td>
+              <td>UNIQUE, NOT NULL<br>DEFAULT 'mother'<br>BLANK=True<br>NULL=True</td>
+              <td>平台主账号实体；基于 JTI 的单端互踢与风控冷却时间戳。</td>
+            </tr>
+            <tr>
+              <td><code>core_babyprofile</code> (<code>BabyProfile</code>)</td>
+              <td><code>user_id</code><br><code>birthday</code><br><code>is_born</code><br><code>is_primary</code></td>
+              <td>INTEGER (FK)<br>DATE<br>BOOLEAN<br>BOOLEAN</td>
+              <td>CASCADE, INDEX<br>NOT NULL<br>DEFAULT True<br>DEFAULT False</td>
+              <td>宝宝与胎儿统一档案实体；<code>birthday</code> 承载预产期或出生日期，<code>is_primary</code> 驱动全站阶段跃迁。</td>
+            </tr>
+            <tr>
+              <td><code>core_product</code> (<code>Product</code>)</td>
+              <td><code>name</code><br><code>first_category</code><br><code>price_info</code><br><code>specifications</code><br><code>ratings</code></td>
+              <td>VARCHAR(200)<br>VARCHAR(30)<br>JSONField<br>JSONField<br>JSONField</td>
+              <td>NOT NULL, INDEX<br>CHOICES, INDEX<br>DEFAULT dict<br>DEFAULT dict<br>DEFAULT dict</td>
+              <td>母婴商品实体；JSON 格式弹性存储价格区间、专业技术参数与 5 维雷达图得分。</td>
+            </tr>
+            <tr>
+              <td><code>core_systemsetting</code> (<code>SystemSetting</code>)</td>
+              <td><code>registration_mode</code><br><code>admin_session_timeout_minutes</code><br><code>login_freeze_threshold</code></td>
+              <td>VARCHAR(20)<br>INTEGER<br>INTEGER</td>
+              <td>DEFAULT 'open'<br>DEFAULT 30<br>DEFAULT 10</td>
+              <td>单例配置表（ID=1）；控制开放/邀请注册、无操作超时与密码爆破风控阈值。</td>
+            </tr>
+            <tr>
+              <td><code>core_auditlog</code> (<code>AuditLog</code>)</td>
+              <td><code>action</code><br><code>target_type</code><br><code>ip</code><br><code>created_at</code></td>
+              <td>VARCHAR(50)<br>VARCHAR(50)<br>VARCHAR(64)<br>DATETIME</td>
+              <td>INDEX<br>BLANK=True<br>BLANK=True<br>AUTO_NOW_ADD, INDEX</td>
+              <td>全站不可篡改操作合规审计日志，保留责任人、目标对象、变更明细与 IP 地址。</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3 class="sub-title">7.3 索引设计与事务机制</h3>
+        <ul>
+          <li><strong>索引有效性与查询加速</strong>：<code>User.phone</code> 与 <code>InviteLink.token</code> 设有唯一索引保障一致性；<code>AuditLog.created_at</code>（降序索引）支撑高频分页审计；<code>Product.category</code> 与 <code>BabyProfile.user_id</code> 均建有外键/B-Tree 索引。</li>
+          <li><strong>事务机制与 ACID 边界</strong>：全站跨表一致性（如修改宝宝激活状态同时联动用户主档案预产期、修改系统安全设置同时记录审计日志）严格封装于 <code>transaction.atomic()</code> 事务块内。</li>
+          <li><strong>SQLite 高并发保护</strong>：默认开启 <strong>WAL (Write-Ahead Logging)</strong> 预写日志模式，实现“读写并发不阻塞”，杜绝数据库死锁。</li>
+        </ul>
+      </section>
+
+      <section id="sec-8">
+        <h2 class="section-title">第 8 部分：工程与安全保障</h2>
+        
+        <h3 class="sub-title">8.1 环境变量与配置分离规范</h3>
+        <p>系统严格遵循 <strong>12-Factor App</strong> 标准：配置通过根目录 <code>.env</code> 文件与代码彻底解耦，提供 <code>.env.example</code> 作为基准模板。</p>
+        <p><code>run.sh#update_env_var</code> 与 <code>run.sh#normalize_domains</code> 针对多 SNI 域名配置（支持空格、逗号、分号及引号混配，如 <code>SERVER_NAME="mengya.local, baby.local"</code>）增加了自动语法清洗、双引号包裹与读取前正则自愈，防止分隔符异常导致 Bash 语法解析崩溃或域名无法识别。</p>
+        <div class="note-box">
+            <strong>Nginx 反代配置智能差分比对与静默自愈引擎 (<code>run.sh#gen_nginx_config</code>)</strong>
+            <ul>
+                <li><strong>智能差分比对</strong>：预计算目标反代配置并与现有磁盘配置比对（自动忽略时间戳注释差异），配置完全一致时静默保留，杜绝冗余快照文件堆积并确保日常启动（<code>start</code>/<code>restart</code>）零干扰；</li>
+                <li><strong>参数漂移自动安全自愈</strong>：当检测到前端端口或 SNI 域名变更时，自动备份时间戳快照并同步重写 Nginx 反代配置，彻底消除端口不一致导致的 502 Bad Gateway 隐患；</li>
+                <li><strong>免打扰锁定机制</strong>：首行带 <code># MANAGED_BY_ADMIN_DO_NOT_OVERWRITE</code> 标记时绝对跳过覆盖，在专属命令（<code>add_nginx</code>）下提供交互式覆盖确认，为个性化定制提供多层次防护。</li>
+            </ul>
+        </div>
+        <div class="card" style="margin-top: 15px;">
+            <strong>SSL 证书目录默认本地化与自愈创建 (<code>run.sh#NGINX_CERT_DIR</code>)</strong>
+            <ul>
+                <li><strong>默认路径本地化</strong>：证书默认路径由宿主机全局目录 <code>/opt/service/nginx/ssl</code> 重构为当前项目目录下的 <code>ssl/</code>（<code>$SCRIPT_DIR/ssl</code>），消除对外部全局目录的强制依赖；</li>
+                <li><strong>目录缺失静默自愈</strong>：在脚本环境初始化阶段，增加目录存在性检测与 <code>mkdir -p</code> 自动创建逻辑，保障生成或读取证书前目录绝对就绪；</li>
+                <li><strong>兼容性与优先级保障</strong>：全面兼容 <code>.env</code> 与环境变量中显式配置的自定义路径，并由 <code>resolve_abs_path</code> 自动转为物理绝对路径。</li>
+            </ul>
+        </div>
+
+        <h3 class="sub-title">8.2 认证与安全防御纵深</h3>
+        <ul>
+          <li><strong>网络边界收敛</strong>：生产仅暴露 5173/443 端口，后端 8000 与数据库端口完全回环隔离。</li>
+          <li><strong>暴力破解防御</strong>：IP/账号双重防抖计数，阈值熔断冷却 (<code>code=1012</code>)。</li>
+          <li><strong>单端会话互踢</strong>：基于 JWT JTI 强校验，异地登录立即注销 (<code>code=1003</code>)。</li>
+          <li><strong>管理员特权免死金牌</strong>：管理员账号永不永久冻结，仅实施强制等待，防 DoS 锁死。</li>
+          <li><strong>管理员空闲超时踢出</strong>：30 分钟无操作自动注销 (<code>RequireAuth</code> 跨 Tab 协同引擎)。</li>
+          <li><strong>全站操作审计</strong>：全量管理行为、权限变更、状态重置物理落盘至 <code>AuditLog</code>。</li>
+        </ul>
+
+        <h3 class="sub-title">8.3 部署构建流水线与双路径自愈保障</h3>
+        <ol>
+          <li>执行 <code>npm run build</code> 生成生产 SPA 静态包。</li>
+          <li>将产物 <code>dist/index.html</code> 复制至 Django <code>templates/index.html</code>；<code>dist/assets/*</code> 复制至 <code>static/assets/</code>。</li>
+          <li>执行 <code>python manage.py collectstatic --noinput</code> 完成静态资源聚合。</li>
+          <li><strong>胎教故事双路径自愈路由 (<code>config/urls.py#L6-L17</code>)</strong>：
+            <pre><code>def serve_fetal_story(request, path):
+    primary_dir = settings.BASE_DIR / "static" / "fetal-stories"
+    fallback_dir = settings.BASE_DIR / "frontend" / "public" / "fetal-stories"
+    if (primary_dir / path).is_file():
+        return serve(request, path, document_root=primary_dir)
+    return serve(request, path, document_root=fallback_dir)</code></pre>
+            移出 Git 仓库中 32MB 重复大图的同时，通过动态双路径路由保障本地裸机与容器环境下 100% 杜绝 404 破图。
+          </li>
+        </ol>
+      </section>
+
+      <section id="sec-9">
+        <h2 class="section-title">第 9 部分：综合问题排查与渐进演进路线图</h2>
+        
+        <h3 class="sub-title">9.1 五维技术债清单</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>维度</th>
+              <th>现存技术债与代码坏味道</th>
+              <th>风险等级</th>
+              <th>治理手段与目标</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>1. 代码质量</strong></td>
+              <td><code>apps/core/views.py</code> <strong>单文件 3,363 行</strong>，聚集 43 个视图单元；业务逻辑严重堆砌在 Controller 中，缺乏独立的 Service 抽象与单元测试。</td>
+              <td><span class="badge-status badge-security">P0 (极高)</span></td>
+              <td>实施<strong>绞杀者重构</strong>：将 <code>views.py</code> 拆解为 <code>views/</code> 领域目录，将风控与认证逻辑下沉至 <code>services/</code>。</td>
+            </tr>
+            <tr>
+              <td><strong>2. 高并发性能</strong></td>
+              <td>全站静态文件（含胎教故事、图片、React assets）由 Django 同步进程直发，高并发下消耗 Python 工作线程。</td>
+              <td><span class="badge-status badge-refactored">P1 (高)</span></td>
+              <td>生产环境通过 Nginx 拦截静态资源路径（<code>/static/</code>, <code>/assets/</code>, <code>/fetal-stories/</code>），实施零拷贝直发。</td>
+            </tr>
+            <tr>
+              <td><strong>3. 架构扩展性</strong></td>
+              <td>单一 Django App（<code>apps/core</code>）承载全平台 20 个业务实体模型与全部接口，模块边界模糊。</td>
+              <td><span class="badge-status badge-baseline">P2 (中)</span></td>
+              <td>渐进式拆分子 App：<code>apps/authentication</code>、<code>apps/baby</code>、<code>apps/catalog</code>、<code>apps/ai_assistant</code>。</td>
+            </tr>
+            <tr>
+              <td><strong>4. 安全边界</strong></td>
+              <td>密保答案采用简单散列对比，缺少基于 PBKDF2 的加盐散列保护；未实施严格的上传文件 MIME 类型白名单防御。</td>
+              <td><span class="badge-status badge-refactored">P1 (高)</span></td>
+              <td>强化安全工具库，密保与敏感数据统一接入 Django <code>make_password</code> 标准加密体系。</td>
+            </tr>
+            <tr>
+              <td><strong>5. 自动化运维</strong></td>
+              <td>缺少端到端自动化测试流水线（CI/CD），代码提交依赖人工脚本验证。</td>
+              <td><span class="badge-status badge-baseline">P2 (中)</span></td>
+              <td>配置 GitHub Actions / 本地自动化回归测试（pytest + Playwright），实现代码提交自动质量门禁。</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <h3 class="sub-title">9.2 渐进式演进路线图 (Mermaid Gantt 甘特图)</h3>
+        <div class="mermaid-box">
+          <div class="mermaid-title">图 9.1：系统架构治理与渐进演进路线图 (Architecture Evolution Gantt)</div>
+          <pre class="mermaid">
+gantt
+    title 萌芽平台架构治理与渐进演进路线图
+    dateFormat  YYYY-MM-DD
+    section P0 核心代码解耦与稳态治理 (第1至2周)
+    views.py 绞杀者模式目录与防腐层建立 :active, p0_1, 2026-10-01, 4d
+    核心风控与认证逻辑下沉 Service 层   :p0_2, after p0_1, 5d
+    核心接口单元测试覆盖 (覆盖率达标80%) :p0_3, after p0_2, 5d
+    section P1 性能优化与生产加固 (第3至4周)
+    Nginx 静态资源零拷贝直发配置优化   :p1_1, 2026-10-18, 4d
+    SQLite WAL 模式与并发锁优化      :p1_2, after p1_1, 3d
+    密保安全算法升级与敏感数据加盐    :p1_3, after p1_2, 4d
+    section P2 领域多App拆分与扩展 (第5至8周)
+    apps_core 拆分为 4 个高内聚子App  :p2_1, 2026-11-01, 14d
+    CI_CD 自动化回归流水线搭建       :p2_2, after p2_1, 7d
+    多家庭与多角色多租户能力探索      :p2_3, after p2_2, 10d
+          </pre>
+        </div>
+
+        <h3 class="sub-title">9.3 针对 views.py 的“绞杀者模式 (Strangler Pattern)”重构实施方案</h3>
+        <p>为避免“大爆炸式重构”引发业务中断，针对 3,363 行的 <code>views.py</code> 采用绞杀者模式分步演进：</p>
+        
+        <pre><code>[现有旧结构]                                  [重构后新结构]
+apps/core/                                    apps/core/
+  └── views.py (3,363行 上帝文件)                ├── views/                     # 拆解后的纯 HTTP 视图目录
+                                                │   ├── __init__.py            # 向后兼容导出
+                                                │   ├── auth_views.py          # 登录/注册/验证码
+                                                │   ├── baby_views.py          # 宝宝与孕育阶段
+                                                │   ├── product_views.py       # 商品与比价
+                                                │   ├── ai_views.py            # AI 对话与会话
+                                                │   └── admin_views.py         # 用户管理与审计日志
+                                                ├── services/                  # 下沉的核心领域服务
+                                                │   ├── auth_service.py        # 纯业务：认证/免死金牌/会话
+                                                │   ├── risk_service.py        # 纯业务：动态冷却/熔断计数
+                                                │   └── stage_service.py       # 纯业务：生命周期推导
+                                                └── urls.py                    # 无感平滑路由</code></pre>
+
+        <ol>
+          <li><strong>第一步：建立目录防腐层</strong>：创建 <code>apps/core/views/</code> 目录，在 <code>apps/core/views/__init__.py</code> 中通过 <code>from ..views_legacy import *</code> 保持所有旧视图导入符号完全不变，确保 <code>urls.py</code> 零修改。</li>
+          <li><strong>第二步：剥离高内聚服务层</strong>：将 <code>views.py#L290-L430</code> 中的密码校验、锁定等待计算、管理员免死金牌提取至 <code>services/auth_service.py</code>；将密保尝试熔断下沉至 <code>services/risk_service.py</code>。</li>
+          <li><strong>第三步：逐个视图模块迁移</strong>：依次切出 <code>auth_views.py</code>、<code>product_views.py</code>、<code>admin_views.py</code>，Controller 仅保留参数校验与 Service 调用。</li>
+          <li><strong>第四步：物理销毁旧文件</strong>：当 43 个视图全部迁移完毕并跑通测试后，彻底删除旧 <code>views.py</code>。</li>
+        </ol>
+      </section>
+
+      <section id="sec-conclusion">
+        <h2 class="section-title">架构审计与重构裁决总结</h2>
+        <div class="callout callout-success">
+          <div class="callout-title">🏆 交付成果与总结</div>
+          <p>本文档完整交付了 <code>mengya-local</code> 平台的<strong>权威 PSD 系统设计与工程重构决策</strong>：</p>
+          <ul>
+            <li><strong>事实真相严密对齐</strong>：核准了前端合并托管于 Django、单端口暴露、管理员无操作超时、静态资源双路径自愈等最新架构事实。</li>
+            <li><strong>架构模式与决策明确</strong>：否定了推倒重写的非理性重构，确立了“维持 Django 一体化单体，实施视图层绞杀者解耦”的最高 ROI 治理路线。</li>
+            <li><strong>端到端工程规格就绪</strong>：提供了详尽的前后端通信规范、8 个核心 API 契约、数据持久化 ER 结构与分期治理实施方案，可作为后续研发与演进的基石指南。</li>
+          </ul>
+        </div>
+      </section>
+    
+    <section class="section" id="section-10-8">
+      <h2>10.8 数据库交互式重配链路修复与全参连接自定义规范 (v1.45)</h2>
+      <h3>10.8.1 架构设计背景与根因治理</h3>
+      <p>治理了 --reconfig 参数在缺省子命令时回退为 help、restart 维护命令过早返回、后台无 TTY 误伤显式交互以及传统版端口检测提早 return 的 4 重缺陷，实现交互式向导 100% 稳定唤醒。</p>
+      <h3>10.8.2 全参数连接信息自定义支持</h3>
+      <p>全面支持 --db-user、--db-pass、--db-name、--db-port、--db-host 及 --database-url 命令行参数，并自动双向持久化至 .env，满足多场景数据库配置定制需求。</p>
+    </section>
+
+</main>
+  </div>
+
+<div class="card" style="margin-top:20px;border-left:4px solid #10b981;padding:16px;background:var(--bg-card, #fff);">
+  <h3 style="margin-top:0;color:#10b981;">双版本数据库存储物理隔离规范 (v1.38)</h3>
+  <p>系统为传统本地版 (<code>mengya-local</code>) 与容器微服务版 (<code>mengya-docker</code>) 建立了底层数据的 <strong>100% 物理硬隔离机制</strong>：</p>
+  <ul>
+    <li><strong>传统本地版</strong>：默认严格固化使用宿主机独立单文件 SQLite (<code>mengya-local/db.sqlite3</code>)，切断上级目录环境变量污染，开箱即用；</li>
+    <li><strong>Docker 容器版</strong>：使用专属 PostgreSQL 18 容器，数据持久化于命名卷 <code>pgdata</code>，端口 5432 仅在 Compose 内网暴露，不对宿主机映射；</li>
+    <li>两者在数据存储介质、物理路径与网络访问上完全解耦，彻底杜绝数据交叉与冲突。</li>
+  </ul>
+</div>
+
+
+<div style="margin-top:24px;padding:18px 24px;border-radius:8px;border-left:4px solid #3b82f6;background:var(--bg-card, #fff);">
+  <h3 style="margin-top:0;color:#3b82f6;">多数据库部署模式自适应架构与交互式向导规范 (v1.40)</h3>
+  <p>系统为传统本地版提供了三大多态数据库部署模式与智能化决策向导：</p>
+  <ul>
+    <li><strong>模式 1：SQLite 本地化单文件 (<code>sqlite</code>, 严格默认推荐)</strong>：零额外数据库容器，整站常驻约 50MB 内存，数据持久化于 <code>mengya-local/db.sqlite3</code>，与 Docker 版数据 <strong>100% 物理硬隔离</strong>。</li>
+    <li><strong>模式 2：共享已有 PostgreSQL 实例 (<code>shared</code>)</strong>：共用宿主机已有 PG 容器（如 <code>pgvector-18</code>），自动幂等创建应用专属库 <code>mengya_local</code> 与专属账号，与 Docker 版专属库 <code>mengya</code> 形成库级与权限级物理隔离。</li>
+    <li><strong>模式 3：独立专属 PostgreSQL 容器 (<code>dedicated</code>)</strong>：启动专属容器 <code>mengya_local-pg</code> (端口 5433)，应用 80MB 内核微服务调优。</li>
+    <li><strong>本地镜像严格就地复用</strong>：优先复用本地已有 PG 镜像，严禁联网重复下载。</li>
+    <li><strong>定时任务 / Cron / 重启全静默免交互</strong>：<code>restart</code>、<code>stop</code>、<code>status</code> 天然免交互；首次配置持久化至 <code>.env</code>；非交互终端/定时任务自动采用推荐选项防挂起；支持 <code>--reconfig</code> 重新唤醒向导。</li>
+  </ul>
+</div>
+
+
+<div style="margin-top:24px;padding:18px 24px;border-radius:8px;border-left:4px solid #10b981;background:var(--bg-card, #fff);">
+  <h3 style="margin-top:0;color:#10b981;">运维管理脚本组件化解耦与 bin/ 目录模块化治理规范 (v1.41)</h3>
+  <p>系统对 <code>run.sh</code> 进行了架构解耦：主入口仅保留核心启停流程与参数分发，专业能力全部下沉至 <code>bin/</code> 目录：</p>
+  <ul>
+    <li><code>bin/env.sh</code>：基础环境、.env 读写同步、绝对路径规范、域名规约、缓存清理、重启会话全量吊销；</li>
+    <li><code>bin/process.sh</code>：跨平台端口探针、进程树递归终止、PID 管理、多进程协同停止；</li>
+    <li><code>bin/python.sh</code>：Python 解释器侦测、虚拟环境依赖保障；</li>
+    <li><code>bin/db.sh</code>：硬件探针、3大数据库模式决策向导（严格默认 SQLite）、共享 PG 容器内 <code>mengya_local</code> 专属库与账号幂等创建；</li>
+    <li><code>bin/nginx.sh</code>：SAN 多域名证书签发、Nginx 反代配置写入、带时间戳快照防误触机制；</li>
+    <li><code>bin/data.sh</code>：种子数据与全量样例初始化；</li>
+    <li><strong>加载守卫保障</strong>：<code>run.sh</code> 循环检测并加载 <code>bin/*.sh</code>，缺失即预警退出，功能与参数 100% 保持一致。</li>
+  </ul>
+</div>
+
+
+<div style="margin-top:24px;padding:18px 24px;border-radius:8px;border-left:4px solid #f43f5e;background:var(--bg-card, #fff);">
+  <h3 style="margin-top:0;color:#f43f5e;">孕育阶段全域自适应协同规范：胎教故事周数智能跳转与交互对齐 (v1.42)</h3>
+  <p>为消除用户在不同母婴功能模块间跳转时的体验割裂，胎教故事页面全面对齐孕期周历与孕期食谱的阶段感知能力：</p>
+  <ul>
+    <li><strong>智能自适应跳转</strong>：订阅 <code>useAuthStore</code> 阶段状态，用户配置孕周后进入页面自动定位至当前孕周（17~40周）；</li>
+    <li><strong>医学特性平滑适配</strong>：胎儿听觉始于孕17周，孕早期用户（1~16周）进入时智能吸附至第17周，并展示科普温情提示框；</li>
+    <li><strong>当前孕周多态高亮</strong>：在周选择器中为用户真实孕周渲染专属强调环（<code>ring-2 ring-brand-400</code>），支持一键“返回我的孕周”；</li>
+    <li><strong>全端双模式协调</strong>：提示横幅、周标签、卡片与弹窗全量适配黑夜/白天主题色彩规范。</li>
+  </ul>
+</div>
+
+
+<div style="margin-top:24px;padding:18px 24px;border-radius:8px;border-left:4px solid #10b981;background:var(--bg-card, #fff);">
+  <h3 style="margin-top:0;color:#10b981;">run.sh 脚本模块化拆分与自定义变量独立解耦规范 (v1.46)</h3>
+  <p>针对运维脚本代码膨胀与高耦合问题，全面重构为轻量级微内核调度器：</p>
+  <ul>
+    <li><strong>微内核微型化架构</strong>：<code>run.sh</code> 行数缩减 75%~80%，专职环境引导与模块动态分发；</li>
+    <li><strong>独立自定义变量模块 (<code>bin/config.sh</code>)</strong>：全量收拢端口、管理员账密、域名与数据库连接参数解析、默认值声明与 <code>.env</code> 自动持久化；</li>
+    <li><strong>生命周期管理收归</strong>：Docker 集群收归 <code>bin/docker.sh</code>，传统进程管理收归 <code>bin/process.sh</code>；</li>
+    <li><strong>统一帮助文档隔离 (<code>bin/help.sh</code>)</strong>：完全剥离长文本帮助输出与实例展示，保障主流程极简清爽。</li>
+  </ul>
+</div>
+
+<div style="background:#f8fafc;border-left:4px solid #3b82f6;padding:16px 20px;margin-top:20px;border-radius:4px;">
+  <h3 style="margin-top:0;color:#2563eb;">数据库全量变量集中归集于 config.sh 治理规范 (v1.47)</h3>
+  <p>针对此前数据库配置参数分散在多个脚本以及存在重复硬编码后备的问题，确立集中归集规范：</p>
+  <ul>
+    <li><strong>单点集中声明 (<code>bin/config.sh</code>)</strong>：全量收拢 <code>APP_NAME</code>、<code>DB_MODE</code>、<code>POSTGRES_*</code> 账密与端口、<code>DATABASE_URL</code>、<code>SQLITE_PATH</code> 等全套变量；</li>
+    <li><strong>三级优先级保障</strong>：严格遵从 <code>CLI 显式参数</code> &gt; <code>.env 本地持久化</code> &gt; <code>config.sh 默认定义</code>；</li>
+    <li><strong>消除跨模块冗余 Fallback</strong>：<code>bin/db.sh</code> 与 <code>bin/process.sh</code> 彻底清理 <code>:-mengya_local</code> 等重复后备值，直接消费规范变量；</li>
+    <li><strong>双版本隔离无虞</strong>：传统版继续默认严格保持本地单文件 SQLite 独立存储，与 Docker 版本 100% 物理硬隔离。</li>
+  </ul>
+</div>
+
+
+<div style="background:#f8fafc;border-left:4px solid #10b981;padding:16px 20px;margin-top:20px;border-radius:4px;">
+  <h3 style="margin-top:0;color:#059669;">传统模式专属 PG 容器联动终止与 unless-stopped 重启策略规范 (v1.48)</h3>
+  <p>解决传统模式使用 PG 启动后执行程序停止时后台数据库容器残留的问题，并统一规范重启策略：</p>
+  <ul>
+    <li><strong>程序停机联动终止 (<code>stop_db_container</code>)</strong>：<code>./run.sh stop</code> 联动停止专属 PG 容器（<code>${APP_NAME}-pg</code>），杜绝后台孤立容器残留；</li>
+    <li><strong>共享模式安全边界</strong>：仅定向终止本应用独立专属容器，严禁误伤宿主机共享 PG 实例；</li>
+    <li><strong>重启策略全面纠偏至 <code>unless-stopped</code></strong>：Compose 编排与 Docker CLI 禁用 <code>always</code>，并针对存量容器执行 <code>docker update --restart unless-stopped</code> 动态纠偏。</li>
+  </ul>
+</div>
+
+
+<div style="background:#f8fafc;border-left:4px solid #3b82f6;padding:20px 24px;margin-top:24px;border-radius:8px;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+  <h3 style="margin-top:0;color:#2563eb;font-size:18px;">双版本同机共存 6 种数据库部署组合矩阵与全维度数据隔离规范 (v1.49)</h3>
+  <p style="color:#475569;margin-bottom:12px;">确立传统版本（<code>mengya-local</code>）与 Docker 容器版本（<code>mengya-docker</code>）同机部署下的全生命周期隔离与 6 种部署组合防冲突矩阵：</p>
+  <ul style="color:#334155;line-height:1.8;margin-bottom:16px;">
+    <li><strong>命名空间与容器名隔离</strong>：传统版 <code>APP_NAME</code> 默认为 <code>mengya_local</code>（专属容器 <code>mengya_local-pg</code>）；Docker 版 <code>APP_NAME</code> 默认为 <code>mengya_docker</code>（专属容器 <code>mengya_docker-pg</code>），容器命名互不干扰；</li>
+    <li><strong>数据库凭据与实例名隔离</strong>：传统版默认用户/库为 <code>mengya_local</code>，Docker 版为 <code>mengya_docker</code>，无论是独立容器还是共享容器模式均具备完全专有的库和账号；</li>
+    <li><strong>容器生命周期重启策略</strong>：所有容器（<code>backend</code>、<code>redis</code>、<code>worker</code>、<code>db</code>）统一使用 <code>restart: unless-stopped</code>，禁止使用 <code>always</code>。</li>
+  </ul>
+  <h4 style="color:#1e293b;margin:14px 0 8px 0;font-size:15px;">同机共存 6 种数据库部署组合矩阵</h4>
+  <div style="overflow-x:auto;">
+    <table style="width:100%;border-collapse:collapse;font-size:13px;text-align:left;background:#ffffff;border:1px solid #cbd5e1;border-radius:6px;">
+      <thead>
+        <tr style="background:#f1f5f9;color:#1e293b;border-bottom:2px solid #cbd5e1;">
+          <th style="padding:8px 10px;border:1px solid #cbd5e1;">组合序号</th>
+          <th style="padding:8px 10px;border:1px solid #cbd5e1;">传统版 (mengya-local) 模式</th>
+          <th style="padding:8px 10px;border:1px solid #cbd5e1;">Docker版 (mengya-docker) 模式</th>
+          <th style="padding:8px 10px;border:1px solid #cbd5e1;">传统版存储与路径</th>
+          <th style="padding:8px 10px;border:1px solid #cbd5e1;">Docker版存储与路径</th>
+          <th style="padding:8px 10px;border:1px solid #cbd5e1;">端口协同</th>
+          <th style="padding:8px 10px;border:1px solid #cbd5e1;">隔离保障机制</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;font-weight:bold;">组合 1</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">SQLite</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">SQLite</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">宿主机文件: mengya-local/db.sqlite3</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">容器挂载: mengya-docker/data/db.sqlite3</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">5173 vs 5174</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">单文件存储物理隔离，零端口冲突</td>
+        </tr>
+        <tr style="background:#f8fafc;">
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;font-weight:bold;">组合 2</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">SQLite</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">独立 PG (dedicated)</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">宿主机文件: mengya-local/db.sqlite3</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">专属容器 mengya_docker-pg (数据卷 mengya_docker_pgdata)</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">Docker expose 5432 不占宿主端口</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">本地文件 vs 容器化 PG，介质完全异构隔离</td>
+        </tr>
+        <tr>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;font-weight:bold;">组合 3</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">SQLite</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">共享 PG (shared)</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">宿主机文件: mengya-local/db.sqlite3</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">共享 PG 容器 (库名 mengya_docker)</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">Docker 加入网络直连</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">本地文件 vs 共享 PG 专有库，互不干扰</td>
+        </tr>
+        <tr style="background:#f8fafc;">
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;font-weight:bold;">组合 4</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">独立 PG (dedicated)</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">SQLite</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">专属容器 mengya_local-pg (数据卷 mengya_local_pgdata)</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">容器挂载: mengya-docker/data/db.sqlite3</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">传统版占 5432，Docker 零端口依赖</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">传统专属 PG vs Docker 独立 SQLite，介质解耦</td>
+        </tr>
+        <tr>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;font-weight:bold;">组合 5</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">独立 PG (dedicated)</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">独立 PG (dedicated)</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">专属容器 mengya_local-pg (用户 mengya_local)</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">专属容器 mengya_docker-pg (用户 mengya_docker)</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">传统版占 5432，Docker expose 5432 零冲突</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">容器名、数据卷、账号、库名全面隔离</td>
+        </tr>
+        <tr style="background:#f8fafc;">
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;font-weight:bold;">组合 6</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">独立 PG (dedicated)</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">共享 PG (shared)</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">专属容器 mengya_local-pg (数据库 mengya_local)</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">复用 mengya_local-pg，独占数据库 mengya_docker</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">自动 connect 接入 Compose 内网</td>
+          <td style="padding:8px 10px;border:1px solid #cbd5e1;">数据库级严格隔离，专有用户与权限，表互不可见</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+
+<div class="card" style="margin-top:20px;border-left:4px solid #4f46e5;padding:16px;background:var(--bg-card, #fff);">
+  <h3 style="margin-top:0;color:#4f46e5;">10.13 传统模式独立专属 PG 默认镜像锁定 (PG15) 与宿主机越界探测解耦自愈规范 (v1.50)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.13.1 架构缺陷与根因剖析</h4>
+  <p style="color:#334155;line-height:1.6;">治理了 <code>detect_best_pg_image()</code> 越界偷取宿主机其他运行容器镜像、扫描规则优先匹配 pgvector、默认 PG15 优先权被架空以及 <code>.env</code> 误写死 <code>DB_IMAGE=pgvector/pgvector:pg18</code> 导致的永久锁死缺陷。</p>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.13.2 治理改造与技术规范</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>探针越界解耦</strong>：彻底移除从宿主机运行容器中偷取镜像逻辑，保障专属容器镜像纯洁性；</li>
+    <li><strong>优先级阶梯重构</strong>：本地 <code>postgres:15-alpine</code> &gt; 兼容官方 PG15 &gt; 官方轻量 alpine &gt; 兜底自动下载 <code>postgres:15-alpine</code>；</li>
+    <li><strong>配置纠偏机制</strong>：默认模式不污染 <code>.env</code>，自动纠偏清空历史残留的 <code>pg18/pgvector</code> 配置；</li>
+    <li><strong>容器与数据卷自愈</strong>：启动前校验已有容器镜像，不匹配则自动重建；跨大版本自动重置旧存储卷以防初始化崩溃；</li>
+    <li><strong>存储路径统一</strong>：PostgreSQL 数据目录统一规范为 <code>/var/lib/postgresql/data</code>。</li>
+  </ul>
+</div>
+
+
+<div class="card" style="margin-top:20px;border-left:4px solid #4f46e5;padding:16px;background:var(--bg-card, #fff);">
+  <h3 style="margin-top:0;color:#4f46e5;">10.14 孕育生命周期精准阶段计算、菜单权限阶段自适应识别与管理员定制分层防御体系 (v1.53)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.14.1 业务诉求与历史缺陷根因剖析</h4>
+  <p style="color:#334155;line-height:1.6;">治理了宝宝年龄粗糙显示为总月龄/天数、孕周四舍五入失真、菜单权限缺乏阶段感知以及管理员在后台配置菜单权限后用户端不生效的核心安全与体验缺陷。</p>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.14.2 治理改造与技术规范</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>宝宝年龄与孕周高人性化展示</strong>：宝宝年龄规范为 <code>X岁X个月X天（总月龄）</code>（如 <code>2岁8个月5天（32个月）</code>），支持整岁整月自适应；孕周基于 280 天医学标准规范为 <code>孕X周X天</code>；</li>
+    <li><strong>菜单权限阶段精准自适应</strong>：新注册或切换阶段时自动推导菜单权限，已出生宝宝自动禁用孕期专属页面（周历/食谱/胎教故事）并启用幼儿百科；怀孕中反之；</li>
+    <li><strong>管理员定制最高优先级机制</strong>：管理员后台显式调整打上 <code>_admin_customized</code> 保护标记，用户切换阶段不冲掉管理员配置；提供重置回阶段默认入口；</li>
+<li><strong>权限生效多层纵深防御</strong>：修复 <code>authStore.ts</code> 权限空值穿透判真缺陷；首页快捷入口与核心模块全面过滤；<code>RequireAuth.tsx</code> 部署路由防抖、前台获焦与 15s 定时静默拉取；后端 ViewSet 强化 403 越权拦截。</li>
+  </ul>
+</div>
+
+
+<div class="card" style="margin-top:20px;border-left:4px solid #f97316;padding:16px;background:var(--bg-card, #fff);">
+  <h3 style="margin-top:0;color:#f97316;">10.15 健康中心 BMI 动态图表与 SearXNG 双通道改造体系 (v1.54)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.15.1 业务背景与改造目标</h4>
+  <p style="color:#334155;line-height:1.6;">健康中心新增「体重/BMI分析」Tab，补齐四卡片闭环：按天补录打卡（移除冗余勾选）→ 多维度时序图表看板（趋势/增量双视图 + 时间跨度筛选）→ 历史打卡表（删除二次确认 + 看板联动）→ 医学预警 + WS/T 801-2022 曲线 + 平台与 SearXNG 双通道食谱 + 生活关怀。</p>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.15.2 架构设计与实现落地</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>零迁移复用成熟表</strong>：测量打卡写入 <code>HealthRecord</code>（<code>record_type=prenatal_exam|growth_measurement</code>），<code>exam_items</code> JSONField 扩展承载 <code>waist_circumference / pre_weight / bmi / actual_gain / gain_status / is_twins</code>，零数据库迁移；</li>
+    <li><strong>医学计算引擎</strong>：<code>medical_calculator.py</code> 落地 WS/T 801-2022 单/双胎分级与 1~40 周推荐区间/中位线曲线契约（<code>curve.target_median</code>），4 级医学预警（剧吐脱水 / 子痫前期 / FGR 滞后 / GDM 控糖）；</li>
+    <li><strong>双通道食谱服务</strong>：<code>diet_recommendation_service.py</code> 平台库 <code>[平台优选: ID]</code> ↔ SearXNG <code>[外部检索: 域名]</code> ↔ 本地指南兜底，禁忌食材全量扫描；</li>
+    <li><strong>SearXNG 私有化搜索客户端</strong>：<code>searxng_client.py</code> 固化 <code>SEARXNG_BASE_URL/TIMEOUT/FORMAT/ENGINES/HEALTH_DOMAINS</code> 环境变量，0.5s 极速探针 + 快速熔断安全降级，支持连通测试与 <code>.env</code> 同步持久化；</li>
+    <li><strong>接口契约</strong>：<code>GET/POST /api/health/bmi-analysis/</code>（时序拉取 + 打卡自动持久化 + 综合评估 + 双通道食谱 + timeseries 全量回传）；管理员 <code>GET/PUT /api/admin/searxng-config/</code> 与 <code>POST /api/admin/searxng-config/test/</code>；</li>
+    <li><strong>前端组件</strong>：<code>BmiFormCard</code>（按天补录/腹围/单双胎/代谢病史）→ <code>BmiTimeSeriesBoard</code>（ECharts 趋势通道带+中位线+实测曲线 / Δkg 变色柱状 + 视图切换 + 近7天/近1月/全周期筛选）→ <code>BmiHistoryTable</code> → 医学预警 + WS/T 曲线看板 + 双通道食谱 + 运动心理关怀；管理员入口 <code>SearXNGConfigModal</code>（仅 is_staff 可见，支持在线测试与同步 .env）。</li>
+  </ul>
+</div>
+
+<div class="card" style="margin-top:20px;border-left:4px solid #f97316;padding:16px;background:var(--bg-card, #fff);">
+  <h3 style="margin-top:0;color:#f97316;">10.16 统一健康打卡 · 孕周引擎 · AI 实时检索体系 (v1.55)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.16.1 业务背景与改造目标</h4>
+  <p style="color:#334155;line-height:1.6;">修复 <code>growth_measurement</code> 一词两义（产后妈妈打卡 ↔ 宝宝测量混写）导致的跨页面数据串扰；孕周与日期缺乏一致性校验，矛盾数据可入库；产检与生长两套录入表单互不相通、非孕期用户被迫使用孕期语义；AI 助手无实时检索能力且耗时指标失真。</p>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.16.2 架构设计与实现落地</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>记录语义重构（零迁移）</strong>：产后妈妈打卡复用 <code>prenatal_exam</code> + <code>exam_items.stage="postpartum"</code> 标记（新增 <code>stage / postpartum_months</code> 字段），宝宝测量独占 <code>growth_measurement</code>，三页面口径彻底分离（孕产记录 = prenatal_exam 全量 + 阶段徽章；生长曲线 = growth_measurement 专属；BMI 时序 = prenatal_exam 专属）；</li>
+    <li><strong>孕周一致性引擎</strong>：<code>gestation_engine.py</code> 双基准推算（预产期 280 天医学模型优先 ↔ 最早打卡锚点线性外推），<code>MAX_WEEK_DEVIATION=1</code> 周矛盾拦截（<code>HealthRecordSerializer</code> 与 BMI 接口双重校验，超偏差 400 + "该日期应为孕 X 周"精确提示）；身高 / 孕前体重基线自动继承，首次打卡实测初始化（<code>baseline_initialized=true</code>）；</li>
+    <li><strong>统一健康打卡弹窗</strong>：<code>UnifiedHealthCheckIn.tsx</code> 三选一记录对象（孕期产检 / 产后恢复 / 宝宝生长测量）按档案智能默认（<code>is_pregnant</code> → 孕期、<code>baby_birthday</code> → 宝宝）；日期补录自动推算孕周 / 产后天数 / 宝宝月龄；妈妈打卡走 <code>bmi-analysis</code> 接口、宝宝测量走 <code>healthApi.create</code>；</li>
+    <li><strong>AI 实时检索管线</strong>：<code>web_search.search_for_ai()</code> SearXNG 优先（毫秒级熔断）→ 不可用时按管理员开关 <code>AI_SEARCH_FALLBACK_ENABLED</code> 决策（默认关闭直接 AI 知识库回答 <code>status=unavailable</code>；开启回退多公网引擎 <code>status=fallback:引擎名</code>）；<code>_SEARCH_PATTERNS</code> 扩展母婴健康关键词，寒暄创作类不联网；<code>ai_chat</code> 响应新增 <code>search_status / sources</code>，<code>latency_ms</code> 修复为真实耗时；</li>
+    <li><strong>AI 前端状态透出</strong>：<code>AIAssistantPage</code> 消息级检索徽章（SearXNG 实时检索绿色 / 未接入实时检索灰色 / 公网引擎蓝色）+ 来源列表展开折叠 + 管理员头部 SearXNG 配置入口；<code>SearXNGConfigModal</code> 新增公网兜底开关并随配置接口同步 <code>.env</code>；</li>
+    <li><strong>验证结论</strong>：v1.55 冒烟测试 29/29 通过；浏览器全链路验证通过（三种打卡模式归档 / 孕周 5 周矛盾被 400 精确拦截 / 基线继承 / 生长曲线与孕产记录互不混数 / AI 灰色徽章降级提示 / 兜底开关默认关闭）。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.16.3 SearXNG 接入链路诊断增强与配置生效修复 (v1.55.1)</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>问题定位</strong>：用户反馈 AI 助手"未接入 SearXNG"——实测实例 <code>100.64.0.1:8090</code> 连通正常（<code>/healthz</code> 193ms、JSON 已开启），根因为 SearXNG 实例默认通用引擎全部被上游封禁（brave 限流、duckduckgo/qwant/startpage CAPTCHA、google 静默 0 结果、bing 返回无关结果），检索恒为 0 条；叠加平台侧缺陷：<code>SEARXNG_ENGINES</code> 配置从未在检索链路生效、"0 结果"与"不可达"混为 <code>unavailable</code>、连通测试 0 条仍报成功；</li>
+    <li><strong>修复落地</strong>：<code>SearXNGClient.search()</code> engines 为空时回退 <code>SEARXNG_ENGINES</code> 配置；<code>search_for_ai()</code> 新增 <code>searxng_empty</code> 精确状态（实例可达但 0 结果），前端新增橙色警示徽章；<code>test_connection()</code> 两跳诊断新增 <code>warning</code> 状态与 <code>unresponsive_engines</code> 失效引擎清单透出，弹窗橙色展示修复指引；</li>
+    <li><strong>验证结论</strong>：shell 实测 <code>search_for_ai</code> → <code>searxng_empty</code>、<code>test_connection</code> → <code>warning</code>（757ms + brave/duckduckgo/qwant/startpage 失效清单）；浏览器实测橙色徽章与弹窗诊断正常显示。实例侧引擎修复（更换出口 IP / 配置代理 / 启用可用引擎）由 SearXNG 部署机管理员执行。</li>
+  </ul>
+</div>
+
+<div class="card" style="margin-top:20px;border-left:4px solid #f97316;padding:16px;background:var(--bg-card, #fff);">
+  <h3 style="margin-top:0;color:#f97316;">10.17 健康中心信息架构重构与搜索引擎配置体系 (v1.56)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.17.1 业务背景与改造目标</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>搜索引擎可用性原则</strong>：SearXNG 不可用时不能影响用户使用，且需明确提示当前搜索引擎——v1.55.1 已确诊用户实例上游引擎全部被 CAPTCHA/限流封禁（检索恒 0 条），默认关闭的公网兜底使 AI 失去实时检索能力；</li>
+    <li><strong>配置入口分散</strong>：SearXNG 配置弹窗挂在健康中心 BMI 页与 AI 对话页，位置混乱，期望收敛至 AI 助手配置页；</li>
+    <li><strong>非孕期用户缺位</strong>：打卡/表单仅孕期与产后，备孕与日常体重管理用户无对应阶段；新增记录后列表偶发不显示（根因：浏览器缓存旧前端包）；</li>
+    <li><strong>看板只认孕期</strong>：WS/T 801-2022 全孕期走势看板对产后/非孕期无参考通道，且缺少标准 BMI 与当前 BMI 的直观展示；</li>
+    <li><strong>信息架构混乱</strong>：5 个平铺 Tab（孕产记录/生长曲线/体重BMI/疫苗/日历总览）对象归属与关联关系不清。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.17.2 架构设计与实现落地</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>搜索引擎三级降级（v1.56 默认开启兜底）</strong>：<code>AI_SEARCH_FALLBACK_ENABLED=True</code>（settings/.env/.env.example 三方同步）——SearXNG 无结果/不可达自动回退平台内置公网引擎（Bing 直连），徽章明确显示当前引擎（<code>公网实时检索（Bing）</code>）；三层状态 + <code>searxng_empty</code> 橙色诊断，AI 回答末尾注明「信息来源：当前搜索引擎」；</li>
+    <li><strong>配置入口收敛</strong>：<code>AIConfigPage</code>（<code>/settings/ai</code>）新增「搜索引擎配置」区块（实例地址/连通状态/兜底开关摘要 + 配置面板），BMI 页与 AI 对话页按钮移除；</li>
+    <li><strong>非孕期（备孕/日常）阶段</strong>：<code>stage=general</code> 零迁移复用 <code>prenatal_exam</code>——统一打卡新增「我·非孕期/备孕」模式、BMI 表单新增「非孕期/备孕」按钮、序列化器 <code>stage_type</code> 增 <code>general</code>（自动清空孕周/产后月龄）、医学计算器新增非孕期评估分支（标准 BMI 区间 18.5~23.9）；孕产记录/历史表阶段列显示「非孕期」；后端 <code>index.html</code> 强制 no-cache 根治旧前端缓存；</li>
+    <li><strong>BMI 状态卡 + 非孕期看板</strong>：三卡展示标准 BMI 区间（18.5~23.9）/ 当前测算 BMI（最新打卡实时计算 + 分类）/ 孕前 BMI 基线；时序看板纯非孕期自动切换为「体重走势 + BMI 18.5~23.9 体重参考带 + BMI 21 中位虚线」，孕期维持 WS/T 通道带；</li>
+    <li><strong>健康中心 4-Tab 重构</strong>：妈妈·孕产档案（明细列表 + BMI 分析全模块）/ 宝宝·生长档案（曲线 + WHO 男童 P50 参考线 + 测量记录表）/ 宝宝·疫苗计划（日历 + 接种状态 + 免疫规划清单 + 下一针建议按月龄）/ 健康时间轴（日历总览 + 任意日期点击补录弹窗预填日期）；页头「健康打卡」四模式为唯一录入入口，保存后联动刷新全部 Tab；</li>
+    <li><strong>其他优化</strong>：BMI 表单基线连续预填（身高/孕前体重自动带出）；时间轴补录；WHO P50 参考线（<code>GrowthChart</code> 按宝宝月龄插值对齐）；疫苗下一针建议（逾期红字提醒）。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.17.3 验证结论</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li>后端 <code>Django check</code> 通过；<code>stage=general</code> 序列化/评估冒烟通过（BMI 22.58 正常、文案「非孕期体重管理阶段」）；</li>
+    <li>浏览器全链路验证通过：4-Tab 结构、BMI 状态卡（当前 20.7 正常）、BmiFormCard 三阶段按钮、打卡弹窗四模式（无重复）、非孕期打卡归档（toast「已归档」+ 历史表阶段「非孕期」+ 明细徽章）、宝宝 WHO 参考线、疫苗下一针建议（乙肝第1剂·宝宝 32 个月）、时间轴点 15 日弹窗预填 2026-10-15、AI 配置页搜索区块（实例可达 + 兜底已开启）、AI 助手新消息蓝色「公网实时检索（Bing）· 5 条来源」徽章、BMI 页与 AI 页无配置入口、<code>Cache-Control: no-cache</code> 生效；验证数据已清理（用户历史记录保留）。</li>
+  </ul>
+</div>
+
+<div class="card" style="margin-top:20px;border-left:4px solid #f97316;padding:16px;background:var(--bg-card, #fff);">
+  <h3 style="margin-top:0;color:#f97316;">10.18 健康数据严谨性 · 列表管理 · 工程瘦身 · 临床赋能 (v1.57)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.18.1 业务背景与改造目标</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>数据严谨性缺位</strong>：打卡/BMI 归档/宝宝测量均无同日唯一性校验，同日反复提交产生重复记录污染时序图；打卡日期可任填未来日期；宝宝测量无数值范围提示；</li>
+    <li><strong>列表管理能力不足</strong>：三处数据列表（妈妈历史表/明细卡片流/宝宝测量表）仅支持逐条删除且无分页，数据增多后页面冗长、批量清理低效；删除确认交互三处不统一（window.confirm / 两段式按钮）；</li>
+    <li><strong>「收起本次分析结果」按钮体验缺陷</strong>：点击后清空 result——非孕期模式报告区块内容少视觉变化极小，且按钮随 result 消失无法再展开，被用户判定为"无反应"；</li>
+    <li><strong>权限模块欠账</strong>：<code>menu_health</code> 与 CRUD 权限描述仍为旧 5-Tab 语义；BMI 分析接口写库但仅校验菜单级权限，存在越权写入漏洞；</li>
+    <li><strong>工程三项阶段目标</strong>：主包体积瘦身（echarts/React 全家桶混装 ~1MB）、SearXNG 引擎配置手工输入低效 + 外部食谱卡片食材缺失、临床实用能力（A4 报告导出 / 蓝牙秤/Apple Health 数据导入）缺位。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.18.2 架构设计与实现落地</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>同日唯一 + 覆盖更新引擎</strong>：<code>HealthRecordViewSet.create</code> 与 <code>HealthBmiAnalysisView.post</code> 双链路查重（user + record_type + record_date，<code>UNIQUE_DATE_TYPES=(prenatal_exam, growth_measurement)</code>，疫苗豁免——同日可接种多剂）；命中返回 <code>409 + code 4090 + existing 摘要</code>，前端确认后携 <code>overwrite=true</code> 重发——妈妈链路后端原地更新当日记录并重新生成评估（<code>record_action=updated</code>），宝宝链路 <code>PATCH</code> 原记录；保留 id 与 created_at 不产生重复数据；</li>
+    <li><strong>未来日期硬拦截 + 宝宝数值软提示</strong>：serializer 层校验 record_date ≤ 今天（400 精确提示）+ 前端 date input <code>max=今天</code> 双防线；宝宝身高 30~140 / 体重 0.5~40 / 头围 25~60 之外仅作黄色警示不阻断录入；</li>
+    <li><strong>列表管理组件化</strong>：新增 <code>useListPagination</code> Hook（分页 + 页大小 localStorage 记忆）+ <code>PaginationBar</code>（页码省略号导航 + 5/10/20/50 选择器）+ <code>ConfirmDialog</code>（红色二次确认弹窗），四处列表接入（妈妈历史表/明细卡片流/宝宝测量表/疫苗全量记录区）；批量删除走后端 <code>batch-delete</code>（单事务 + 200 条/次上限 + 仅本人 + 逐条审计）；</li>
+    <li><strong>报告可逆折叠</strong>：<code>reportCollapsed</code> 状态 + 常驻切换按钮（Chevron 图标），收起仅隐藏区块不丢数据，重新分析自动展开；</li>
+    <li><strong>权限同步与越权修复</strong>：<code>PERMISSION_DEFINITIONS</code> 五项描述更新 4-Tab 语义（含 CSV 导入/批删能力说明）；BMI 接口补齐 <code>health_record_view</code>（GET 时序）与 <code>health_record_create</code>（POST 归档）细粒度校验，堵住被禁记录权限用户经分析接口绕过管控写库的漏洞；</li>
+    <li><strong>工程瘦身（阶段一）</strong>：<code>manualChunks</code> 分包（echarts 1MB / react-vendor 190KB / router 22KB / axios 51KB / pdf-tools 593KB 独立 chunk），主包由 ~1MB 减至 <b>453KB（gzip 116KB）</b>；<code>BmiTimeSeriesBoard</code> 重构为 init 一次 + <code>setOption({notMerge})</code> 热更新 + ResizeObserver 容器自适应，容器常驻挂载杜绝条件渲染重建实例；</li>
+    <li><strong>SearXNG 预设与食谱结构化（阶段二）</strong>：配置弹窗三档预设一键填入（国内优选 bing,sogou / 仅 bing / 国际组合 google,bing）+ ✓ 选中态 + 一键清空；<code>extract_ingredients_from_text()</code> 数量型/适量型双正则 + 动词干扰词过滤提取食材用量（菠菜100克、鸡蛋2个、牛奶250ml），自动补全外部推荐卡片 ingredients 字段；</li>
+    <li><strong>临床赋能（阶段三）</strong>：<code>HealthReportExport</code> A4 报告四区块（基本信息/评估结论/时序明细/免责声明）+ iframe 打印 + html2canvas/jsPDF 动态加载多页切片下载；<code>CsvImportModal</code> 双对象导入（mom/baby 模板、文件/粘贴/模板下载、解析预览+本地预检、冲突策略 skip|overwrite、逐行错误明细、500 条上限、基线继承），蓝牙健康秤/Apple Health 数据转 CSV 即可批量建档。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.18.3 验证结论</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li>后端冒烟 22 项全部通过（正则提取/BMI 链路 409+覆盖+未来日期/宝宝链路/疫苗同日两剂不查重/批量删除/CSV 导入逐行明细）；构建产物五独立 chunk 且 pdf-tools 按需加载；</li>
+    <li>浏览器全链路验证通过：三链路 409 覆盖确认（含当日已有数据摘要）、收起/展开可逆折叠、四处列表勾选/全选本页/批删确认（涉及清单展示）、分页与页大小 localStorage 记忆、批量删除精确清理、疫苗同日两剂 + 批删还原、A4 报告四区块 + PDF 实际下载、CSV 导入（skip 策略新增1/跳过1/失败2 含行级错误）、SearXNG 预设、权限矩阵新描述、修复版包 console 零 JS 错误；</li>
+    <li>测试期间发现并修复一个真实缺陷：<code>CsvImportModal</code> 的 useMemo 位于 <code>if (!isOpen) return null</code> 之后导致 React #310 hooks 数量不一致整树崩溃白屏，修复后（hooks 全部前置 + 注释固化规范）复验通过；</li>
+    <li>验证数据全部清理（12 条测试记录 + 冒烟脚本 + 下载 PDF 均回收站），用户原有数据与 <code>.env</code> 配置完好。</li>
+  </ul>
+</div>
+
+<div class="card" style="margin-top:20px;border-left:4px solid #f97316;padding:16px;background:var(--bg-card, #fff);">
+  <h3 style="margin-top:0;color:#f97316;">10.19 孕周锚点自动推算（孕x周x天）与报告区块归属优化 (v1.57.1)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.19.1 业务背景与改造目标</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>孕周自动推算断链</strong>：无预产期用户录入过一次孕期数据（如 2026-05-01 孕1周）后，再次打卡选其他日期孕周仍要求手填——后端 <code>gestation_engine</code> 双基准推算能力（预产期 280 天模型 &gt; 最早打卡锚点外推）未贯通到前端两条录入链路；</li>
+    <li><strong>粒度不足</strong>：孕周仅有整周展示，缺少「孕x周x天」天粒度（05-01 孕1周 → 05-02 应显示孕1周1天）；</li>
+    <li><strong>报告区块归属不清</strong>：「展开/收起分析报告」按钮挂在模块头部（与导出按钮并排），距报告内容区过远，用户无法分辨"分析报告"指哪部分内容。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.19.2 架构设计与实现落地</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>锚点自动推算贯通</strong>：新增 <code>frontend/src/utils/gestation.ts</code> 共享工具（<code>computeGestation</code> 280 天模型/锚点外推、<code>gestationLabel</code> 孕X周/孕X周Y天格式、<code>extractGestationAnchor</code> 最早孕期打卡锚点——与后端 first_anchor 查询口径一致）；打卡弹窗与深度 BMI 表单孕期模式下无预产期但有锚点时孕周随日期自动推算预填（±1 周微调、超偏差后端拦截），完全无基准才手填；日期变更即时联动（05-01 孕1周锚点：选 05-08 自动"孕2周"、选 05-02 自动"孕1周1天"）；</li>
+    <li><strong>孕x周x天全链路</strong>：<code>validate_gestational_week</code> 全部成功路径透出 <code>days</code>（周内天数 0~6，手填与推算一致沿用推算天数、微调 ±1 归零、40 周封顶超期保留），随 <code>exam_items.gestational_days</code> 零迁移存储；显示层统一 <code>gestationLabel</code>（历史表阶段列、明细卡片徽章、图表轴标签与 tooltip、报告摘要），历史无 days 记录降级整周；CSV 导入 mom 模板 <code>week</code> 列支持小数（23.5 = 孕23周3天）；</li>
+    <li><strong>相邻日期兼容</strong>：锚点次日起任意日期可打卡（同日唯一 409 覆盖机制与按日推算互不冲突），从机制上支持"录完 05-01 再录 05-02"的连续补录场景；</li>
+    <li><strong>报告区块归属重构</strong>：折叠按钮下移至报告区块自身标题栏——报告包裹独立卡片（📊 本次分析报告 + 评估摘要行「孕X周Y天评估 · 实际增重 Xkg（状态）」+ 收起/展开报告内容按钮），收起仅留标题栏、展开显示五区块完整内容；模块头部仅保留「导出评估报告」。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.19.3 验证结论</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li>后端冒烟（用户真实锚点 2026-05-01 孕1周）：05-02 → 孕1周1天 / 05-08 → 孕2周 / 今天 → 孕24周1天推算全对；validate 自动填充透出 days、手填一致透传/微调归零/偏差&gt;1 拦截、BMI 接口自动归档孕1周1天 note + 存储 + 时序透出、同日 409、历史 days=None 降级整周——全部通过；</li>
+    <li>浏览器全链路：打卡弹窗今天预填 24 / 05-08 预填 2 / 05-02 预填 1（提示"按首次打卡 2026-05-01 孕1周自动推算"）、05-02 保存归档后历史表·明细卡片·看板均显示"孕1周1天"、深度表单推算提示、报告标题栏折叠按钮（收起隐藏曲线区/展开恢复/模块头部无旧按钮）、console 零 JS 错误；</li>
+    <li>测试数据已清理（05-02、10-09 两条验证记录批删），用户原有数据（05-01/05-08/05-15 三条孕期打卡 + 宝宝测量）完整保留。</li>
+  </ul>
+</div>
+
+<div class="card" style="margin-top:20px;border-left:4px solid #f97316;padding:16px;background:var(--bg-card, #fff);">
+  <h3 style="margin-top:0;color:#f97316;">10.20 孕周输入自动填充修复与孕x周x天双输入 (v1.58)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.20.1 业务背景与根因定位</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>自动填充失效</strong>：v1.57.1 孕周输入框仅显示 placeholder「自动推算」却无数值填充，用户仍需手填——填充实现依赖 <code>useEffect</code>（依赖 <code>gestation?.week</code>）setState 回填，「推算值未变化不触发 effect」「弹窗打开重置与填充执行顺序竞争」「锚点异步加载时序」多重竞态叠加，输入框常为空；</li>
+    <li><strong>天粒度不可修正</strong>：仅有整周输入框，推算出的周内天数（如孕24周1天的"1天"）无法被用户手动修改。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.20.2 架构设计与实现落地（派生显示值方案）</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>模型转换（消除填充竞态）</strong>：删除「effect 回填」→「touched 标记 + 派生显示值」：<code>weekDisplay / daysDisplay</code> 在未手动编辑且有推算值时直接取 <code>String(推算值)</code>、否则取手填值——未编辑时输入框直接绑定推算值（填充绝对可靠、无时序依赖），onChange 置 touched 尊重用户值；effect 职责收缩为「日期/模式变化时重置 touched 回自动推算」，不再承担填充职责；</li>
+    <li><strong>孕x周x天双输入框</strong>：打卡弹窗（<code>UnifiedHealthCheckIn</code>）与深度 BMI 表单（<code>BmiFormCard</code>）两组件同构改造——孕周块统一「[周] 周 [天] 天」双输入（周 1~42 必填、天 0~6），placeholder「自动推算」/「天」，标签与提示行显示推算依据（档案预产期 / 首次打卡锚点），周与天均可手改（周偏差 ±1 周内，超差后端 400 拦截）；深度表单产后月龄同步升级 <code>postpartumMonthsDisplay</code> 派生值（宝宝生日推算优先、可手改）；</li>
+    <li><strong>提交与后端采纳优先级</strong>：提交一律以显示值为准（未编辑=推算值、编辑=用户值），<code>gestational_days</code> clamp 0~6 上送（打卡 409 覆盖重发链路同口径）；<code>BmiAnalysisInputSerializer</code> 新增 <code>gestational_days</code>（0~6 可选），BMI 分析接口用户显式传天数优先采纳（clamp 0~6）、未传沿用孕周引擎推算值，周数仍经双基准校验（偏差 &gt;1 周 400 拦截），<code>gestation_check.days</code> 回透最终采纳值。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.20.3 验证结论</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li>浏览器全链路（用户真实锚点 2026-05-01 孕1周）：深度表单今天自动填充 24/1、05-08 → 2/0、05-02 → 1/1，手改天数=3 后 05-16 提交落库「孕3周3天」；打卡弹窗今天 24/1、05-17 → 自动 3/2、手改天=4 后落库「孕3周4天」，同日 409 覆盖条出现与取消正常；console 零 JS 错误；</li>
+    <li>数据治理：测试数据（05-16、05-17 两条）批删清理，用户原有 8 条记录完整保留（数据库核验通过）；新主包 <code>index-AFe2A9fr.js</code> 构建同步并重启生效。</li>
+  </ul>
+</div>
+
+
+<div style="background:#fff;border-radius:12px;padding:24px;margin-bottom:24px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+  <h3 style="color:#0f172a;font-size:18px;margin-top:0;border-bottom:2px solid #f97316;padding-bottom:8px;">10.21 全面复查闭环重构与系统体验深度优化 (v1.59)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.21.1 业务背景与复查问题识别</h4>
+  <p style="color:#475569;font-size:14px;line-height:1.6;">在 v1.58 孕周推算与双输入落地后，对系统代码和运行效果做全面二次复查，针对发现的 6 大核心优化点进行闭环修复：</p>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>健康日历记录类型脱节与未来日期异常</strong>：<code>HealthCalendar</code> 兼容 <code>vaccination</code> 与历史 <code>vaccine</code> 类型，恢复疫苗名称与蓝色徽章渲染；增加未来日期禁用判定与样式置灰，禁止点击未来日期补录以防后端 400 校验拦截。</li>
+    <li><strong>宝宝生长曲线双Y轴体系与女童WHO标准</strong>：内置 <code>WHO_P50_GIRL</code> 女童生长标准参考线；改用双 Y 轴架构（左轴长度/头围 cm，右轴体重 kg），彻底根治体重曲线被压扁问题；Tooltip 动态带出单位。</li>
+    <li><strong>主导航顶栏底栏一键直达</strong>：<code>ALL_navItems</code> 正式纳入「健康中心」（<code>/health</code>，<code>menu_health</code>）。</li>
+    <li><strong>妈妈孕产档案单表融合与折叠详情</strong>：后端 <code>_build_bmi_timeseries</code> 补齐 <code>ai_analysis</code> 字段；<code>BmiHistoryTable</code> 增加详情折叠展开行展示备注与 AI 临床解读并支持一键复制；移除底部重复渲染的 <code>momRecords</code> 卡片流，根除 &gt;3000px 冗余垂直滚动。</li>
+    <li><strong>跨组件双向数据联动与409覆盖完善</strong>：<code>BmiAnalysisView</code> 接入 <code>refreshTrigger</code> 与 <code>onRecordChanged</code>，实现打卡/导入弹窗与看板双向即时联动；完善 409 异常提取逻辑；清理 <code>services.ts</code> 中误放于 <code>shoppingApi</code> 的冗余 <code>analyzeBmi</code>。</li>
+    <li><strong>多页面暗黑模式 (Dark Mode) 全面对齐</strong>：<code>HomePage</code>、<code>ProductListPage</code>、<code>ProductCard</code>、<code>HealthCalendar</code> 补齐深色模式样式类，消除暗色文字不可读异常。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.21.2 验证效果</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li>前端 <code>tsc -b && vite build</code> 生产构建 0 错误通过，静态资产与模板完全同步。</li>
+    <li>后端 <code>manage.py check</code> 0 警告通过。</li>
+  </ul>
+</div>
+
+
+<div style="background:#fff;border-radius:12px;padding:24px;margin-bottom:24px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+  <h3 style="color:#0f172a;font-size:18px;margin-top:0;border-bottom:2px solid #f97316;padding-bottom:8px;">10.22 健康打卡与分析报告闭环联动、双向折叠与状态持久化 (v1.60)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.22.1 业务背景与问题定位</h4>
+  <p style="color:#475569;font-size:14px;line-height:1.6;">排查用户反馈新增数据后「展开/收起分析报告」不见的问题，准确定位三大断层：</p>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>折叠按钮迁移至最底部与视觉阻隔</strong>：原顶部按钮被移入卡片 4 内部，排在长图表和历史表格后，提交后视口停留在上方产生丢失错觉；</li>
+    <li><strong>健康打卡弹窗结果未回传</strong>：<code>UnifiedHealthCheckIn</code> 调用 <code>analyzeBmi</code> 后丢弃了返回对象，看板中 <code>result</code> 仍为 null；</li>
+    <li><strong>状态纯内存化</strong>：刷新页面或切换 Tab 后 <code>result</code> 被重置清空，报告瞬间消失。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.22.2 核心重构与闭环落地</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>全链路数据打通</strong>：打卡弹窗 <code>onSaved</code> 回调透传 <code>res</code> 分析结果，<code>HealthPage</code> 桥接传递给 <code>BmiAnalysisView</code>，打卡后秒级呈现报告；</li>
+    <li><strong>聚焦报告主体的唯一定位折叠控制</strong>：消除多处按钮重复，移除顶部及底部冗余折叠按钮与提示条，仅在具体分析报告卡片标题栏保留唯一的展开/收起按钮；新增数据后自动展开并平滑滚动直达报告区域；</li>
+    <li><strong>sessionStorage 持久化留存</strong>：引入缓存自动还原最近一次评估报告，刷新网页与 Tab 切换无缝保留。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.22.3 验证结论</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li>打卡弹窗与深度表单两种录入方式均可 100% 稳定生成并呈现分析报告，支持顶部、中部双向随心展开/收起；</li>
+    <li>前端 <code>tsc -b &amp;&amp; vite build</code> 0 错误编译通过，静态资源完整同步。</li>
+  </ul>
+</div>
+
+
+<div style="background:#fff;border-radius:12px;padding:24px;margin-bottom:24px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+  <h3 style="color:#0f172a;font-size:18px;margin-top:0;border-bottom:2px solid #f97316;padding-bottom:8px;">10.23 健康时间轴全景多视图重构、时序空数据自适应折叠与分析报告篇幅精简 (v1.61)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.23.1 业务背景与问题复盘</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>健康时间轴名实错位</strong>：原页面仅有月历格子缺少垂直时间轴流，且缺少打卡活跃度与类型构成的统计图表；</li>
+    <li><strong>清空数据后大片空白占用</strong>：无数据时时序看板仍常驻 320px 空白图表容器，造成近 800px 无效垂直留白；</li>
+    <li><strong>分析报告默认展开导致篇幅过长</strong>：初次载入或刷新时报告全量铺陈上千像素，产生视觉压迫感。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.23.2 架构重构与优化落地</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>时间轴全景多视图体系</strong>：<code>HealthTimelineView</code> 整合纵向时间轴流（指标芯片/AI解读/类型筛选）、统计图表看板（近6月活跃度堆叠柱状图、类型构成环形图）与经典月历总览（保留补录），支持本地偏好记忆与宏观指标卡；</li>
+<li><strong>统计图表生命周期解耦与白屏根治</strong>：将图表封装为独立受控子组件，挂载时初始化与绑定 ResizeObserver，卸载时彻底 dispose 释放，根治视图切换后图表空白缺陷；</li>
+    <li><strong>时序图表与表格自适应折叠</strong>：无数据时自动收拢图表留白，变为轻量紧凑引导栏，支持手动折叠控制；</li>
+    <li><strong>分析报告默认收起策略</strong>：初始状态严格设为收起（52px单行标题栏），仅在用户主动一键分析时展开直达，整页篇幅适中紧凑。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.23.3 验证结论</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li>前端 <code>tsc -b &amp;&amp; vite build</code> 0 错误编译通过，静态资产与模板完全同步；页面视觉与交互体验大幅提升。</li>
+  </ul>
+</div>
+
+
+<div style="background:#fff;border-radius:12px;padding:24px;margin-bottom:24px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+  <h3 style="color:#0f172a;font-size:18px;margin-top:0;border-bottom:2px solid #f97316;padding-bottom:8px;">10.24 首页定时轮询抖动根除与时序看板图表生命周期完整联动 (v1.62)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.24.1 业务背景与问题复盘</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>首页每隔 15 秒周期性闪烁抖动</strong>：15s 全局静默轮询更新用户信息导致 <code>stage</code> 引用变更，引发 HomePage 全局卸载重载与破坏性 <code>loading</code> 拦截，页面频繁塌陷闪烁；</li>
+    <li><strong>时序图表新增数据后持续空白</strong>：无数据自适应收拢导致图表 DOM 延迟挂载，而原 ECharts 仅在 Mount 阶段执行单次初始化，错过绑定时机导致实例恒为 null，新增数据后图表无法展示。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.24.2 架构重构与优化落地</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>首页静默刷新与引用防抖</strong>：<code>authStore</code> 增加 <code>stage</code> 关键属性浅比对切断无效广播；<code>HomePage</code> 依赖基元合成键 <code>stageKey</code>，并将更新改为非破坏性后台静默更新，彻底根除 15s 抖动；</li>
+    <li><strong>时序图表生命周期深度联动</strong>：移除脱节的 Mount 单次初始化，将 ECharts 实例的创建、配置更新、Resize 监听及释放完全与展开态和数据联动，支持动态原地懒加载；</li>
+    <li><strong>单点适配与状态复位</strong>：X 轴引入单条数据动态留白，数据清空自动重置折叠标记，保障后续新增数据 100% 自动唤醒并激活图表。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.24.3 验证结论</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li>首页静默轮询期间 100% 平滑无抖动；时序图表看板在新增数据、反复收起展开时渲染稳定，与历史数据表完全一致；前端生产构建 0 错误通过。</li>
+  </ul>
+</div>
+
+
+<div style="background:#fff;border-radius:12px;padding:24px;margin-bottom:24px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+  <h3 style="color:#0f172a;font-size:18px;margin-top:0;border-bottom:2px solid #0284c7;padding-bottom:8px;">10.25 天气万年历全景融合、首页走秒天气横幅与 AI 模型列表手动拉取 (v1.63)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.25.1 业务背景与问题复盘</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>生活气象与历法关怀缺失</strong>：原系统缺乏直观的时钟、干支农历、节气与法定节假日调休指引；</li>
+    <li><strong>历法功能概念重复</strong>：日历与万年历割裂分散，采用方案 A 实施统一视图深度重构，融合 1900~2100 年寿星天文历与 15 天天气预报；</li>
+    <li><strong>严格排除无关专有业务</strong>：彻底剔除源项目中与母婴平台定位不符的「在次日举办宴席」功能；</li>
+    <li><strong>模型配置效率低</strong>：大模型对接缺少可用模型探测，新增 OpenAI 兼容 <code>/models</code> 接口手动拉取与点选回填。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.25.2 架构重构与优化落地</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>服务解耦与双重缓存</strong>：新增 <code>holiday_service.py</code>（Timor.tech 国务院公报 + 磁盘/内存缓存 + 离线兜底）与 <code>weather_service.py</code>（Open-Meteo 15 天预报与 US AQI 空气质量），禁代理直连优先防挂死；</li>
+    <li><strong>全链路 RBAC 联动</strong>：注册 <code>menu_weather</code>（菜单与路由守卫）及 <code>ai_fetch_models</code>（按钮级权限），后端 API 抛 403 阻断，前端路由拦截、导航隐藏与按钮显隐深度联动；</li>
+    <li><strong>统一万年历与天气视图</strong>：支持全国 34 省/476 市/2875 区县级联坐标直查，首屏实况大卡、15 天高低温 ECharts 趋势图、班休角标日历网格与综合详情卡；</li>
+    <li><strong>AI 模型拉取助手</strong>：支持一键探测 <code>{base_url}/models</code>，异常友好提示，标签式快捷回填。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.25.3 验证结论</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li>首页时钟与气象卡秒级同步；天气万年历预报与空气质量精确呈现；无权限账号菜单/路由/按钮 100% 阻断，有权限即刻通行；前后端构建与测试 0 报错。</li>
+  </ul>
+</div>
+
+<div style="background:#fff;border-radius:12px;padding:24px;margin-bottom:24px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+  <h3 style="color:#0f172a;font-size:18px;margin-top:0;border-bottom:2px solid #10b981;padding-bottom:8px;">10.26 天气页面白屏根治、健壮性治理与首页天气宝宝卡一体化重构 (v1.64)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.26.1 业务背景与问题复盘</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>React 18 Object-as-Child 致命渲染崩溃（白屏根因）</strong>：后端 <code>weather_service.py</code> 中返回字典的 <code>'city'</code> 字段误填入地理编码对象字典 <code>{'name': '...', ...}</code>，前端 JSX 在渲染 <code>{weatherData?.city}</code> 时被 React 18 判定为 Object 子节点抛出致命异常，导致整页 React 组件树被卸载而白屏；</li>
+    <li><strong>脏缓存放大与地名 404</strong>：<code>localStorage</code> 写入 <code>"[object Object]"</code> 脏串引发恶性自放大；GeoNames 中文库不收录含“市/区/县”的地名导致用户常见搜索 404；级联区县缺失坐标时静默失效；</li>
+    <li><strong>首页双卡片纵向冗余</strong>：首屏纵向堆叠天气卡与宝宝阶段卡（合计占用 410px+），问候语重复，将核心发育周历与快捷入口挤压至第二屏。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.26.2 架构重构与优化落地</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>字符串与对象严格解耦</strong>：后端 <code>_build_result</code> 强制提取纯字符串 <code>city_name</code>，完整字典移至 <code>location</code>；前端 <code>displayCity</code> 多级防御性提取，杜绝非字符串直传 JSX；</li>
+    <li><strong>智能多级地名清洗容错</strong>：在 <code>geocode_city</code> 中扩展自动剥离“特别行政区/省/市/区/县”规范化规则，支持全称/简称/区县名 100% 成功命中；级联查询区县无坐标时自动向上回退市级、省级坐标保底；</li>
+    <li><strong>ECharts 生命周期与错误兜底</strong>：捕获图表更新异常，增加组件卸载释放与错误时“重置为默认城市 (成都)”一键恢复按钮；</li>
+    <li><strong>首页全景关怀横幅一体化重构</strong>：将宝宝身份、阶段修改胶囊按钮及关怀寄语无缝内嵌至 <code>HomeWeatherBanner</code> 顶部；移除下方独立大卡，首屏纵向空间<strong>净节省超过 180px</strong>，孕周发育卡与快捷入口进入第一屏黄金视域。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.26.3 验证结论</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li>天气页面搜索“成都”、“成都市”、“双流区”、“北京”与级联选择均 100% 成功渲染无白屏；首页横幅视觉协调、操作无感；单终端会话与 RBAC 权限联动全绿通过。</li>
+  </ul>
+</div>
+
+<div style="background:#fff;border-radius:12px;padding:24px;margin-bottom:24px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+  <h3 style="color:#0f172a;font-size:18px;margin-top:0;border-bottom:2px solid #f59e0b;padding-bottom:8px;">10.27 首页关怀小锦囊管理员后台、阶段自适应与气象按需级联直查 (v1.65)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.27.1 业务背景与问题复盘</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>首页引导大卡片中间留白与内容单薄</strong>：原横幅中栏存在大面积视觉空白，新增【今日关怀小锦囊 · 专属贴士卡】，并提供管理员专属配置后台，支持系统内置与自定义提示信息维护；</li>
+    <li><strong>育儿阶段匹配错位</strong>：宝宝成长至幼儿期（如 2 岁 8 个月）时，因原逻辑含有“个月”被误识别为婴儿期并展示婴儿期贴士；或配置贴士后首页未联动；</li>
+    <li><strong>气象页面请求过频与级联受限</strong>：原天气页进入即自动发请求消耗流量；级联选择器强制选至区县，无法单独查询省或地级市天气；</li>
+    <li><strong>AI 模型列表无法折叠</strong>：点击获取模型列表后候选标签铺满页面且无法折叠，严重挤压表单布局；</li>
+    <li><strong>阶段设置倒计时跳回</strong>：设置孕育阶段停留 5~10 秒被后台轮询浅比较虚假重置导致设置失效。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.27.2 架构重构与优化落地</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>今日关怀小锦囊全链路设计 (`DailyTip` & `DailyTipsManagePage`)</strong>：新增 <code>DailyTip</code> 模型与 <code>DailyTipService</code>，内置 18+ 条覆盖全生命阶段科学锦囊；管理员后台提供增删改查、单选/多选/全选批量启停与删除、全局展示条数配置与分页；</li>
+    <li><strong>首页横幅三栏重塑与阶段优先级纠偏 (`HomeWeatherBanner.tsx`)</strong>：重塑为 5:4:3 三栏响应式网格，中栏承载关怀小锦囊；将幼儿期（<code>toddler</code>）判定条件置于婴儿期前，100% 精准匹配幼儿期贴士；右侧气象微卡优先拉取用户最近一次查询城市，无权限时自动降级展示管理员预设天气并友好提示；</li>
+    <li><strong>天气页按需查询与独立分级直查 (`WeatherPage.tsx`)</strong>：进入天气页默认仅展示本地离线万年历与节气班休，用户点击【查询天气】方触发远程请求；级联支持单独查省、省+市或区县；</li>
+    <li><strong>AI 模型列表收起/展开与自动折叠 (`AIConfigPage.tsx`)</strong>：拉取后提供精简收起条与展开面板，<strong>点击选中任意模型后自动回填并立即触发列表折叠收起</strong>；</li>
+    <li><strong>阶段设置防抖与状态锁 (`authStore.ts` & `SetStageModal.tsx`)</strong>：引入互斥锁与深层结构比较，杜绝虚假刷新导致的阶段回滚。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.27.3 验证效果</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li>首页横幅三栏布局紧凑协调，2 岁 8 个月宝宝精确展示幼儿期成长锦囊；管理员后台启停与展示条数秒级同步；天气页按需查询免请求浪费；AI 模型列表选中自动折叠。</li>
+  </ul>
+</div>
+
+<div style="background:#fff;border-radius:12px;padding:24px;margin-bottom:24px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+  <h3 style="color:#0f172a;font-size:18px;margin-top:0;border-bottom:2px solid #8b5cf6;padding-bottom:8px;">10.28 健康中心打卡与深度 BMI 全维度智能联动、基线双向自动继承与 CSV 导入防呆治理 (v1.66)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.28.1 业务背景与问题复盘</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>健康打卡与子页面脱节</strong>：在宝宝生长、产后恢复或备孕页面点击健康打卡，弹窗始终停留在孕期产检；不相关页面（疫苗、时间轴、日历）也展示打卡按钮造成误导；</li>
+    <li><strong>深度 BMI 与打卡缺乏双向同步</strong>：深度表单选择全孕期时打卡弹窗未联动，打卡弹窗切换产后恢复时深度表单亦未同步；</li>
+    <li><strong>身高/基线体重断连与“留空自动继承”占位符痛点</strong>：打卡弹窗录入身高后深度分析表单未继承，反之亦然；输入框显示灰色的“留空自动继承”占位符，用户要求必须直接呈现先前录入的实测数值且可自由编辑；</li>
+    <li><strong>已有打卡数据但当前测算 BMI 与孕前基线无数据展示</strong>：单次打卡未显式填身高时后端将该条高度置空，导致前端状态卡因缺少身高熔断全空，且孕前 BMI 计算脱靶；</li>
+    <li><strong>CSV 导入列错位与阶段冲突</strong>：省略腹围列时阶段关键字被误识别为腹围；导入类型与当前宝宝档案类型冲突时缺乏交互提示；孕期导入缺少自动计算孕周（周+天）。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.28.2 架构重构与优化落地</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>全链路双向智能联动 (`HealthPage.tsx` & `UnifiedHealthCheckIn.tsx`)</strong>：打卡与导入按钮仅在 <code>tab === "mom" || tab === "growth"</code> 时渲染；点击打卡时根据激活页面与 <code>bmiStageType</code> 智能预选对应模式；深度表单阶段与打卡记录类型实时双向互锁；</li>
+    <li><strong>全时序基线继承与直接数值回显 (`_build_bmi_timeseries` & `BmiFormCard.tsx`)</strong>：后端逆序检索历史最新身高与孕前基线贯通补齐至时序每条记录；前端监听基线变化直接向输入框填入真实数值（<code>value="165"</code>），占位符替换为 <code>例如 165</code> 与 <code>例如 52.0</code>（彻底移除“留空自动继承”），保留 100% 自由编辑；</li>
+    <li><strong>状态卡解耦容错 (`BmiAnalysisView.tsx`)</strong>：重构 <code>bmiStatus</code>，逆序扫描时序记录与外层兜底高度，稳定输出实测当前 BMI 与孕前基线 BMI 双指标及 WS/T 801-2022 分级胶囊；</li>
+    <li><strong>导入数据按钮按页面智能分流 (`CsvImportModal.tsx`)</strong>：接入 <code>initialTarget</code> 属性，妈妈页面默认展示“妈妈体重打卡”，宝宝页面默认展示“宝宝生长测量”；</li>
+    <li><strong>CSV 批量导入防呆与智能仲裁</strong>：引入 <code>isStageKeyword</code> 正则杜绝省略腹围列错位；阶段与宝宝档案不一致时提供内联选择卡片明确归档路径；孕期导入未填周数时自动计算孕周（周+天）。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.28.3 验证结论</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li>打卡弹窗与深度分析表单实现无缝双向互锁，身高与孕前体重直接回显实测值且可任意修改；状态卡双指标稳定呈现；导入数据目标智能跟随当前 Tab，CSV 批量导入全场景高韧性通过。</li>
+  </ul>
+</div>
+
+<div style="background:#fff;border-radius:12px;padding:24px;margin-bottom:24px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+  <h3 style="color:#0f172a;font-size:18px;margin-top:0;border-bottom:2px solid #ec4899;padding-bottom:8px;">10.29 健康打卡与时序图表排版优化、阶段合理性医学校验与健康中心宝宝生长档案多实体构建 (v1.67)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.29.1 业务背景与问题复盘</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>健康打卡输入框内图标遮挡内容</strong>：在健康打卡弹窗（<code>UnifiedHealthCheckIn.tsx</code>）中，身高与体重输入框内部保留了尺子与体重秤装饰图标及 <code>pl-9</code> 内边距，遮挡了数字开头，导致实测数据看不清楚；</li>
+    <li><strong>多维度时序图表看板末点阶段信息截断</strong>：在 BMI 时序趋势/增量柱状图看板（<code>BmiTimeSeriesBoard.tsx</code>）中，最后一个数据点的横轴阶段长标签（如“10-13 孕40周+5天”）显示不全被截断。定位为：<code>boundaryGap: false</code> 末点贴边 + X 轴超长标签居中向右溢出 35~45px + <code>grid.right</code> 留白仅 20~25px；</li>
+    <li><strong>阶段类型合理性校验缺失风险</strong>：健康中心在“用户添加数据”（打卡、一键分析评估）与“CSV 批量导入”两条入库链路中，缺乏跨时序的生理阶段合理性互斥校验，可能出现同一孕产周期内录入非孕期/产后等矛盾数据；且需支持按单个妈妈维度物理隔离；</li>
+    <li><strong>架构收敛与宝宝生长档案模块内建多宝宝支持</strong>：按照高内聚产品规范，回退独立的“妈妈孕产档案”与“宝宝生长档案”独立页面，<strong>将多宝宝档案管理能力完整内建于健康中心页面的「宝宝·生长档案」模块中</strong>，支持录入多位宝宝信息；且所有支持新增录入宝宝的入口均需贯彻“未填姓名默认自动继承默认宝宝名称，兜底小萌宝”的保底命名规则。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.29.2 架构重构与优化落地</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>健康打卡输入框视觉净化 (`UnifiedHealthCheckIn.tsx`)</strong>：彻底移除身高与体重输入框内的尺子与体重秤装饰图标，移除 <code>pl-9</code>，恢复原生 <code>.input</code> 干净排版，确保实测数据 100% 完整可见；严格保留全部输入防呆范围校验（身高 100~220cm，体重 25~250kg）、基线继承与表单校验逻辑；</li>
+    <li><strong>时序图表看板末端标签防截断排版方案 (`BmiTimeSeriesBoard.tsx`)</strong>：将趋势折线图网格右侧留白 <code>grid.right</code> 从 25px 大幅扩展至 55px；增量柱状图 <code>grid.right</code> 从 20px 扩展至 40px，预留充足文本安全延伸区；在 X 轴配置中增加 <code>axisLabel: { showMaxLabel: true }</code>，强制确保末端最后一个数据点的标签始终渲染不被丢弃，彻底根除截断；</li>
+    <li><strong>阶段类型合理性医学校验引擎 (`apps/core/services/stage_validator.py`)</strong>：依据国家卫健委标准（WS/T 801-2022），以 280 天全孕期模型（<code>LMP = EDD - 280天</code>）及分娩后生理恢复周期为基准，建立 <code>validate_stage_transition</code> 校验服务；全覆盖打卡归档、分析归档及 CSV 批量导入；严格拦截妊娠区间 <code>[LMP - 14天, EDD + 14天]</code> 内非孕期数据与分娩前产后数据，防孕周倒流，并按单个妈妈维度严格物理隔离；</li>
+    <li><strong>健康中心「宝宝·生长档案」内建多宝宝管理套件 (`HealthPage.tsx`)</strong>：
+      <ul style="margin-top:4px;">
+        <li><strong>多宝宝标签快速切换栏</strong>：展示当前用户全部宝宝胶囊标签（显示性别 emoji、姓名、默认标识、孕育中标识），点击即可无缝切换当前激活宝宝，专属 WHO 参考生长曲线与性别标准实时联动响应；</li>
+        <li><strong>当前宝宝信息微卡与操作</strong>：展示当前宝宝的姓名、出生日期/预产期、当前月龄/年龄精准计算、出生指标（身长/体重），并提供【设为默认】、【编辑资料】与【删除档案】一站式操作；</li>
+        <li><strong>内建新增宝宝档案弹窗 (`showAddBabyModal`)</strong>：支持出生状态切换（已出生/预产期）、宝宝昵称、性别、出生日期、出生体重、出生身长及是否设为默认宝宝。</li>
+      </ul>
+    </li>
+    <li><strong>全入口宝宝默认命名保底机制</strong>：
+      <ul style="margin-top:4px;">
+        <li><strong>默认命名规则</strong>：用户未输入姓名时，自动查询当前激活的默认宝宝档案信息继承其名称，无宝宝时兜底命名为 <code>小萌宝</code>；</li>
+        <li><strong>全入口 100% 统一覆盖</strong>：1) 健康中心「宝宝·生长档案」模块的【录入新宝宝】弹窗（<code>HealthPage.tsx#handleCreateBaby</code>）；2) 个人中心宝宝档案的【添加宝宝】表单（<code>ProfilePage.tsx#addBaby</code>）；3) 阶段设置弹窗的宝宝同步建立逻辑（<code>SetStageModal.tsx</code>）；4) 后端 API 接口全局保底（<code>BabyViewSet.perform_create</code>），任何途径调用 <code>POST /api/babies/</code> 均安全兜底。</li>
+      </ul>
+    </li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.29.3 验证效果</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li>健康打卡输入框无图标遮挡，输入与回显清爽可见；</li>
+    <li>时序图表看板在末点长标签场景下完整显示无截断；</li>
+    <li>阶段合理性校验引擎精准拦截冲突数据，多妈妈隔离可靠；</li>
+    <li>回退独立路由后系统架构精简规范；健康中心宝宝·生长档案模块内建多宝宝录入、编辑、切换与全入口默认命名 100% 验证通过。</li>
+  </ul>
+</div>
+
+
+<div style="background:#fff;border-radius:12px;padding:24px;margin-bottom:24px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+  <h3 style="color:#0f172a;font-size:18px;margin-top:0;border-bottom:2px solid #0284c7;padding-bottom:8px;">10.30 跨页面多模块全自动同步、宝宝健康打卡指定已有档案与时间轴/日历/图表多宝宝区分优化 (v1.68)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.30.1 业务背景与问题复盘</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>跨页面默认宝宝切换后妈妈档案不同步</strong>：用户在“我的”页面（<code>ProfilePage</code>）切换默认宝宝后，健康中心当前妈妈档案模块未自动同步更新，且健康中心、首页、我的页面之间缺乏全自动协同机制；</li>
+    <li><strong>宝宝健康打卡无法选择已有宝宝</strong>：健康中心“宝宝·生长档案”页面点击“健康打卡”按钮时，打卡弹窗未关联已有宝宝，无法针对指定宝宝录入档案，且月龄天数仅基于全局单人生日推算；</li>
+    <li><strong>健康时间轴与日历数据/图表无法区别宝宝</strong>：多宝宝场景下，健康时间轴节点卡片仅显示泛化的“宝宝 x 个月”，无法识别是哪个宝宝的测量或疫苗记录；统计图表将不同宝宝生长测量混在一块；日历单元格未显式标出对应宝宝名称，缺乏宝宝维度筛选与区分能力。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.30.2 架构重构与优化落地</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>全域多页面跨模块全自动同步机制</strong>：后端 <code>BabyViewSet._sync_user_stage</code> 切换默认宝宝时，自动联动更新用户的默认妈妈档案（同步预产期、是否孕期中与自动继承命名如 <code>xx妈妈</code>）；前端通过 <code>stageChanged</code> 全局广播与监听机制，健康中心（<code>HealthPage</code>）、我的页面（<code>ProfilePage</code>）与首页（<code>HomePage</code>）三页联动，切换默认宝宝或阶段后无需手动刷新即刻全量自动同步；</li>
+    <li><strong>健康打卡指定已有宝宝精准录入套件 (`UnifiedHealthCheckIn.tsx`)</strong>：表单在“宝宝生长测量”模式下渲染已有宝宝选择栏，展示全部宝宝姓名、性别 Emoji（👦/👧）、出生日期与“默认”标识，支持一键切换目标宝宝；根据所选宝宝生日动态推算精准天数与月龄；保存时严格绑定 <code>baby</code> 外键，后端按单个宝宝维度隔离查重，同日多宝宝打卡互不干扰；</li>
+    <li><strong>健康时间轴、统计图表与日历多宝宝区分体系</strong>：
+      <ul style="margin-top:4px;">
+        <li><strong>API 字段强化</strong>：<code>HealthRecordSerializer</code> 增加只读 <code>baby_name</code> 和 <code>mother_name</code>，返回数据明确附带宝宝与妈妈姓名；</li>
+        <li><strong>时间轴流专属宝宝徽章与按宝宝筛选 (`HealthTimelineView.tsx`)</strong>：提供【全部宝宝 / 指定宝宝】快捷筛选卡片，卡片头部展示高亮实体徽章（如 <code>👶 甜甜</code>）与专属月龄计算；</li>
+        <li><strong>统计图表多宝宝分离与动态透视 (`HealthChartsBoard`)</strong>：柱状图细分为多宝宝专属生长系列与专属图例配色，环形图按宝宝维度分别计算生长测量频次；</li>
+        <li><strong>日历总览多宝宝可视化标注 (`HealthCalendar.tsx`)</strong>：日历单元格内的生长与疫苗胶囊直接显式标明对应宝宝昵称（如 <code>[甜甜] 生长 5.2kg</code>），并在筛选时自动跟随过滤；</li>
+        <li><strong>宝宝生长档案曲线与历史表精准隔离 (`HealthPage.tsx`)</strong>：Tab 2 中的 WHO 生长曲线与历史测量表严格按照当前激活宝宝物理过滤，杜绝不同宝宝数据混入同一张曲线。</li>
+      </ul>
+    </li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.30.3 验证效果</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li>在“我的”页面切换默认宝宝后，健康中心当前妈妈档案模块、当前宝宝详情微卡、首页 Banner 均无需手动刷新即刻 100% 自动同步；</li>
+    <li>健康打卡宝宝模式可在多个已有宝宝之间自由切换，精准推算月龄天数，打卡数据正确归属于目标宝宝，同日多宝宝打卡无冲突；</li>
+    <li>健康时间轴、统计图表看板与经典日历视图全面呈现宝宝姓名与专属图例，支持多宝宝精准筛选，彻底解决多宝宝数据混淆问题。</li>
+  </ul>
+</div>
+
+<div style="background:#fff;border-radius:12px;padding:24px;margin-bottom:24px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+  <h3 style="color:#0f172a;font-size:18px;margin-top:0;border-bottom:2px solid #0284c7;padding-bottom:8px;">10.31 健康中心宝宝档案交互闭环、日历精准定向打卡与每日统计看板优化 (v1.69)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.31.1 业务背景与问题复盘</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>宝宝生长档案录入/编辑/删除操作无反应</strong>：健康中心「宝宝·生长档案」模块中，录入新宝宝、编辑资料与删除档案模态框缺失 JSX 挂载；</li>
+    <li><strong>生长曲线与测量记录未显示宝宝昵称</strong>：WHO 生长曲线与历史测量表格缺少所属宝宝标识，多宝宝切换时无法明确数据归属；</li>
+    <li><strong>健康日历总览多宝宝点击未定向且无历史数据提示</strong>：点击多宝宝日历记录未能精准路由至目标宝宝，打卡框缺少此前录入数据的提示；</li>
+    <li><strong>日历总览产检记录点击未切换打卡模式</strong>：点击产检记录（<code>prenatal_exam</code>）仍停留在“宝宝生长测量”模式；</li>
+    <li><strong>统计图表时间维度过大且不易观察</strong>：原月度堆叠图粒度过粗，缺少日级别（Daily）活跃时序与交互缩放能力。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.31.2 架构重构与优化落地</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>宝宝生长档案管理弹窗闭环与全域跨页同步</strong>：补齐录入新宝宝、编辑资料与删除确认弹窗，各操作均触发 <code>stageChanged</code> 与 <code>fetchMe()</code>，实现健康中心、首页与我的页面秒级自动同步；</li>
+    <li><strong>生长曲线与测量记录宝宝昵称显式呈现</strong>：WHO 参考曲线标题与卡片前置 <code>👶 当前展示：{currentBaby.name}</code>，历史测量表新增「宝宝昵称」列并为每行附带宝宝标识胶囊；</li>
+    <li><strong>健康日历定向打卡与已录入数据智能提示</strong>：日历胶囊独立响应点击，精准透传目标记录；打卡弹窗顶部提示该日期已录入实测数值并提供【一键填入上次数据】按钮，输入框 placeholder 与辅助文案同步回显历史录入数据；</li>
+    <li><strong>产检记录模式自动路由跳转</strong>：记录点击处理器智能识别记录类型，产检自动跳转至「我 · 孕期产检」选项卡，宝宝测量/疫苗自动跳转至「宝宝」选项卡并激活对应宝宝；</li>
+    <li><strong>以“天”为维度的统计看板与缩放优化</strong>：重构 <code>HealthChartsBoard</code>，支持【近 7 天 / 近 14 天 / 近 30 天】按天维度切换，顶部新增 4 维 KPI 概览微卡，柱状图支持 ECharts <code>dataZoom</code> 滚轮/滑块缩放与柱子点击联动下钻，右侧环形图呈现全量占比与环心总计。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.31.3 验证效果</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li>录入新宝宝、编辑与删除弹窗正常唤起与保存，跨页面数据全自动同步；</li>
+    <li>生长曲线与测量记录清晰标明宝宝昵称；</li>
+    <li>日历点击指定宝宝或产检记录准确归属并展示历史数值提示；</li>
+    <li>统计看板以天为单位展示直观清晰，支持缩放与点击补录。</li>
+  </ul>
+</div>
+
+<div style="background:#fff;border-radius:12px;padding:24px;margin-bottom:24px;border:1px solid #e2e8f0;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+  <h3 style="color:#0f172a;font-size:18px;margin-top:0;border-bottom:2px solid #0284c7;padding-bottom:8px;">10.32 健康打卡模式隔离、怀孕宝宝孕周推算、日历定向多宝宝数据回填与统计看板深度下钻升级 (v1.70)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.32.1 业务背景与问题复盘</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>未出生/怀孕中宝宝月龄展示缺陷</strong>：未出生宝宝月龄一直展示为“0天”，缺少孕周孕天推算；</li>
+    <li><strong>打卡模式未按子页面严格隔离</strong>：妈妈页面显示宝宝打卡，宝宝页面显示妈妈打卡，存在混淆；</li>
+    <li><strong>日历总览多宝宝/产检记录点击未定向且无历史数据回填</strong>：点击悠悠仍停留在宋泽言，历史实测数据未回显；</li>
+    <li><strong>覆盖提示时机不合理</strong>：用户未点击保存即预先弹出覆盖确认提示；</li>
+    <li><strong>统计图表看板缺乏深度下钻分析</strong>：缺少多时间范围、天/周/月粒度切换及点击周期进入深度详情与返回能力。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.32.2 架构重构与优化落地</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>怀孕宝宝 280 天孕周推算</strong>：修正“0天”缺陷，根据预产期推算并展示「孕x周x天」；</li>
+    <li><strong>打卡记录类型按子页面严格隔离</strong>：妈妈页面只保留妈妈模式，宝宝页面只保留宝宝生长测量模式；</li>
+    <li><strong>日历多宝宝与产检记录精准定向与数据回填</strong>：点击悠悠/宋泽言或产检记录准确归属并自动回填身长/体重/头围历史值与输入提示；</li>
+    <li><strong>覆盖提示时机校准</strong>：仅在点击保存且返回 409 时触发覆盖确认；</li>
+    <li><strong>多粒度看板与深度下钻分析</strong>：支持 7/14/30/90/180天/全部范围、天/周/月粒度、柱/线/面形态切换，支持点击周期深度下钻与面包屑返回。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.32.3 验证效果</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li>未出生宝宝统一展示孕周天数；</li>
+    <li>子页面打卡选项严格隔离无混淆；</li>
+    <li>日历点击指定记录精准归属并自动填充输入框历史数据；</li>
+    <li>统计看板支持多粒度切换、点击周期进入下钻详情并顺利返回。</li>
+  </ul>
+</div>
+
+
+<div style="margin-top:28px;padding:20px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;">
+  <h3 style="color:#0f172a;font-size:18px;margin-top:0;border-bottom:2px solid #0284c7;padding-bottom:8px;">10.33 健康打卡运行时防崩修复、BMI 提示词与孕周自动填充、多孩阶段校验与图表下钻返回持久化 (v1.71)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.33.1 业务背景与问题复盘</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>健康打卡按钮点击白屏崩溃</strong>：因 <code>UnifiedHealthCheckIn.tsx</code> 中 <code>MODE_OPTIONS</code> 声明滞后引发 TDZ <code>ReferenceError</code> 且 Hook 位于条件返回之后，导致 React 根组件树崩溃白屏；</li>
+    <li><strong>深度体重/BMI分析提示词不具体且未自动填入孕周</strong>：选择产后恢复期时仅提示“按宝宝生日自动”，未说明是按哪位宝宝计算；选择全孕期阶段时，若存在孕期宝宝档案，孕周未自动带入；</li>
+    <li><strong>多孩不同阶段妈妈的阶段类型校验冲突与多模块联动缺失</strong>：同一位妈妈可能同时拥有大宝（已出生、产后恢复期）与二宝（怀孕中、全孕期），原校验逻辑按全局单一周期处理导致历史产后与当前孕期发生虚假冲突；</li>
+    <li><strong>统计图表看板下钻返回后记录类型构成饼图失效</strong>：周期下钻后返回总览看板，记录类型构成环形饼图无法展示数据；且图表和日历内点击触发打卡弹窗时受弹窗异常影响出现白屏。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.33.2 架构重构与优化落地</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>健康打卡弹窗全生命周期健壮性重构</strong>：严格前置声明 <code>MODE_OPTIONS</code>，所有 Hook 统一置于最顶层，彻底杜绝 TDZ 变量未初始化异常与 React 根树崩溃；</li>
+    <li><strong>深度体重/BMI分析提示词具体化与全孕期孕周自动填入</strong>：产后恢复期提示词动态更新为“产后月龄 (0 ~ 36 个月) · 按【xx】宝宝生日自动”并支持多宝宝切换；全孕期阶段自动检测孕期宝宝档案并基于 280 天临床模型自动填入孕周与天数；</li>
+    <li><strong>多孩不同阶段单次妊娠周期时间窗隔离校验</strong>：重构 <code>apps/core/services/stage_validator.py</code>，将冲突校验限制在单次妊娠周期时间窗 <code>[LMP - 14天, EDD + 42天]</code>（约 300 天）内，允许上一胎大宝的产后记录与当前二宝的全新孕期记录医学合理共存；</li>
+    <li><strong>统计图表总览与下钻 DOM 常驻及 ECharts 重绘保障</strong>：总览图表采用样式隐藏而非 DOM 卸载，保持画布常驻；复用 ECharts 实例并在返回时通过 <code>requestAnimationFrame</code> 触发重绘与尺寸自愈，放宽多宝宝比对匹配，确保饼图与趋势图 100% 稳定呈现。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.33.3 验证效果</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li>前端 <code>npm run build</code> 编译打包零警告零报错；</li>
+    <li>健康打卡弹窗秒级打开无白屏，所有图表与日历点击入口顺畅交互并回填数据；</li>
+    <li>BMI 模块动态展示对应宝宝昵称并自动填入孕周，多孩阶段校验畅通入库；</li>
+    <li>图表下钻返回后记录类型构成饼图与趋势图完整保留、稳定展示。</li>
+  </ul>
+</div>
+
+
+<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:20px;margin-bottom:24px;">
+  <h3 style="color:#0f172a;margin-top:0;">10.34 BMI参考宝宝显式化、孕前时序校验边界对齐、时序活跃度图表X轴防挤压与多宝宝图表精准匹配 (v1.72)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.34.1 业务背景与问题复盘</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>全孕期参考宝宝信息缺失</strong>：深度体重/BMI分析模块选择全孕期时，未直观展示是按哪位宝宝计算的当前孕周；</li>
+    <li><strong>阶段合理性时序校验边界虚假拦截</strong>：LMP 之前为合法的孕前备孕期，原校验使用 LMP-14天导致 2026-04-28 误报冲突；</li>
+    <li><strong>时序图表 X 轴排版拥挤与概率丢失</strong>：大范围阶段时图例、滑块与 X 轴标签重叠导致 ECharts 动态隐藏横坐标日期或标签互相遮盖；</li>
+    <li><strong>下钻图表形态丢失与多宝宝点击混淆</strong>：外部选择折线图/面积图后下钻仍为柱状图；同日多宝宝记录点击图表时无法精准跳转到对应宝宝。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.34.2 架构重构与优化落地</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>全孕期参考宝宝信息显式化</strong>：自动检测提取孕期宝宝档案，表单标签直观展示参考宝宝名称，多孕期宝宝提供可交互芯片切换；</li>
+    <li><strong>时序校验边界修正与文案严格对齐</strong>：将妊娠冲突拦截区间校准为 <code>[LMP, EDD + 7天]</code>，早于 LMP 的孕前备孕记录正常放行入库，文案与逻辑严格对齐；</li>
+    <li><strong>图表 X 轴结构优化与智能防挤压</strong>：高度扩展至 320px，图例上移，X 轴配置 <code>interval: "auto"</code>、<code>hideOverlap: true</code> 与动态旋转，长周期启用默认 14 单元滑动缩放窗口；</li>
+    <li><strong>图表形态全链路继承与多宝宝精准点击分流</strong>：下钻子图表形态 100% 同步外部形态；点击时解析 <code>seriesName</code> 精准命中指定宝宝记录并联动弹窗。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.34.3 验证效果</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li>前端 <code>npm run build</code> 零警告零报错通过；一体化服务运行正常（端口 5173，200 OK）；</li>
+    <li>全孕期阶段清晰显示参考宝宝，2026-04-28 孕前备孕记录成功入库；</li>
+<li>时序活跃度图表横轴日期排版舒适清晰，滑动条平滑；下钻形态继承且多宝宝图表点击精准匹配。</li>
+  </ul>
+</div>
+
+
+<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:20px;margin-bottom:24px;">
+  <h3 style="color:#0f172a;margin-top:0;">10.35 外部接口服务配置统一管理（天气/节假日/AI 公网搜索引擎管线）(v1.73)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.35.1 设计目标</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li>将散落各服务的「内置默认外部调用地址」（Open-Meteo 天气三接口、timor.tech 节假日、7 大公网搜索引擎管线）统一收敛为管理员在线可配置项；</li>
+    <li>支持多端点故障转移、重试参数、行级开关/排序/一键测试，从根本上解除"地址变更需改代码"的运维痛点；SearXNG 私有实例配置入口保持原位（AI 助手配置页）。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.35.2 配置模型</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>普通组</strong>（天气三组 / 节假日）：<code>{endpoints: [{url, enabled}], timeout(秒), retries(轮)}</code>；</li>
+    <li><strong>引擎组</strong>（search_pipeline）：<code>{engines: [{key, url, timeout, enabled}], retries(轮)}</code>，key 绑定 web_search.py 专属 HTML 解析器；</li>
+    <li>存储：<code>SystemSetting.external_api_config</code> JSONField（迁移 <code>0029_external_api_config</code>），实时读库，异常兜底返回默认值。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.35.3 后端实现</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><code>apps/core/services/service_config.py</code>：分组默认值（<code>DEFAULT_GROUPS</code>）、读写、故障转移遍历、节假日 <code>{年份}</code> 占位符规范化与注入、真实协议一键测试（<code>test_endpoint</code> / <code>test_engine</code> / <code>test_group</code>）；</li>
+    <li><code>apps/core/views_service_config.py</code>：<code>admin/service-config/</code>（GET/PUT）、<code>admin/service-config/test/</code>、<code>admin/service-config/restore/</code>，仅管理员 + 审计；</li>
+    <li>业务接入：<code>weather_service._http_get_group()</code>、<code>holiday_service._fetch_from_timor()</code> 双路径+重试、<code>web_search</code> 引擎管线动态化（<code>_ENGINE_FUNCS</code> + <code>_build_pipeline</code>），SearXNG 仍第一优先。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.35.4 前端新增</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><code>pages/AdminServiceConfigPage.tsx</code>（管理面板新入口）：5 组卡片、行级<strong>默认只读 + 编辑双态</strong>（<code>editingRows</code> 状态机，编辑/保存/取消）、上移/下移（<strong>首行上移、末行下移置灰</strong> <code>opacity-40 + cursor-not-allowed</code>）、删除、行级与组级一键测试结果、<strong>新增行（_new）启用开关默认可直接勾选</strong>（<code>enabledLocked = !isEditing && !isNew</code>）、恢复默认（ConfirmDialog）、toast 提示；编辑态互斥（同组同时仅一行可编辑），移动/删除自动退出编辑避免索引错位；</li>
+    <li>路由 <code>/admin/service-config</code>（AdminGuard），<code>api/services.ts</code> 新增 <code>serviceConfigApi</code>，类型 <code>types/serviceConfig.ts</code>。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.35.5 验证结论</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li>后端 check/迁移/API 权限链路（401/403/管理员 GET·PUT·测试·恢复）全部通过；</li>
+    <li>故障转移实测：Open-Meteo 三端点、timor.tech、Bing/百度真实请求成功解析；</li>
+    <li>前端 <code>npm run build</code> 零报错，产物同步 templates/static；</li>
+    <li>一体化服务重启后浏览器逐项验证全部通过：行默认只读编辑、保存/取消、首尾行置灰（新增行默认只读）、排序、首页天气/万年历/AI 助手链路无回归，测试数据已清理。</li>
+  </ul>
+  <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0;" />
+  <h3 style="color:#0f172a;margin-top:0;">10.36 架构极简治理：根目录瘦身、文档中心分流与跨 AI 协作维护规范落地 (v1.74)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.36.1 治理背景与核心痛点</h4>
+  <p style="color:#475569;line-height:1.6;">
+    随着平台的持续演进，根目录与文档体系暴露出显著的结构性膨胀：<code>README.md</code> 累积达 1361 行，大量版本发布流水账与深层理论混杂，初次接入成本极高；辅助脚本与设计文档散落根目录；跨 AI 编程助手开发缺乏统一约束，容易发生日志反弹污染。
+  </p>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.36.2 核心改造与分层治理方案</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>文档中心 (docs/) 独立设立</strong>：收纳权威 PSD 规范与 HTML 交互视图；全量更新日志抽离为独立的 <code>docs/CHANGELOG.md</code> (承接 v1.13~v1.73)；三大数据库部署模式与 6 种物理隔离矩阵深度归并入 PSD 架构体系；</li>
+    <li><strong>工具中心 (tools/) 激活与路径自愈</strong>：<code>build_frontend.py</code> 移入 <code>tools/</code> 并将根路径锚点修复为两级父目录 <code>Path(__file__).resolve().parent.parent</code>；<code>check_admin_status.py</code> 移入 <code>tools/</code> 并头部注入 <code>sys.path</code>；</li>
+    <li><strong>主自述文档 (README.md) 极简重构</strong>：篇幅收敛至 180 行以内，聚焦核心价值、单体一体化单进程架构（0.0.0.0:5173）、快速启动及全局导航；</li>
+    <li><strong>跨 AI 协作与维护规范 (AGENTS.md) 落地</strong>：建立根目录规范守卫，约束所有主流 AI 代理（Codex、Cursor、Claude Code、Windsurf 等）统一遵循文档路由分流与极简原则。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.36.3 验证效果</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li>跨目录执行 <code>tools/check_admin_status.py</code> 成功解析 Django ORM 并输出管理员账号状态，路径自愈生效；</li>
+    <li><code>tools/build_frontend.py</code> 根路径两级解析正确无误；</li>
+    <li>传统版单体一体化服务正常启动，单端口 5173、静态托管与 API 链路 100% 守恒，零业务逻辑破坏。</li>
+  </ul>
+</div>
+
+
+<div style="background:#fff;border-radius:12px;padding:24px;margin-bottom:24px;box-shadow:0 1px 3px rgba(0,0,0,0.05);border:1px solid #e2e8f0;">
+  <h3 style="color:#0f172a;font-size:18px;margin-bottom:12px;border-bottom:2px solid #ec4899;padding-bottom:8px;">10.37 妈妈健康中心生命体征监测（血压/血糖）与智能双轨分析体系（v1.75）</h3>
+  <p style="color:#475569;font-size:14px;line-height:1.6;">针对妊娠期高血压疾病与妊娠期糖尿病（GDM）两大核心并发症，系统正式落地方案 A，融入「妈妈·孕产档案」二级子看板架构，建立严谨合理的临床标准分级体系，支持非必填部分录入与未录入展示说明，并联动 ECharts 时序走势与双通道 AI 专家解读。</p>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:16px;">10.37.1 核心特性与架构决策</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>方案 A 二级子看板架构</strong>：在「妈妈·孕产档案」下划分子看板切换，顶层保持极简 4 大 Tab，与 <code>currentMother</code> 档案与 <code>gestation_engine</code> 孕周引擎紧密对齐。</li>
+    <li><strong>严谨合理的临床医学标准</strong>：严格遵循《妊娠期高血压疾病诊治指南》与《妊娠期高血糖诊治指南(2021)》，血压区分正常/偏高/轻度预警/重度危象警报（>=160/110 mmHg），血糖覆盖空腹（3.1~5.1）、餐后1h（<10.0）、餐后2h（<8.5，目标 4.4~6.7）、睡前与随机 5 大场景，动态自适应孕期与非孕期标准。</li>
+    <li><strong>部分录入与完备度说明</strong>：解除全字段必填限制，支持单录体重、单录血压、单录血糖或组合录入；未录入数据在看板与明细中给出明确展示说明。</li>
+    <li><strong>同日多次打卡无损合并</strong>：支持 409 友好提示与 <code>overwrite=true</code> 字段级增量合并。</li>
+    <li><strong>双通道 AI 解读与生活方式处方</strong>：结合完备度与历史趋势生成结构化报告，提供 DASH 低钠与低 GI 饮食指南，外部 AI 故障时秒级降级至本地医学知识库。</li>
+    <li><strong>ECharts 走势与批量管理</strong>：时序双轴走势带临床警戒虚线，历史明细支持分页、单条/批量删除与确认弹窗。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.37.2 验证结果</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li>Vite 前端构建 100% 成功，产物自动同步至 Django <code>static/</code> 与 <code>templates/</code>；</li>
+    <li>Django <code>manage.py check</code> 0 警告 0 错误；</li>
+    <li>单体单进程服务端口 5173 正常监听，生命体征录入、时序获取、AI 分析与 CSV 导入端到端验证通过。</li>
+  </ul>
+</div>
+
+
+<div style="background:#ffffff;border:1px solid #e2e8f0;border-radius:12px;padding:24px;margin-bottom:24px;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+  <h3 style="color:#0f172a;font-size:18px;margin-bottom:12px;border-bottom:2px solid #3b82f6;padding-bottom:8px;">10.38 妈妈健康中心体验深化与功能对等重构（v1.76）</h3>
+  <p style="color:#475569;font-size:14px;line-height:1.6;">深化健康打卡按钮智能情景适配、CSV 专属三向分流、测量日期动态联动重算与档案溯源、以及体重/BMI 与血压血糖互补折叠卡对等扩展，彻底解决字段混杂与场景不匹配痛点。</p>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:16px;">10.38.1 核心重构与对等架构</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>健康打卡智能适配与校验解耦</strong>：BMI 子页面聚焦体重身高，血压血糖模块默认收缩；血压血糖子页面打卡按钮自适应为“记录血压/血糖”，体重腹围模块默认收缩；顶部双标签快速切换，仅校验当前活动模块。</li>
+    <li><strong>CSV 导入三向专属分流与独立模板</strong>：精准分流为 <code>mom_bmi</code>、<code>mom_vitals</code> 与 <code>baby</code>，提供专属中英文 CSV 模板，列校验精准对应，后端 API 无损兼容。</li>
+    <li><strong>测量日期动态联动推算与档案溯源</strong>：选择测量日期后自动调用 <code>computeGestation</code> / <code>autoPostpartumMonths</code> 毫秒级重算孕周天数与产后月数，显式渲染来源档案徽章并支持多宝基准切换。</li>
+    <li><strong>体重/BMI 模块互补选填折叠卡</strong>：在 <code>BmiFormCard</code> 底部新增血压、血糖、伴随症状与生活备忘折叠卡，提交时全量打包归档至后端生命体征库。</li>
+  </ul>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.38.2 验证结果</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li>Vite 5 构建与 TypeScript 编译 100% 成功，产物同步至 <code>static/</code> 与 <code>templates/</code>；</li>
+    <li>服务通过 <code>run.ps1 restart</code> 平滑重启并正常运行 (PID: 6988，端口 5173，HTTP 200)；</li>
+    <li>单元逻辑与体征完备度评估 100% 通过。</li>
+  </ul>
+</div>
+
+
+<div class="adr-card" id="adr-10-39">
+  <h3>10.39 ADR 10.39：天气与万年历精度深度优化、请求频次治理与外部服务配置生效机制重构（v1.77）</h3>
+  <div class="meta"><span class="badge badge-success">已实施</span> <span class="badge badge-primary">v1.77</span> <span class="badge">2026-10-19</span></div>
+  <p><strong>痛点问题：</strong>自由搜索区县误降级至地级市（如恩阳区变巴中）、搜索无反馈、高频重复拉取无本地持久化、年份图标右侧裁切、首页大卡片定位同步缺加载态、停用外部端点因强行兜底依然调用外网。</p>
+  <p><strong>解决方案：</strong></p>
+  <ul>
+    <li><strong>区县级精准匹配：</strong>前端优先通过本地 3000+ 行政区划树 <code>resolveRegionFromText</code> 贪婪逆向解析，0 延迟、100% 精度直取真实经纬度坐标，防止海外 Geocoding 错误降级；</li>
+    <li><strong>搜索反馈闭环：</strong>搜索按钮集成动态 Spinner 与“正在查询…”文案，看板局部遮罩过渡，全局 Toast 状态通知；</li>
+    <li><strong>会话持久化缓存：</strong>本地用户级持久化缓存，进入页面秒开免拉取，仅在手动搜索、级联查询或主动刷新时请求，退出登录即时清理；</li>
+    <li><strong>万年历年份控件防裁切：</strong>消除浏览器原生 select 裁切，专属胶囊控件内嵌 ChevronDown 图标并锁定安全间距与最小宽度；</li>
+    <li><strong>首页大卡片定位同步 Loading：</strong>定位变更时动态切换毛玻璃 Loading 态与目标城市文案，平滑淡入最新数据；</li>
+    <li><strong>外部接口停用严格生效：</strong>移除暴力回落漏洞，端点全停用直接中断外网请求并抛出 503 业务异常，配置更新即时清空服务端内存缓存。</li>
+    <li><strong>首页大卡片定位同步 Loading 态落地 (v1.77.1)：</strong>彻底接入 JSX 条件分支，实现双模 Loading 态（定位变更动态 Spinner 与目标城市提示 + 首次登录平滑过渡），结合 SWR 毫秒秒开与普通用户共享天气友好提示，彻底消除万年历抢跑与滞留。</li>
+  </ul>
+</div>
+</body>
+
+</html>

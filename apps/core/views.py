@@ -5040,19 +5040,23 @@ _HOME_WEATHER_CACHE = {}
 _HOME_WEATHER_TTL = 30 * 60  # 30 分钟缓存
 
 
-def _get_cached_home_weather(city: str):
+def _get_cached_home_weather(city: str, lat: str = None, lon: str = None):
     now = _py_time.time()
-    hit = _HOME_WEATHER_CACHE.get(city)
+    cache_key = f"{city}:{lat}:{lon}" if (lat and lon) else city
+    hit = _HOME_WEATHER_CACHE.get(cache_key) or _HOME_WEATHER_CACHE.get(city)
     if hit and hit[0] > now:
         return hit[1]
     try:
-        data = weather_service.query_weather(city, days=2)
+        if lat and lon:
+            data = weather_service.query_weather_by_coords(lat, lon, days=2, label=city)
+        else:
+            data = weather_service.query_weather(city, days=2)
     except Exception:
         return None
     current = (data or {}).get("current") or {}
     daily = (data or {}).get("daily") or []
     payload = {
-        "city": city,
+        "city": (data or {}).get("city") or city,
         "temp": current.get("temperature"),
         "desc": current.get("weather_text") or "",
         "icon": current.get("icon") or "",
@@ -5063,7 +5067,9 @@ def _get_cached_home_weather(city: str):
         "tomorrow_min": (daily[1] or {}).get("temp_min") if len(daily) > 1 else None,
         "update_time": current.get("time") or "",
     }
-    _HOME_WEATHER_CACHE[city] = (now + _HOME_WEATHER_TTL, payload)
+    _HOME_WEATHER_CACHE[cache_key] = (now + _HOME_WEATHER_TTL, payload)
+    if city and city != cache_key:
+        _HOME_WEATHER_CACHE[city] = (now + _HOME_WEATHER_TTL, payload)
     return payload
 
 
@@ -5123,10 +5129,14 @@ class HomeWeatherView(APIView):
         has_perm = request.user.is_staff or has_permission(request.user, "menu_weather")
 
         raw_city = (request.query_params.get("city") or "").strip()
+        lat = (request.query_params.get("lat") or "").strip()
+        lon = (request.query_params.get("lon") or "").strip()
         if not has_perm:
             city = admin_city
             source = "admin"
             notice = "您没有天气页面权限，当前天气信息默认来源于管理员用户"
+            lat = None
+            lon = None
         else:
             if raw_city and len(raw_city) <= weather_service.CITY_NAME_MAX_LEN:
                 city = raw_city
@@ -5142,7 +5152,7 @@ class HomeWeatherView(APIView):
                 source = "default"
             notice = ""
 
-        weather = _get_cached_home_weather(city)
+        weather = _get_cached_home_weather(city, lat=lat, lon=lon)
         if not weather:
             weather = {
                 "city": city,

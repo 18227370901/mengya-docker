@@ -136,11 +136,18 @@ export default function WeatherPage() {
         const cName = typeof data.city === "string" ? data.city : (data.city as any)?.name || label;
         localStorage.setItem(`mengya_weather_city_${uid}`, cName);
         localStorage.setItem("mengya_last_weather_city", cName);
+        localStorage.setItem("mengya_weather_location_updated", "true");
+        localStorage.setItem("mengya_weather_sync_target_city", cName);
+        localStorage.setItem(`mengya_weather_coords_${uid}`, JSON.stringify([lon, lat]));
         localStorage.setItem(
           `mengya_weather_cache_${uid}`,
           JSON.stringify({ city: cName, label, coords: [lon, lat], data, cachedAt: Date.now() })
         );
-        window.dispatchEvent(new CustomEvent("mengya_weather_city_changed", { detail: { city: cName } }));
+        window.dispatchEvent(
+          new CustomEvent("mengya_weather_city_changed", {
+            detail: { city: cName, lon, lat, label },
+          })
+        );
       } catch {
         /* ignore */
       }
@@ -179,13 +186,23 @@ export default function WeatherPage() {
       try {
         const uid = user?.id || 0;
         const cName = typeof data.city === "string" ? data.city : (data.city as any)?.name || text;
+        const coords = (data as any)?.location ? [(data as any).location.longitude, (data as any).location.latitude] : undefined;
         localStorage.setItem(`mengya_weather_city_${uid}`, cName);
         localStorage.setItem("mengya_last_weather_city", cName);
+        localStorage.setItem("mengya_weather_location_updated", "true");
+        localStorage.setItem("mengya_weather_sync_target_city", cName);
+        if (coords) {
+          localStorage.setItem(`mengya_weather_coords_${uid}`, JSON.stringify(coords));
+        }
         localStorage.setItem(
           `mengya_weather_cache_${uid}`,
-          JSON.stringify({ city: cName, label: text, data, cachedAt: Date.now() })
+          JSON.stringify({ city: cName, label: text, coords, data, cachedAt: Date.now() })
         );
-        window.dispatchEvent(new CustomEvent("mengya_weather_city_changed", { detail: { city: cName } }));
+        window.dispatchEvent(
+          new CustomEvent("mengya_weather_city_changed", {
+            detail: { city: cName, label: text, lon: coords?.[0], lat: coords?.[1] },
+          })
+        );
       } catch {
         /* ignore */
       }

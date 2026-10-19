@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { dailyTipsApi } from "@/api/dailyTips";
 import { weatherApi, type HomeWeatherResponse } from "@/api/weather";
+import { resolveRegionFromText } from "@/lib/chinaRegions";
 import { LunarUtils } from "@/utils/lunar";
 import { useAuthStore } from "@/store/authStore";
 
@@ -157,7 +158,15 @@ export default function HomeWeatherBanner({ stage, onEditStage }: HomeWeatherBan
   const [lunarStr, setLunarStr] = useState("");
   const [term, setTerm] = useState<string | null>(null);
   const [festivals, setFestivals] = useState<string[]>([]);
-  const [weatherData, setWeatherData] = useState<HomeWeatherResponse | null>(null);
+  const [weatherData, setWeatherData] = useState<HomeWeatherResponse | null>(() => {
+    try {
+      const uid = user?.id || 0;
+      const cached = localStorage.getItem(`mengya_weather_home_${uid}`);
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  });
 
   // 科学关怀贴士状态与切换动画
   const [tipIndex, setTipIndex] = useState(0);
@@ -323,20 +332,63 @@ export default function HomeWeatherBanner({ stage, onEditStage }: HomeWeatherBan
   };
 
   // 加载天气数据（优先拉取用户最后一次查询的城市，无权限时自动获取管理员配置与友好提示）
-  const [weatherHintToast, setWeatherHintToast] = useState<string | null>(null);
-  const [isLocationSyncing, setIsLocationSyncing] = useState(false);
-  const [syncTargetCity, setSyncTargetCity] = useState("");
+  const [toastMsg, setToastMsg] = useState<string | null>(null);
+  const showToast = (msg: string) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(null), 3000);
+  };
 
-  const fetchWeather = (isCityChange = false, newCity?: string) => {
+  const [isLocationSyncing, setIsLocationSyncing] = useState(() => {
+    try {
+      return localStorage.getItem("mengya_weather_location_updated") === "true";
+    } catch {
+      return false;
+    }
+  });
+  const [syncTargetCity, setSyncTargetCity] = useState(() => {
+    try {
+      return localStorage.getItem("mengya_weather_sync_target_city") || "";
+    } catch {
+      return "";
+    }
+  });
+  const [isLoadingWeather, setIsLoadingWeather] = useState(() => !weatherData);
+
+  const fetchWeather = (isCityChange = false, newCity?: string, lat?: number | string, lon?: number | string) => {
     let savedCity = newCity || "";
+    let targetLat = lat;
+    let targetLon = lon;
+    const uid = user?.id || 0;
+
     if (!savedCity) {
       try {
-        const uid = user?.id || 0;
         savedCity =
           localStorage.getItem("mengya_last_weather_city") ||
           localStorage.getItem(`mengya_weather_city_${uid}`) ||
           "";
         if (savedCity === "[object Object]") savedCity = "";
+      } catch {
+        /* ignore */
+      }
+    }
+
+    if (!targetLat || !targetLon) {
+      try {
+        const coordsRaw = localStorage.getItem(`mengya_weather_coords_${uid}`);
+        if (coordsRaw) {
+          const coords = JSON.parse(coordsRaw);
+          if (Array.isArray(coords) && coords.length === 2) {
+            targetLon = coords[0];
+            targetLat = coords[1];
+          }
+        }
+        if (!targetLat && savedCity) {
+          const region = resolveRegionFromText(savedCity);
+          if (region && region.coords) {
+            targetLon = region.coords[0];
+            targetLat = region.coords[1];
+          }
+        }
       } catch {
         /* ignore */
       }
@@ -348,26 +400,48 @@ export default function HomeWeatherBanner({ stage, onEditStage }: HomeWeatherBan
     }
 
     weatherApi
-      .homeWeather(savedCity || undefined)
+      .homeWeather({ city: savedCity || undefined, lat: targetLat, lon: targetLon })
       .then((data) => {
         setWeatherData(data);
+        try {
+          localStorage.setItem(`mengya_weather_home_${uid}`, JSON.stringify(data));
+        } catch {
+          /* ignore */
+        }
       })
       .catch(() => {
         // 优雅降级
       })
       .finally(() => {
         if (isCityChange) {
-          setIsLocationSyncing(false);
+          setTimeout(() => {
+            setIsLocationSyncing(false);
+            try {
+              localStorage.removeItem("mengya_weather_location_updated");
+              localStorage.removeItem("mengya_weather_sync_target_city");
+            } catch {
+              /* ignore */
+            }
+          }, 450);
         }
+        setIsLoadingWeather(false);
       });
   };
 
   useEffect(() => {
-    fetchWeather(false);
+    const hasUpdated = localStorage.getItem("mengya_weather_location_updated") === "true";
+    const targetCity = localStorage.getItem("mengya_weather_sync_target_city") || "";
+    if (hasUpdated) {
+      fetchWeather(true, targetCity);
+    } else {
+      fetchWeather(false);
+    }
 
     const handleCityChanged = (e: any) => {
       const updatedCity = e?.detail?.city || "";
-      fetchWeather(true, updatedCity);
+      const lat = e?.detail?.lat;
+      const lon = e?.detail?.lon;
+      fetchWeather(true, updatedCity, lat, lon);
     };
 
     window.addEventListener("mengya_weather_city_changed", handleCityChanged);
@@ -535,17 +609,55 @@ export default function HomeWeatherBanner({ stage, onEditStage }: HomeWeatherBan
 
         {/* 右侧：实况天气卡片 (占 3 列) */}
         <div className="lg:col-span-3 flex flex-col justify-center">
-          {hasWeatherPerm && w ? (
+          {isLocationSyncing ? (
             <div
-              onClick={() => navigate("/weather")}
+              className="group rounded-2xl bg-white/15 backdrop-blur-md p-4 text-center border border-white/20 shadow-md h-full flex flex-col justify-center items-center gap-2 min-h-[140px] animate-pulse"
+              title="正在获取最新设置定位地点的天气情况"
+            >
+              <div className="relative flex items-center justify-center my-0.5">
+                <RefreshCw className="h-6 w-6 text-white animate-spin" />
+              </div>
+              <div className="flex items-center gap-1.5 text-xs font-semibold text-white">
+                <span className="inline-block h-2 w-2 rounded-full bg-amber-300 animate-ping" />
+                <span>正在同步定位天气…</span>
+              </div>
+              <div className="text-[11px] text-white/95 font-medium line-clamp-1 max-w-[170px]" title={syncTargetCity}>
+                获取「{syncTargetCity || "新定位地点"}」气象中
+              </div>
+              <div className="text-[10px] text-white/70">
+                定位已更新 · 自动校准中
+              </div>
+            </div>
+          ) : isLoadingWeather && !w ? (
+            <div
+              className="group rounded-2xl bg-white/15 backdrop-blur-md p-4 text-center border border-white/20 shadow-md h-full flex flex-col justify-center items-center gap-2 min-h-[140px]"
+              title="气象数据正在获取中"
+            >
+              <div className="relative flex items-center justify-center my-0.5">
+                <RefreshCw className="h-6 w-6 text-white/90 animate-spin" />
+              </div>
+              <div className="text-xs font-semibold text-white">气象数据加载中…</div>
+              <div className="text-[10px] text-white/75">正在获取今日实况预报</div>
+            </div>
+          ) : w ? (
+            <div
+              onClick={() => {
+                if (hasWeatherPerm) {
+                  navigate("/weather");
+                } else {
+                  showToast(weatherData?.notice || "当前展示管理员配置天气，如需独立查询请联系管理员开通权限");
+                }
+              }}
               className="group rounded-2xl bg-white/15 backdrop-blur-md hover:bg-white/25 active:scale-98 p-4 text-right transition cursor-pointer border border-white/20 shadow-md h-full flex flex-col justify-between min-h-[140px]"
-              title="点击查看 15 天预报与万年历"
+              title={hasWeatherPerm ? "点击查看 15 天预报与万年历" : weatherData?.notice || "当前展示管理员配置天气"}
             >
               <div className="flex items-center justify-end gap-1.5 text-xs opacity-90">
                 <span className="font-medium">{weatherData?.city || "成都"}</span>
-                {weatherData?.source === "user" && (
+                {weatherData?.source === "user" ? (
                   <span className="rounded-full bg-white/25 px-1.5 py-0.2 text-[10px] font-medium">我的城市</span>
-                )}
+                ) : weatherData?.source === "admin" ? (
+                  <span className="rounded-full bg-amber-400/30 px-1.5 py-0.2 text-[10px] font-medium text-amber-100" title={weatherData?.notice}>管理员配置</span>
+                ) : null}
               </div>
 
               <div className="my-1 flex items-baseline justify-end gap-2">
@@ -575,20 +687,26 @@ export default function HomeWeatherBanner({ stage, onEditStage }: HomeWeatherBan
                   </div>
                 )}
                 <div className="mt-1 text-[10px] text-white/75 group-hover:text-white transition flex items-center justify-end gap-1">
-                  <span>点击进入气象万年历</span>
+                  <span>{hasWeatherPerm ? "点击进入气象万年历" : "系统共享天气 · 点击查看说明"}</span>
                   <span>→</span>
                 </div>
               </div>
             </div>
           ) : (
             <div
-              onClick={() => navigate("/weather")}
+              onClick={() => {
+                if (hasWeatherPerm) {
+                  navigate("/weather");
+                } else {
+                  showToast("您暂无天气与万年历模块访问权限");
+                }
+              }}
               className="group rounded-2xl bg-white/15 backdrop-blur-md hover:bg-white/25 active:scale-98 p-4 text-center transition cursor-pointer border border-white/20 shadow-md h-full flex flex-col justify-center items-center gap-1.5 min-h-[140px]"
-              title="点击进入气象万年历"
+              title={hasWeatherPerm ? "点击进入气象万年历" : "暂无权限"}
             >
               <Calendar className="h-6 w-6 text-white/90" />
               <div className="text-xs font-semibold">气象万年历</div>
-              <div className="text-[10px] text-white/75">点击查看吉日与节气预报 →</div>
+              <div className="text-[10px] text-white/75">{hasWeatherPerm ? "点击查看吉日与节气预报 →" : "今日吉日与节气预报"}</div>
             </div>
           )}
         </div>
@@ -606,6 +724,13 @@ export default function HomeWeatherBanner({ stage, onEditStage }: HomeWeatherBan
           从第一次胎动到第一次背书包 · 全程关怀
         </div>
       </div>
+
+      {toastMsg && (
+        <div className="fixed bottom-6 right-6 z-50 rounded-xl bg-slate-900/90 backdrop-blur-md px-4 py-2.5 text-xs text-white shadow-2xl border border-white/20 flex items-center gap-2 animate-in fade-in slide-in-from-bottom-2">
+          <Info className="h-4 w-4 text-amber-300" />
+          <span>{toastMsg}</span>
+        </div>
+      )}
     </div>
   );
 }
