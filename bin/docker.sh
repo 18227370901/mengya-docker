@@ -211,34 +211,57 @@ start_docker() {
         fi
     fi
 
-    # 探活检查后端一体化容器运行状态与初始化进度
+    # 探活检查后端一体化容器运行状态与真实端口就绪（彻底杜绝 502 Bad Gateway）
     local backend_container="${APP_NAME:-mengya_docker}_backend"
-    echo "  正在检测后端容器 $backend_container 启动状态..."
+    echo "  正在检测后端容器启动与初始化进度 (数据迁移、种子填充与端口监听)..."
     local backend_ready=0
-    for _ in $(seq 1 12); do
-        sleep 1
+    local max_wait=60
+    local check_url="http://127.0.0.1:$FRONTEND_PORT/"
+
+    for i in $(seq 1 $max_wait); do
         local b_status
         b_status=$(docker inspect --format='{{.State.Status}}' "$backend_container" 2>/dev/null || echo "")
-        if [ "$b_status" = "running" ]; then
+
+        # 1. 若容器异常退出或死亡，立即捕获并打印后端容器日志
+        if [ "$b_status" = "exited" ] || [ "$b_status" = "dead" ]; then
+            echo ""
+            echo -e "\033[1;31m============================================================\033[0m"
+            echo -e "\033[1;31m[错误] 后端一体化容器 $backend_container 启动后异常退出！\033[0m"
+            echo "--- 后端容器最近日志 ---"
+            $compose logs --tail=40 backend 2>/dev/null || true
+            echo "------------------------"
+            echo -e "\033[1;31m============================================================\033[0m"
+            exit 1
+        fi
+
+        # 2. 真实 HTTP 探针：检测映射端口是否真正返回 200/301/302 成功响应
+        local http_code=""
+        if command -v curl >/dev/null 2>&1; then
+            http_code=$(curl -s -m 2 -o /dev/null -w "%{http_code}" "$check_url" 2>/dev/null || echo "")
+        elif command -v wget >/dev/null 2>&1; then
+            if wget -q -S --spider --timeout=2 "$check_url" 2>&1 | grep -qE "HTTP/.* [23][0-9]{2}"; then
+                http_code="200"
+            fi
+        else
+            if python3 -c "import urllib.request; resp=urllib.request.urlopen('$check_url', timeout=2); exit(0 if resp.status in (200, 301, 302) else 1)" 2>/dev/null; then
+                http_code="200"
+            fi
+        fi
+
+        if [ "$http_code" = "200" ] || [ "$http_code" = "301" ] || [ "$http_code" = "302" ]; then
             backend_ready=1
-            break
-        elif [ "$b_status" = "exited" ] || [ "$b_status" = "dead" ]; then
-            backend_ready=0
+            echo "  ✔ [服务就绪] 一体化服务已正常响应 (HTTP $http_code，耗时 ${i}s)！"
             break
         fi
+
+        if [ $((i % 5)) -eq 0 ]; then
+            echo "  [初始化中] 服务正在启动 (${i}/${max_wait}s，后台执行 migrate 与 init_data，请稍候)..."
+        fi
+        sleep 1
     done
 
-    local final_b_status
-    final_b_status=$(docker inspect --format='{{.State.Status}}' "$backend_container" 2>/dev/null || echo "")
-    if [ "$final_b_status" = "exited" ] || [ "$final_b_status" = "dead" ]; then
-        echo ""
-        echo -e "\033[1;31m============================================================\033[0m"
-        echo -e "\033[1;31m[错误] 后端一体化容器 $backend_container 启动后异常退出！\033[0m"
-        echo "--- 后端容器最近日志 ---"
-        $compose logs --tail=40 backend 2>/dev/null || true
-        echo "------------------------"
-        echo -e "\033[1;31m============================================================\033[0m"
-        exit 1
+    if [ "$backend_ready" -ne 1 ]; then
+        echo -e "\033[1;33m  ⚠ [提示] 超过 ${max_wait}s 端口尚未完全就绪，容器仍在后台初始化，请稍候访问...\033[0m"
     fi
 
     echo ""

@@ -2272,7 +2272,8 @@ estart: unless-stopped；
     <li><strong>首页推荐商品后端精准分页：</strong>改造为 <code>page_size=4</code> 精准拉取，响应体积从 145KB 降至 3KB，消除全表扫描与全对象序列化；</li>
     <li><strong>SQLite WAL 模式与锁等待：</strong>连接建立时自动执行 <code>PRAGMA journal_mode = WAL;</code> 与 <code>PRAGMA synchronous = NORMAL;</code>，配置 20 秒锁等待，实现并发无互斥；</li>
     <li><strong>环境模板硬化与目录自愈：</strong><code>.env.example</code> 默认配置 <code>DJANGO_DEBUG=False</code>，<code>STATIC_ROOT.mkdir(exist_ok=True)</code> 消除启动底噪；</li>
-    <li><strong>前端编译产物同步：</strong>通过 <code>tools/build_frontend.py</code> 重新编译并同步最新静态产物至 templates 与 static 目录。</li>
+    <li><strong>前端编译产物同步：</strong>通过 <code>tools/build_frontend.py</code> 重新编译并同步最新静态产物至 templates 与 static 目录；</li>
+    <li><strong>502 Bad Gateway 根除与真实 HTTP 就绪探针：</strong><code>start_docker</code> 升级为 60s 真实 HTTP 200 探针，容器崩溃即刻抓取日志；接入 Docker 原生 <code>healthcheck</code>；Nginx 开启 HTTP/1.1 长连接、平滑重试与 128k/256k 缓冲区，彻底消除启动期与运行期 502 报错。</li>
   </ul>
 </div>
 </body>

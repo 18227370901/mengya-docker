@@ -1908,4 +1908,5 @@ django.db.utils.OperationalError: unable to open database file
 2. **前端短轮询抑制与可见性联动**：轮询周期由 15s 延长至 60s，并结合 `document.visibilityState`，在标签页切走或休眠时完全挂起轮询；
 3. **首页推荐商品分页拉取**：改造为 `productApi.list({ sort: "rating", page: 1, page_size: 4 })`，传输体积降低 95%，后端处理耗时趋近于 0；
 4. **SQLite WAL 并发模式与锁等待**：在 `apps/core/apps.py` 监听 `connection_created` 执行 `PRAGMA journal_mode = WAL;` 与 `PRAGMA synchronous = NORMAL;`，在 `settings.py` 注入 `timeout: 20`；
-5. **静态目录自愈与产物同步**：`STATIC_ROOT.mkdir(exist_ok=True)` 消除底噪告警，执行 `tools/build_frontend.py` 完成生产构建并同步。
+5. **静态目录自愈与产物同步**：`STATIC_ROOT.mkdir(exist_ok=True)` 消除底噪告警，执行 `tools/build_frontend.py` 完成生产构建并同步；
+6. **502 Bad Gateway 根除与真实 HTTP 就绪探针**：重构 `bin/docker.sh` 的 `start_docker` 探活循环，废除仅按 `running` 状态假判断逻辑，改为连续轮询宿主机映射端口的 HTTP 200 就绪状态（最长等待 60s），并在容器提前崩溃时即刻抓取日志告警；在 `docker-compose.yml` 中引入原生 `healthcheck`；在 Nginx 配置中开启 `proxy_http_version 1.1;`、`proxy_set_header Connection ""`、`proxy_next_upstream` 重试与 `128k/256k` 代理缓冲区，彻底根治 Linux 服务器部署访问 502 痛点。

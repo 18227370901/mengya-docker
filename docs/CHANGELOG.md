@@ -23,6 +23,11 @@
 5. **静态文件目录自愈与前端生产产物编译同步**：
    - 在 `config/settings.py` 中配置 `STATIC_ROOT.mkdir(exist_ok=True)`，彻底消除 Gunicorn 初始化时因目录不存在产生的 `UserWarning` 底噪告警；
    - 执行 `python tools/build_frontend.py` 重新编译 React SPA，将生成的优化资产同步至 `templates/index.html` 与 `static/assets/`。
+6. **Linux 部署 502 Bad Gateway 根因根除与「真实 HTTP 端口就绪等待机制」升级**：
+   - **根因分析**：旧版运维脚本在容器刚启动时仅检查 `status == running`（0.5秒内即成立），此时后台容器仍在持续执行 30+ 迁移与种子数据填充，Gunicorn 尚未绑定 8000 端口，宿主机 5174 处于拒绝连接状态；脚本过早输出“启动完成”导致用户与 Nginx 反代即刻访问抛出 502 Bad Gateway；同时 Nginx 反代配置缺 HTTP/1.1 长连接支持与平滑重试；
+   - **真实就绪探针重构**：`bin/docker.sh` 的 `start_docker` 函数升级为 60s 递进式真实 HTTP 探针，持续检测宿主机映射端口是否返回 200/301/302，显示实时初始化进度，并在容器异常退出时即刻抓取后端日志暴露根因；只有端口真正就绪后才宣告启动完成；
+   - **Nginx 反代生产级加固**：在 `nginx/mengya_ssl.conf`、`nginx/nginx.conf` 与 `bin/nginx.sh` 中显式开启 `proxy_http_version 1.1;`、`proxy_set_header Connection ""`、设置大包代理缓冲区（`128k/256k`）并接入 3 次平滑错误重试（`proxy_next_upstream`），彻底消除 502 报错；
+   - **容器原生健康检查接入**：在 `docker-compose.yml` 中为 `backend` 容器注入原生 `healthcheck` 探针，实现容器健康状态可观测。
 
 ---
 
