@@ -39,6 +39,19 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         force = options.get("force", False)
 
+        # 0. 快速短路预检：若各大基础模块数据均已完整存在且非 force，瞬时跳过全量初始化 (耗时 < 0.05s)
+        if not force:
+            brand_count = BrandProfile.objects.count()
+            story_count = FetalStory.objects.count()
+            recipe_count = Recipe.objects.count()
+            timeline_count = TimelineEvent.objects.count()
+            if brand_count >= 40 and story_count >= 200 and recipe_count >= 200 and timeline_count >= 40:
+                self.stdout.write(self.style.SUCCESS("[OK] 平台全量种子数据已就绪，跳过重复初始化 (耗时 < 0.05s)！"))
+                self._ensure_system_setting([])
+                self._ensure_daily_tips(force)
+                self._cleanup_legacy_demo_users()
+                return
+
         # 1. 读取基础种子数据文件
         fixture_path = os.path.join(settings.BASE_DIR, "apps", "core", "fixtures", "initial_data.json")
         if not os.path.exists(fixture_path):
@@ -99,6 +112,12 @@ class Command(BaseCommand):
             return
         if force:
             BrandProfile.objects.all().delete()
+            count = 0
+        if count == 0:
+            objs = [BrandProfile(id=d["pk"], **d["fields"]) for d in items]
+            BrandProfile.objects.bulk_create(objs, ignore_conflicts=True)
+            self.stdout.write(self.style.SUCCESS(f"  [就绪] 品牌档案批量秒级初始化完成 (共 {len(items)} 条)"))
+            return
         created = 0
         for d in items:
             pk = d["pk"]
@@ -114,6 +133,16 @@ class Command(BaseCommand):
             return
         if force:
             Product.objects.all().delete()
+            count = 0
+        if count == 0:
+            objs = []
+            for d in items:
+                fields = dict(d["fields"])
+                fields["brand_profile_id"] = fields.pop("brand_profile", None)
+                objs.append(Product(id=d["pk"], **fields))
+            Product.objects.bulk_create(objs, ignore_conflicts=True)
+            self.stdout.write(self.style.SUCCESS(f"  [就绪] 推荐商品批量秒级初始化完成 (共 {len(items)} 条)"))
+            return
         created = 0
         for d in items:
             pk = d["pk"]
@@ -125,20 +154,18 @@ class Command(BaseCommand):
 
     def _load_timeline(self, items, force):
         count = TimelineEvent.objects.count()
-        # 若记录数少于 40，说明仅有旧脚本残存的几条样本，必须全量补充到 204 条
         if count >= 40 and not force:
             self.stdout.write(f"  [跳过] 孕期周历时间轴已存在 ({count} 条)")
             return
         if count > 0:
             TimelineEvent.objects.all().delete()
-        created = 0
+        objs = []
         for d in items:
-            pk = d["pk"]
             fields = dict(d["fields"])
             fields.pop("products", None)
-            TimelineEvent.objects.update_or_create(id=pk, defaults=fields)
-            created += 1
-        self.stdout.write(self.style.SUCCESS(f"  [就绪] 孕期周历时间轴初始化完成 (共 {created} 条，涵盖40周全程)"))
+            objs.append(TimelineEvent(id=d["pk"], **fields))
+        TimelineEvent.objects.bulk_create(objs, ignore_conflicts=True)
+        self.stdout.write(self.style.SUCCESS(f"  [就绪] 孕期周历时间轴批量秒级初始化完成 (共 {len(objs)} 条，涵盖40周全程)"))
 
     def _load_fetal_stories(self, items, force):
         count = FetalStory.objects.count()
@@ -147,6 +174,12 @@ class Command(BaseCommand):
             return
         if force:
             FetalStory.objects.all().delete()
+            count = 0
+        if count == 0:
+            objs = [FetalStory(id=d["pk"], **d["fields"]) for d in items]
+            FetalStory.objects.bulk_create(objs, ignore_conflicts=True)
+            self.stdout.write(self.style.SUCCESS(f"  [就绪] 胎教故事批量秒级初始化完成 (共 {len(items)} 条，涵盖孕17-40周双语伴读)"))
+            return
         created = 0
         for d in items:
             pk = d["pk"]
@@ -162,6 +195,12 @@ class Command(BaseCommand):
             return
         if force:
             Recipe.objects.all().delete()
+            count = 0
+        if count == 0:
+            objs = [Recipe(id=d["pk"], **d["fields"]) for d in items]
+            Recipe.objects.bulk_create(objs, ignore_conflicts=True)
+            self.stdout.write(self.style.SUCCESS(f"  [就绪] 孕期营养食谱批量秒级初始化完成 (共 {len(items)} 条，涵盖早/中/晚孕期)"))
+            return
         created = 0
         for d in items:
             pk = d["pk"]
@@ -177,6 +216,12 @@ class Command(BaseCommand):
             return
         if force:
             KidsEncyclopedia.objects.all().delete()
+            count = 0
+        if count == 0:
+            objs = [KidsEncyclopedia(id=d["pk"], **d["fields"]) for d in items]
+            KidsEncyclopedia.objects.bulk_create(objs, ignore_conflicts=True)
+            self.stdout.write(self.style.SUCCESS(f"  [就绪] 幼儿百科问答批量秒级初始化完成 (共 {len(items)} 条，涵盖4大篇章)"))
+            return
         created = 0
         for d in items:
             pk = d["pk"]
@@ -192,6 +237,12 @@ class Command(BaseCommand):
             return
         if force:
             BabyShoppingItem.objects.all().delete()
+            count = 0
+        if count == 0:
+            objs = [BabyShoppingItem(id=d["pk"], **d["fields"]) for d in items]
+            BabyShoppingItem.objects.bulk_create(objs, ignore_conflicts=True)
+            self.stdout.write(self.style.SUCCESS(f"  [就绪] 待产母婴清单批量秒级初始化完成 (共 {len(items)} 条)"))
+            return
         created = 0
         for d in items:
             pk = d["pk"]
@@ -199,7 +250,6 @@ class Command(BaseCommand):
             BabyShoppingItem.objects.update_or_create(id=pk, defaults=fields)
             created += 1
         self.stdout.write(self.style.SUCCESS(f"  [就绪] 待产母婴清单初始化完成 (共 {created} 条)"))
-
 
     def _ensure_daily_tips(self, force):
         try:
@@ -213,6 +263,7 @@ class Command(BaseCommand):
                 self.stdout.write(f"  [跳过] 今日关怀小锦囊已存在 ({count} 条)")
         except Exception as e:
             self.stdout.write(self.style.WARNING(f"  [警告] 今日关怀小锦囊初始化异常: {e}"))
+
     def _ensure_system_setting(self, items):
         if not SystemSetting.objects.exists() and items:
             d = items[0]

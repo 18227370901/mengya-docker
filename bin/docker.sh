@@ -222,14 +222,19 @@ start_docker() {
         local b_status
         b_status=$(docker inspect --format='{{.State.Status}}' "$backend_container" 2>/dev/null || echo "")
 
-        # 1. 若容器异常退出或死亡，立即捕获并打印后端容器日志
-        if [ "$b_status" = "exited" ] || [ "$b_status" = "dead" ]; then
+        local b_restarting
+        b_restarting=$(docker inspect --format='{{.State.Restarting}}' "$backend_container" 2>/dev/null || echo "false")
+        local b_exitcode
+        b_exitcode=$(docker inspect --format='{{.State.ExitCode}}' "$backend_container" 2>/dev/null || echo "0")
+
+        # 1. 若容器异常退出、死亡或陷入反复崩溃重启 (crash loop)，立即捕获并打印后端容器日志
+        if [ "$b_status" = "exited" ] || [ "$b_status" = "dead" ] || [ "$b_status" = "restarting" ] || [ "$b_restarting" = "true" ]; then
             echo ""
             echo -e "\033[1;31m============================================================\033[0m"
-            echo -e "\033[1;31m[错误] 后端一体化容器 $backend_container 启动后异常退出！\033[0m"
-            echo "--- 后端容器最近日志 ---"
-            $compose logs --tail=40 backend 2>/dev/null || true
-            echo "------------------------"
+            echo -e "\033[1;31m[错误] 后端一体化容器 $backend_container 启动异常 (状态: $b_status, 重启中: $b_restarting, 退出码: $b_exitcode)！\033[0m"
+            echo "--- 后端容器最近 50 行运行日志 ---"
+            $compose logs --tail=50 backend 2>/dev/null || true
+            echo "---------------------------------"
             echo -e "\033[1;31m============================================================\033[0m"
             exit 1
         fi
@@ -261,7 +266,18 @@ start_docker() {
     done
 
     if [ "$backend_ready" -ne 1 ]; then
-        echo -e "\033[1;33m  ⚠ [提示] 超过 ${max_wait}s 端口尚未完全就绪，容器仍在后台初始化，请稍候访问...\033[0m"
+        echo ""
+        echo -e "\033[1;31m============================================================\033[0m"
+        echo -e "\033[1;31m[错误] 超过 ${max_wait}s 端口尚未完全就绪，服务启动未达到预期状态！\033[0m"
+        echo "--- 后端一体化容器最近 50 行日志 ---"
+        $compose logs --tail=50 backend 2>/dev/null || true
+        echo "-----------------------------------"
+        echo -e "\033[1;33m[排查建议]：\033[0m"
+        echo "  1. 执行 ./run.sh logs backend 查看后端详细运行与报错日志；"
+        echo "  2. 执行 ./run.sh status 检查各容器健康状态与端口监听情况；"
+        echo "  3. 若数据库数据卷密码或版本不兼容，执行 docker compose down -v 清理旧卷后重新执行 ./run.sh start 即可。"
+        echo -e "\033[1;31m============================================================\033[0m"
+        exit 1
     fi
 
     echo ""

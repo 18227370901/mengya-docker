@@ -39,18 +39,18 @@ services:
     ports:
       - "${FRONTEND_PORT:-5174}:8000"
     command: >
-      sh -c "python wait_for_db.py;
-             python manage.py migrate &&
+      sh -c "python wait_for_db.py &&
+             python manage.py migrate --noinput &&
              python manage.py init_data --skip-if-exists &&
              python manage.py ensure_admin &&
              python manage.py invalidate_tokens &&
              gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 1 --threads 4 --worker-class gthread --max-requests 1000 --max-requests-jitter 100 --timeout 60"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/', timeout=2)"]
-      interval: 5s
-      timeout: 3s
+      interval: 3s
+      timeout: 2s
       retries: 20
-      start_period: 15s
+      start_period: 3s
 
   redis:
     profiles: ["celery"]

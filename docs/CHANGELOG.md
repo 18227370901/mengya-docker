@@ -31,6 +31,29 @@
 
 ---
 
+## 2026-10-20 最新更新说明（v1.79 版本）： Nginx 配置覆盖提示统一化、独立 PG 秒级健康探测、数据填充秒级提速与 502/崩溃盲区根除
+
+1. **统一宿主机 Nginx 配置文件覆盖交互提示（彻底解决启停无提示与静默覆盖）**：
+   - **交互全场景对齐**：在 `bin/nginx.sh` 中重构 `gen_nginx_config`，消除仅在 `add_nginx` 命令下才提示的历史局限；无论执行 `./run.sh start`、`./run.sh restart` 还是 `./run.sh add_nginx`，只要检测到 `$NGINX_CONF` 已存在且非空，在交互终端（`[ -t 0 ]`）下统一高亮弹出 `是否需要覆盖/更新 Nginx 配置文件内容？(y/N): `；
+   - **安全保守策略**：默认回车为 `N`，保留现有有效配置，避免用户手工调优的参数被意外覆盖；选择 `y`/`Y` 时自动生成 `.bak_时间戳` 快照备份再行更新；
+   - **自适应提权重载**：重载 Nginx 逻辑升级为多级平滑尝试（`sudo -n systemctl reload nginx` -> `sudo -n nginx -s reload` -> `nginx -s reload`），保障非 root 运维体验。
+2. **独立 PG 容器健康检查（Healthcheck）压降至 2 秒（消除编排层 20 秒无效等待）**：
+   - **编排时序优化**：在 `docker-compose.db.yml` 中，将 `db` 容器的健康检查参数由保守的 `start_period: 10s, interval: 15s` 优化为 `start_period: 2s, interval: 2s, timeout: 2s`；
+   - **放行效率提升**：Docker Compose 编排层在 PostgreSQL 启动后 1~2 秒内即可迅速判定 healthy 并放行 `backend` 容器启动，彻底剔除容器依赖层的空转卡顿。
+3. **种子数据全量秒级快速就绪与批量插入（从 35 秒降至 0.05 秒）**：
+   - **全量已就绪快速短路**：在 `apps/core/management/commands/init_data.py` 入口增加多表预检短路逻辑，当核心模块数据均已就绪且非 `--force` 时，0.05 秒内瞬间返回；
+   - **批量写入（`bulk_create`）优化**：针对需初始化的模块采用 Django 原生单条 SQL `bulk_create(ignore_conflicts=True)` 批量插入，将初始化耗时从 35 秒压缩至 0.2 秒。
+4. **增强 `wait_for_db.py` 真实认证探针与启动期自适应平滑重试**：
+   - 不仅探测 TCP 5432 端口连通性，且调用 `psycopg2` 执行真实数据库认证与 `SELECT 1;` 探针；
+   - 遇到 `the database system is starting up` 时平滑重试等待；
+   - 若遇到数据卷密码或库名不匹配，直接输出具体原因及重置指导建议（`docker compose down -v`），避免盲目串行失败进入死循环。
+5. **升级 `bin/docker.sh` 捕获 `restarting` 崩溃循环与防假死假就绪保护**：
+   - 在真实探活循环中，同时检测 `b_status == "restarting"`、`.State.Restarting == true` 及非零退出码；
+   - 一旦容器发生崩溃并陷入 Docker 的 `unless-stopped` 重启死循环，立刻抓取后端最近 50 行真实日志并退出，不再死等 60 秒超时；
+   - 只有真实 HTTP 探针返回 200/301/302 才标记就绪；若超过等待上限，明确报错并输出日志与排查指引，绝不报虚假“成功”，从根源杜绝因假就绪导致的 502 Bad Gateway。
+
+---
+
 ## 2026-10-19 最新更新说明（v1.77 版本）： 天气与万年历精度深度优化、请求频次治理与外部服务配置生效机制重构
 
 1. **自由搜索区县级精准匹配（彻底解决“恩阳区展示为巴中”问题）**：

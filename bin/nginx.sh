@@ -179,65 +179,46 @@ server {
 }
 EOF
 
-    # 智能比对：比对现有文件与目标配置（忽略自动生成时间戳行的差异）
-    local is_different=1
+    local do_update="n"
     if [ -s "$NGINX_CONF" ]; then
-        local clean_old clean_new
-        clean_old=$(grep -v "^# 自动生成时间:" "$NGINX_CONF" 2>/dev/null || true)
-        clean_new=$(grep -v "^# 自动生成时间:" "$TMP_CONF" 2>/dev/null || true)
-        if [ "$clean_old" = "$clean_new" ]; then
-            is_different=0
-        fi
-    fi
-
-    # 场景 1：配置完全一致且有效，静默跳过更新，零冗余快照备份，不打扰启动流程
-    if [ "$is_different" -eq 0 ]; then
-        rm -f "$TMP_CONF"
-        echo "  保持现有 Nginx 配置文件内容不变，配置完全一致。"
-        echo "  ✅ 配置文件状态确认: 已是最新 ($NGINX_CONF)"
-        echo "  SSL 证书路径:   $CERT_FILE"
-        echo "  SNI 匹配域名:   $SERVER_NAME (以 SERVER_NAME 为准，主域名: $MAIN_DOMAIN)"
-        echo "  外部访问端口:   $EXTERNAL_PORT"
-        print_access_urls "HTTPS 访问入口" "$EXTERNAL_PORT"
-        echo ""
-        return 0
-    fi
-
-    # 场景 2：专属命令 add_nginx 下且文件存在变动，提供交互式确认
-    if [ "$CMD" = "add_nginx" ] && [ -s "$NGINX_CONF" ]; then
-        echo -e "\033[1;33m[提示] 检测到已存在 Nginx 配置文件且内容有更新: $NGINX_CONF\033[0m"
-        echo -e "\033[1;31m[注意] 若选择更新，将生成标准反代配置并覆盖现有文件内容（若有手工修改将被替换）！\033[0m"
+        echo -e "\033[1;33m[提示] 检测到已存在 Nginx 配置文件: $NGINX_CONF\033[0m"
+        echo -e "\033[1;31m[注意] 若选择覆盖，将重新生成标准反代配置并覆盖现有文件内容（若有手工定制将被替换）！\033[0m"
         local choice="n"
         if [ -t 0 ]; then
-            printf "是否需要更新 Nginx 配置文件内容？(y/N): "
+            printf "是否需要覆盖/更新 Nginx 配置文件内容？(y/N): "
             read -r choice || choice="n"
         fi
         case "$choice" in
             [yY]|[yY][eE][sS])
+                do_update="y"
                 ;;
             *)
-                rm -f "$TMP_CONF"
-                echo "  保持现有 Nginx 配置文件内容不变，跳过配置更新。"
-                echo "  ✅ 配置文件状态确认: 保留已有有效内容 ($NGINX_CONF)"
-                print_access_urls "HTTPS 访问入口" "$EXTERNAL_PORT"
-                return 0
+                do_update="n"
                 ;;
         esac
+    else
+        echo "  检测到 Nginx 反代配置缺失，自动生成初始配置以接入 443 SNI..."
+        do_update="y"
     fi
 
-    # 场景 3：日常启动(start/restart)检测到参数漂移自愈，或专属命令确认更新：执行快照备份并安全同步
-    if [ -s "$NGINX_CONF" ]; then
-        local BAK_FILE="${NGINX_CONF}.bak_$(date '+%Y%m%d%H%M%S')"
-        if cp -f "$NGINX_CONF" "$BAK_FILE" 2>/dev/null; then
-            echo -e "  \033[1;32m[安全备份] 检测到配置变动，已自动为变更前的旧配置创建快照: $BAK_FILE\033[0m"
+    if [ "$do_update" = "y" ]; then
+        if [ -s "$NGINX_CONF" ]; then
+            local BAK_FILE="${NGINX_CONF}.bak_$(date '+%Y%m%d%H%M%S')"
+            if cp -f "$NGINX_CONF" "$BAK_FILE" 2>/dev/null; then
+                echo -e "  \033[1;32m[安全备份] 已自动为变更前的旧配置创建快照: $BAK_FILE\033[0m"
+            fi
         fi
+        mv -f "$TMP_CONF" "$NGINX_CONF"
+        echo -e "  \033[1;32m[配置生效] Nginx 反代配置已成功同步写入: $NGINX_CONF\033[0m"
+    else
+        rm -f "$TMP_CONF"
+        echo "  保持现有 Nginx 配置文件内容不变，跳过配置更新。"
+        echo "  ✅ 配置文件状态确认: 保留已有有效内容 ($NGINX_CONF)"
     fi
 
-    mv -f "$TMP_CONF" "$NGINX_CONF"
-    echo -e "  \033[1;32m[配置自愈] 宿主机 Nginx 反代配置已成功同步更新: $NGINX_CONF\033[0m"
-    echo "  SSL 证书路径:   $CERT_FILE"
-    echo "  SNI 匹配域名:   $SERVER_NAME (以 SERVER_NAME 为准，主域名: $MAIN_DOMAIN)"
-    echo "  外部访问端口:   $EXTERNAL_PORT"
+    echo "  SSL 证书路径:         $CERT_FILE"
+    echo "  SNI 匹配域名:         $SERVER_NAME (以 SERVER_NAME 为准，主域名: $MAIN_DOMAIN)"
+    echo "  外部访问端口:         $EXTERNAL_PORT"
     print_access_urls "HTTPS 访问入口" "$EXTERNAL_PORT"
     echo "  配置优势: 与传统版完全隔离，通过 SNI 域名 ($SERVER_NAME) 共享 443 端口！"
     echo ""
@@ -257,9 +238,9 @@ EOF
 
     # 尝试自动检测并重载宿主机 Nginx 服务
     if command -v nginx >/dev/null 2>&1; then
-        echo "==> 检查并重载宿主机 Nginx 配置..."
-        if nginx -t >/dev/null 2>&1; then
-            if nginx -s reload 2>/dev/null; then
+        echo "==> 检查并重载宿主机 Nginx 服务..."
+        if nginx -t >/dev/null 2>&1 || sudo -n nginx -t >/dev/null 2>&1; then
+            if sudo -n systemctl reload nginx 2>/dev/null || sudo -n nginx -s reload 2>/dev/null || nginx -s reload 2>/dev/null; then
                 echo "  ✅ Nginx 配置重载成功，SNI 域名反代规则已实时生效！"
             else
                 echo "  [提示] Nginx 未在运行或需要 root 权限重载，请按需执行: sudo nginx -s reload"

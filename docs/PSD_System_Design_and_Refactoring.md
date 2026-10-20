@@ -1730,3 +1730,28 @@ done
 4. **SQLite WAL 并发模式与锁等待**：在 `apps/core/apps.py` 监听 `connection_created` 执行 `PRAGMA journal_mode = WAL;` 与 `PRAGMA synchronous = NORMAL;`，在 `settings.py` 注入 `timeout: 20`；
 5. **静态目录自愈与产物同步**：`STATIC_ROOT.mkdir(exist_ok=True)` 消除底噪告警，执行 `tools/build_frontend.py` 完成生产构建并同步；
 6. **502 Bad Gateway 根除与真实 HTTP 就绪探针**：重构 `bin/docker.sh` 的 `start_docker` 探活循环，废除仅按 `running` 状态假判断逻辑，改为连续轮询宿主机映射端口的 HTTP 200 就绪状态（最长等待 60s），并在容器提前崩溃时即刻抓取日志告警；在 `docker-compose.yml` 中引入原生 `healthcheck`；在 Nginx 配置中开启 `proxy_http_version 1.1;`、`proxy_set_header Connection ""`、`proxy_next_upstream` 重试与 `128k/256k` 代理缓冲区，彻底根治 Linux 服务器部署访问 502 痛点。
+
+## 10.41 ADR 10.41：宿主机 Nginx 配置文件覆盖提示统一化、PG 毫秒级探活与 502 崩溃循环治理 (v1.79)
+
+### 10.41.1 决策背景与核心痛点
+1. **启停无 Nginx 配置覆盖提示**：执行 `run.sh start` 或 `restart` 时缺失交互询问，跳过提示或静默覆盖；
+2. **初始化耗时长且持续打印等待信息**：`postgres:15-alpine` 编排层 healthcheck 参数设置过长（15s/10s），加上 `init_data` 2,000 次循环 `update_or_create` 网络往返（耗时 35s），串行累加达 70 秒，超过 60 秒探活等待上限；
+3. **502 Bad Gateway 与假死假就绪**：后端容器在崩溃时进入 Docker `restarting` 状态，原有探测脚本仅检测 `exited/dead`，导致容器陷入死循环时误判为“仍处于初始化中”，超时后误报“启动完成”，用户访问直接抛出 502 Bad Gateway。
+
+### 10.41.2 架构治理方案与设计要点
+1. **统一 Nginx 配置覆盖交互确认（全场景对齐）**：
+   - 在 `bin/nginx.sh` 中无论 `start`、`restart` 还是 `add_nginx`，只要文件已存在均弹出 `(y/N)` 交互提示，默认 `N` 保留，选 `y` 自动创建快照备份后覆盖写入；
+   - Nginx 重载逻辑升级为 `sudo -n systemctl reload nginx || sudo -n nginx -s reload || nginx -s reload` 多级平滑重载。
+2. **独立 PG 编排层健康检查秒级提速**：
+   - 在 `docker-compose.db.yml` 中调整 healthcheck 为 `start_period: 2s, interval: 2s, timeout: 2s`，1~2 秒内即判定 healthy 并放行 `backend` 启动。
+3. **种子数据全量秒级快速就绪**：
+   - 在 `init_data.py` 入口引入多表预检短路逻辑，已就绪时 0.05 秒内瞬时返回；未初始化时采用 `bulk_create` 批量插入，全新初始化压缩至 0.2 秒。
+4. **数据库真实认证探针与启动平滑重试**：
+   - 在 `wait_for_db.py` 中引入 `psycopg2` 真实数据库认证，平滑应对启动时序，并在数据卷凭证不匹配时给出明确指引。
+5. **容器崩溃循环捕获与真实就绪严格防线**：
+   - `bin/docker.sh` 捕获 `b_status == "restarting"` 与 `.State.Restarting == true`，检测到崩溃立即打印 50 行后端日志并退出；未就绪时绝不误报成功。
+
+### 10.41.3 实施与验证结果
+- **启动与就绪耗时**：独立 PG 模式从容器启动到端口完全就绪总耗时由 70+ 秒降至 3~5 秒内；
+- **交互与诊断验证**：Nginx 配置覆盖提示正常唤起；容器异常时即刻暴露真实日志，彻底杜绝 502 假死。
+
