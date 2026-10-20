@@ -5240,5 +5240,5 @@ class AIConfigModelsView(APIView):
 
         res = ai_service.fetch_model_list(api_key, base_url)
         audit(request, "ai_fetch_models", "获取AI模型列表", "ai_config", 0, base_url or "api.openai.com",
-              f"拉取模型成功={res.get("success")}, 数量={len(res.get("models", []))}")
+              f"拉取模型成功={res.get('success')}, 数量={len(res.get('models', []))}")
         return Response({"code": 0, "message": "ok", "data": res})

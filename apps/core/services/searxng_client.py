@@ -302,8 +302,8 @@ class SearXNGClient:
             return {
                 "status": "failed",
                 "latency_ms": latency_ms,
-                "status_code": general["status_code"],
-                "message": f"SearXNG 服务返回异常 HTTP 状态码: {general["status_code"]}（常见原因：实例未开启 JSON 输出格式，需在实例 settings.yml 的 search.formats 中添加 json）。",
+                "status_code": general['status_code'],
+                "message": f"SearXNG 服务返回异常 HTTP 状态码: {general['status_code']}（常见原因：实例未开启 JSON 输出格式，需在实例 settings.yml 的 search.formats 中添加 json）。",
             }
 
         # 第二跳：权威健康白名单通道探针
@@ -315,14 +315,14 @@ class SearXNGClient:
         base = {
             "latency_ms": latency_ms,
             "status_code": 200,
-            "sample_count": general["count"],
-            "health_count": health["count"] if health["ok"] else 0,
+            "sample_count": general['count'],
+            "health_count": health['count'] if health["ok"] else 0,
             "sample_titles": general["titles"],
             "unresponsive_engines": unresponsive_all,
         }
 
         # 实例可达，但通用检索 0 条：上游引擎被封禁/限流/无结果
-        if general["count"] == 0:
+        if general['count'] == 0:
             hint_engines = f"，失效引擎：{('、'.join(unresponsive_all))}" if unresponsive_all else ""
             return {
                 **base,
@@ -336,12 +336,12 @@ class SearXNGClient:
             }
 
         # 通用检索正常
-        health_note = f"，权威健康通道 {health["count"]} 条" if health["ok"] else ""
+        health_note = f"，权威健康通道 {health['count']} 条" if health["ok"] else ""
         hint_engines = f"；另有引擎暂不可用：{('、'.join(unresponsive_all))}" if unresponsive_all else ""
         return {
             **base,
             "status": "success",
-            "message": f"连通测试成功！响应耗时 {latency_ms}ms，通用检索 {general["count"]} 条{health_note}{hint_engines}。",
+            "message": f"连通测试成功！响应耗时 {latency_ms}ms，通用检索 {general['count']} 条{health_note}{hint_engines}。",
         }
 
     @classmethod

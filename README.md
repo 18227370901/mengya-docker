@@ -1,7 +1,7 @@
 # 萌芽（Mengya）母婴全周期成长伴侣平台 - 容器微服务编排版 (mengya-docker)
 
 <p align="left">
-  <img src="https://img.shields.io/badge/Python-3.11--slim-blue.svg" alt="Python Version">
+  <img src="https://img.shields.io/badge/Python-3.12--slim-blue.svg" alt="Python Version">
   <img src="https://img.shields.io/badge/Docker-Compose%20v2-2496ED.svg" alt="Docker Compose">
   <img src="https://img.shields.io/badge/Django-4.2%20LTS-brightgreen.svg" alt="Django Version">
   <img src="https://img.shields.io/badge/Frontend-React%2018%20%7C%20TS%20%7C%20TailwindCSS-purple.svg" alt="Frontend">
@@ -11,7 +11,7 @@
 
 > **面向新一代母婴家庭的全生命周期（备孕、孕期、育儿）健康陪伴、知识百科、消费决策与智能顾问一体化服务平台**。专为云端生产服务器标准 Docker 容器化交付深度定制，支持单阶段纯 Python 极简镜像与开箱即用多数据库模式。
 >
-> 📌 **当前版本**：`v1.79` | 📖 **[查看全量版本演化与发布历史 (docs/CHANGELOG.md)](docs/CHANGELOG.md)**
+> 📌 **当前版本**：`v1.80` | 📖 **[查看全量版本演化与发布历史 (docs/CHANGELOG.md)](docs/CHANGELOG.md)**
 
 <!-- 
   【AI 协作与维护规范 - 严禁违背】

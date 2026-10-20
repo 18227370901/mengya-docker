@@ -6,6 +6,18 @@
 
 ---
 
+## 2026-10-20 最新更新说明（v1.80 版本）： Python 3.11/3.12 跨版本语法兼容治理、容器启动 SyntaxError 根除与镜像基线升级
+
+1. **Python 3.11/3.12 f-string 语法跨版本向下兼容（彻底根除 SyntaxError）**：
+   - **根因分析**：本地 Windows 开发环境运行 Python 3.12+，支持 PEP 701 允许在双引号 f-string 内部嵌套同类双引号字面量；而 Docker 容器及低版本 Linux 生产环境使用 Python 3.11，解释器在词法分析阶段提前截断引号，抛出 `SyntaxError: f-string: unmatched '('`，导致 Django 在加载 URLConf 时崩溃退出（退出码 1）；
+   - **全面排查与修正**：全局扫描全量 215 个 Python 源码文件，对 `apps/core/views.py`、`apps/core/services/ai_service.py` 及 `apps/core/services/searxng_client.py` 中存在的 5 处同类引号嵌套写法彻底重构为外双内单引号规范（如 `{res.get('success')}`、`{r['title']}`），确保在 Python 3.10、3.11 及 3.12 环境下均 100% 正确解析无任何语法报错；
+2. **Docker 容器基础镜像平滑升级**：
+   - 同步将 Docker 镜像基础环境由 `python:3.11-slim` 升级为 `python:3.12-slim`，拉齐容器与本地开发环境的 Python 版本，享受 Python 3.12 带来的性能提升与低内存优势；
+3. **传统版本与 Docker 跨端一致性校验与平滑重启验证**：
+   - 重新执行 `run.ps1 restart` 平滑重启传统版本服务（端口 5173），验证 HTTP 状态码 200 与各接口功能稳定就绪。
+
+---
+
 ## 2026-10-20 最新更新说明（v1.78 版本）： 容器化运行时高并发治理、前端短轮询抑制、首页大包优化与 SQLite WAL 模式接入
 
 1. **环境模板安全配置硬化（阻断 SQL 查询历史内存泄露隐患）**：

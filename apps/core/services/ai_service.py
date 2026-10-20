@@ -479,7 +479,7 @@ def ai_evaluate_product(product, user=None) -> dict:
         s_query = f"{product.brand} {product.name} 质量抽检 评测 缺陷 召回"
         s_res = SearXNGClient.search(s_query, max_results=3)
         if s_res:
-            lines = [f"- 《{r["title"]}》: {r["body"][:150]}" for r in s_res]
+            lines = [f"- 《{r['title']}》: {r['body'][:150]}" for r in s_res]
             external_context = "\n【互联网质检与消协评测参考(SearXNG)】:\n" + "\n".join(lines)
     except Exception:
         pass

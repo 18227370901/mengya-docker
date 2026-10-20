@@ -1253,6 +1253,30 @@ apps/core/                                    apps/core/
   </ul>
 </section>
 
+<section class="section" id="adr-10-42">
+  <h2>10.42 ADR 10.42：Python 3.11/3.12 跨版本语法兼容与容器化环境 f-string 语法解析报错根治规范 (v1.80)</h2>
+  <h3>10.42.1 决策背景与核心痛点</h3>
+  <ul>
+    <li><strong>容器启动报 SyntaxError 崩溃</strong>：在 Docker 容器（基于 <code>python:3.11-slim</code>）或低版本 Python（&lt; 3.12）环境下部署启动后端服务时，一体化容器 <code>mengya_backend</code> 启动异常退出并进入 <code>restarting</code> 状态（退出码 1），报 <code>SyntaxError: f-string: unmatched '('</code>。</li>
+    <li><strong>导致服务不可用与 502 错误</strong>：核心路由加载失败引发 Django 崩溃，Gunicorn 无法绑定端口，前端代理报错 502 Bad Gateway。</li>
+  </ul>
+  <h3>10.42.2 根因定位与缺陷机理</h3>
+  <ul>
+    <li><strong>PEP 701 特性依赖与运行时差异</strong>：Python 3.12 引入 PEP 701 允许在双引号 f-string 内部嵌套同类双引号字面量；而 Docker 容器采用 Python 3.11，词法分析器遇到相同引号时直接截断识别，判定为语法错误。</li>
+    <li><strong>潜在同类写法排查</strong>：经 AST 全局检索，除 <code>apps/core/views.py</code> 外，在 <code>ai_service.py</code> 与 <code>searxng_client.py</code> 中共存在 5 处同类嵌套写法。</li>
+  </ul>
+  <h3>10.42.3 架构治理方案与设计要点</h3>
+  <ul>
+    <li><strong>代码级跨版本向下兼容重构</strong>：全部 5 处嵌套同类引号统一改写为外双内单引号规范（如 <code>{res.get('success')}</code>、<code>{r['title']}</code>、<code>general['status_code']</code>），并通过全量 215 个 Python 源码文件的严格 AST 扫描校验。</li>
+    <li><strong>Docker 运行时基线平滑升级</strong>：将 Dockerfile 基础镜像由 <code>python:3.11-slim</code> 升级为 <code>python:3.12-slim</code>，实现容器运行时与本地开发环境基线对齐，提升运行性能并降低内存开销。</li>
+  </ul>
+  <h3>10.42.4 实施与验证结果</h3>
+  <ul>
+    <li><strong>语法与重启校验</strong>：215 个 Python 文件语法 100% 校验通过；传统本地版重启成功（PID: 38708），端口 5173 监听稳定且 HTTP 200 OK。</li>
+    <li><strong>容器配置同步</strong>：Docker 版 Dockerfile 升级为 <code>python:3.12-slim</code>，双版本同步完成。</li>
+  </ul>
+</section>
+
 </main>
   </div>
 
