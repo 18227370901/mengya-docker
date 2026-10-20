@@ -91,7 +91,7 @@ export default function HomePage() {
       : undefined;
     Promise.all([
       timelineApi.list({ essential: true }).catch(() => [] as TimelineItem[]),
-      productApi.listAll({ sort: "rating" }).catch(() => [] as Product[]),
+      productApi.list({ sort: "rating", page: 1, page_size: 4 }).then((res) => (res && res.items ? res.items : [])).catch(() => [] as Product[]),
       ...(weekStage ? [timelineApi.list({ stage: weekStage }).catch(() => [] as TimelineItem[])] : []),
     ])
       .then(([e, r, w]) => {

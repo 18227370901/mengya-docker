@@ -5,6 +5,8 @@
 
 # 数据库持久化文件（包含运行隐私，严禁提交）
 *.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
 *.db
 db.sqlite3
 

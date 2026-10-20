@@ -58,12 +58,14 @@ export default function RequireAuth({ children }: { children: React.ReactNode })
     };
   }, [user, fetchMe]);
 
-  // 定时每15秒静默同步一次权限，确保管理员在其他窗口操作后普通用户页面无缝实时生效
+  // 定时静默同步权限（前台活动时每60秒，后台休眠时静默，杜绝无效短轮询轰击）
   useEffect(() => {
     if (!user) return;
     const timer = setInterval(() => {
-      fetchMe();
-    }, 15000);
+      if (document.visibilityState === "visible") {
+        fetchMe();
+      }
+    }, 60000);
     return () => clearInterval(timer);
   }, [user, fetchMe]);
 

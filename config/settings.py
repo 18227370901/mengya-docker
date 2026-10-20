@@ -115,6 +115,9 @@ else:
         "default": {
             "ENGINE": "django.db.backends.sqlite3",
             "NAME": sqlite_file,
+            "OPTIONS": {
+                "timeout": 20,
+            },
         }
     }
 # ===== 认证 / JWT =====
@@ -163,6 +166,7 @@ USE_TZ = True
 
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
+STATIC_ROOT.mkdir(exist_ok=True)
 STATIC_DIR = BASE_DIR / "static"
 STATICFILES_DIRS = [STATIC_DIR] if STATIC_DIR.exists() else []
 MEDIA_URL = "media/"

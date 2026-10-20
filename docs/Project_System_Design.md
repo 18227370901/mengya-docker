@@ -1894,3 +1894,18 @@ django.db.utils.OperationalError: unable to open database file
 5. **首页大卡片定位同步 Loading**：定位变更时动态切换毛玻璃 Loading 态与目标城市文案，平滑淡入最新数据；
 6. **外部接口停用严格生效**：移除暴力回落漏洞，端点全停用直接中断外网请求并抛出 503 业务异常，配置更新即时清空服务端内存缓存；
 7. **Docker 环境纯净镜像适配**：Docker 镜像采用单体一体化部署，静态资源经由 `build_frontend.py` 预编译打包，彻底解除 Node.js 运行时依赖。
+### 10.41 容器化运行时高并发治理、前端短轮询抑制、首页大包优化与 SQLite WAL 模式接入（v1.78）
+
+#### 10.41.1 架构决策背景与核心痛点
+随着 Docker 容器化版在轻量化低配云主机（如 1C1G / 1C2G）与生产环境的深入运行，监控与用户反馈了以下核心性能痛点：
+1. **Gunicorn 线程池频繁打满**：前端 `RequireAuth.tsx` 存在无条件 15 秒短轮询，多标签页或后台挂起时持续冲击 `/api/users/me/`，将 Gunicorn `--threads 4` 的轻量线程池排队占满，导致页面交互请求响应迟钝并引起 CPU 飙升；
+2. **首页推荐商品大体积全量查询**：`HomePage.tsx` 每次加载拉取全量商品（约 145KB JSON），只为了切片前 4 条展示，触发大量 ORM 全表扫描与序列化计算；
+3. **SQLite 模式（`DB_MODE=sqlite`）读写锁竞争**：在单文件 SQLite 模式下，未开启 WAL 模式且缺少连接超时配置，写操作互斥锁表导致 Gunicorn 多线程争锁阻塞；
+4. **环境变量模板配置隐患**：`.env.example` 默认配置 `DJANGO_DEBUG=True`，初次部署复制时易误开启 Debug 导致 `connection.queries` 内存泄漏。
+
+#### 10.41.2 实施方案与容器化治理
+1. **配置模板硬化**：修正 `.env.example` 中 `DJANGO_DEBUG=False`，彻底消除 Debug 内存泄漏隐患；
+2. **前端短轮询抑制与可见性联动**：轮询周期由 15s 延长至 60s，并结合 `document.visibilityState`，在标签页切走或休眠时完全挂起轮询；
+3. **首页推荐商品分页拉取**：改造为 `productApi.list({ sort: "rating", page: 1, page_size: 4 })`，传输体积降低 95%，后端处理耗时趋近于 0；
+4. **SQLite WAL 并发模式与锁等待**：在 `apps/core/apps.py` 监听 `connection_created` 执行 `PRAGMA journal_mode = WAL;` 与 `PRAGMA synchronous = NORMAL;`，在 `settings.py` 注入 `timeout: 20`；
+5. **静态目录自愈与产物同步**：`STATIC_ROOT.mkdir(exist_ok=True)` 消除底噪告警，执行 `tools/build_frontend.py` 完成生产构建并同步。

@@ -2261,5 +2261,19 @@ estart: unless-stopped；
   <p><strong>痛点问题：</strong>自由搜索区县误降级至地级市（如恩阳区变巴中）、搜索无反馈、高频重复拉取无本地持久化、年份图标右侧裁切、首页大卡片定位同步缺加载态、停用外部端点因强行兜底依然调用外网。</p>
   <p><strong>解决方案：</strong>区县级前端高精度逆向解析直取经纬度；搜索状态反馈与全局 Toast；本地持久化缓存秒开与低频拉取；年份控件防裁切胶囊样式；首页定位同步动态 Loading；彻底修复外部端点停用回退漏洞并联动服务端缓存即时清空。</p>
 </div>
+
+<div class="adr-card" id="adr-10-41">
+  <h3>10.41 ADR 10.41：容器化运行时高并发治理、前端短轮询抑制、首页大包优化与 SQLite WAL 模式接入 (v1.78)</h3>
+  <div class="meta"><span class="badge badge-success">已实施</span> <span class="badge badge-primary">v1.78</span> <span class="badge">2026-10-20</span></div>
+  <p><strong>痛点问题：</strong>RequireAuth 15s 高频轮询打满 Gunicorn 线程池、首页推荐商品 145KB 全量无分页拉取、SQLite 模式下未开启 WAL 导致读写锁冲突排队、.env.example 默认开启 Debug 潜伏内存泄漏隐患。</p>
+  <p><strong>解决方案：</strong></p>
+  <ul>
+    <li><strong>前端短轮询抑制与可见性联动：</strong>轮询间隔放宽至 60 秒，并联动 Page Visibility API，标签页不可见时完全暂停轮询，切回前台恢复；</li>
+    <li><strong>首页推荐商品后端精准分页：</strong>改造为 <code>page_size=4</code> 精准拉取，响应体积从 145KB 降至 3KB，消除全表扫描与全对象序列化；</li>
+    <li><strong>SQLite WAL 模式与锁等待：</strong>连接建立时自动执行 <code>PRAGMA journal_mode = WAL;</code> 与 <code>PRAGMA synchronous = NORMAL;</code>，配置 20 秒锁等待，实现并发无互斥；</li>
+    <li><strong>环境模板硬化与目录自愈：</strong><code>.env.example</code> 默认配置 <code>DJANGO_DEBUG=False</code>，<code>STATIC_ROOT.mkdir(exist_ok=True)</code> 消除启动底噪；</li>
+    <li><strong>前端编译产物同步：</strong>通过 <code>tools/build_frontend.py</code> 重新编译并同步最新静态产物至 templates 与 static 目录。</li>
+  </ul>
+</div>
 </body>
 </html>

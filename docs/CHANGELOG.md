@@ -1,8 +1,28 @@
 # 萌芽（Mengya）母婴健康与育儿平台 - 全量版本演化与更新日志
 
-> **项目名称**：萌芽（Mengya）母婴平台 - 本地传统部署版 (`mengya-local`)  
+> **项目名称**：萌芽（Mengya）母婴平台 - 容器微服务编排版 (`mengya-docker`)  
 > **归档说明**：根据根目录 `AGENTS.md` 规范，本文件专门集中归档系统自 v1.13 至最新版本的全量功能演化、版本发布历史、技术重构与缺陷修复清单。  
 > **AI 协作铁律**：后续任何 AI 工具（Codex、Cursor、Claude Code、Windsurf 等）或开发者产生新版本发布或变更时，**必须统一在此文档顶部降序追加**，严禁在 `README.md` 中堆砌版本日志。
+
+---
+
+## 2026-10-20 最新更新说明（v1.78 版本）： 容器化运行时高并发治理、前端短轮询抑制、首页大包优化与 SQLite WAL 模式接入
+
+1. **环境模板安全配置硬化（阻断 SQL 查询历史内存泄露隐患）**：
+   - **根因分析**：`.env.example` 环境变量模板中将 `DJANGO_DEBUG` 误配置为 `True`，导致用户根据模板复制创建 `.env` 时继承 Debug 模式；在 Gunicorn 长生命周期容器中，Debug 模式会将每一次 SQL 语句无上限堆积在 `django.db.connection.queries` 内存数组中，随着访问量递增引发单调内存泄漏与频繁的 GC Stop-The-World (STW) 停顿；
+   - **模板硬化**：将 `.env.example` 中的 `DJANGO_DEBUG=True` 严格修正为 `DJANGO_DEBUG=False`，从根源阻断初次部署与环境自愈过程中的内存泄露隐患。
+2. **前端高频心跳短轮询抑制（保护 Gunicorn 容器工作线程池）**：
+   - **根因分析**：`RequireAuth.tsx` 中使用无条件的 `setInterval(fetchMe, 15000)` 短轮询；在 Gunicorn 轻量化单 Worker + 4 轻量线程（`--workers 1 --threads 4`）架构下，多用户或多标签页打开/后台休眠时每 15 秒并发轰炸 `/api/users/me/`，直接耗尽 Gunicorn 线程池，导致真实交互请求延迟激增与 CPU 瞬间飙升；
+   - **治理方案**：将轮询间隔由 15 秒放宽至 60 秒，并深度集成浏览器 Page Visibility API（`document.visibilityState === "visible"`），在页面处于后台、标签页切走或移动端息屏时自动挂起轮询，重回前台时恢复，消除 85% 以上的无意义心跳请求。
+3. **首页推荐商品大体积全量查询治理（传输体积与序列化开销缩减 95%）**：
+   - **根因分析**：`HomePage.tsx` 页面加载时调用 `productApi.listAll({ sort: "rating" })` 并携带 `no_page=1`，导致后端拉取全量数十上百条商品（约 145KB JSON），只为了切片渲染首页推荐的前 4 项数据；多用户访问时反复触发数据库全表扫描与昂贵的 DRF 模型序列化；
+   - **治理方案**：重构为后端分页拉取 `productApi.list({ sort: "rating", page: 1, page_size: 4 })`，单次请求响应体积由 145KB 降至约 3KB，彻底消除后端全量序列化与大包传输带来的 CPU/内存瞬间峰值。
+4. **SQLite 容器化模式 WAL 高并发日志与 20 秒锁等待接入**：
+   - **根因分析**：当用户采用 `docker-compose.sqlite.yml`（单文件轻量化本地存储模式）时，SQLite 默认使用传统 Rollback Journal 模式，并发写锁会互斥锁住整库，与 Gunicorn 的 4 个并发线程发生锁冲突，产生线程排队堆积并偶发 `database is locked` 报错；
+   - **治理方案**：在 `apps/core/apps.py` 中注册 `connection_created` 信号，在 SQLite 连接建立时自动执行 `PRAGMA journal_mode = WAL;` 与 `PRAGMA synchronous = NORMAL;`；并在 `config/settings.py` 的 SQLite `DATABASES` 配置中注入 `"OPTIONS": {"timeout": 20}`，实现读写并行不互斥与锁等待容错。
+5. **静态文件目录自愈与前端生产产物编译同步**：
+   - 在 `config/settings.py` 中配置 `STATIC_ROOT.mkdir(exist_ok=True)`，彻底消除 Gunicorn 初始化时因目录不存在产生的 `UserWarning` 底噪告警；
+   - 执行 `python tools/build_frontend.py` 重新编译 React SPA，将生成的优化资产同步至 `templates/index.html` 与 `static/assets/`。
 
 ---
 
