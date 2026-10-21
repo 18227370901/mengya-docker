@@ -454,6 +454,31 @@
   </ul>
 </section>
 
+<section class="section" id="adr-10-43">
+  <h2>10.43 ADR 10.43：Nginx 配置文件覆盖死锁根除与智能内容差异感知（Diff 校验）规范 (v1.81)</h2>
+  <h3>10.43.1 决策背景与核心痛点</h3>
+  <ul>
+    <li><strong>模板自发性死锁</strong>：原有 <code>bin/nginx.sh</code> 模板自注入 <code># MANAGED_BY_ADMIN_DO_NOT_OVERWRITE</code>，导致脚本生成的初始配置被永久锁死。</li>
+    <li><strong>覆盖询问被架空</strong>：关键字短路提前 <code>return 0</code>，覆盖确认提示 <code>(y/N)</code> 无法弹出。</li>
+    <li><strong>配置永不更新</strong>：修改 <code>config.sh</code> / <code>.env</code> 域名后配置无法同步更新。</li>
+  </ul>
+  <h3>10.43.2 根因定位与缺陷机理</h3>
+  <ul>
+    <li><strong>静态文本匹配的局限性</strong>：过度依赖标记匹配而缺乏动态内容比对能力，忽视了用户修改域名的实际业务诉求。</li>
+  </ul>
+  <h3>10.43.3 架构治理方案与设计要点</h3>
+  <ul>
+    <li><strong>彻底根除模板自锁标记</strong>：删除模板中的自注入注释，杜绝新配置自锁。</li>
+    <li><strong>智能内容差异感知（Diff 校验）</strong>：生成目标临时配置并剥离注释比对有效 Nginx 指令。完全一致时输出提示并秒级跳过；检测到差异时主动弹出 <code>(y/N)</code> 覆盖询问，输入 <code>y</code> 自动创建 <code>.bak_时间戳</code> 备份并更新生效，默认 <code>N</code> 保护手工定制。</li>
+    <li><strong>双版本双向对齐</strong>：传统版与 Docker 版同步应用最新机制。</li>
+  </ul>
+  <h3>10.43.4 实施与验证结果</h3>
+  <ul>
+    <li><strong>差异感知验证</strong>：修改域名后精准弹出询问，未修改时提示配置一致秒级跳过。</li>
+    <li><strong>服务重启验证</strong>：传统版本重启成功（PID: 13368），端口 5173 监听稳定且 HTTP 200 OK。</li>
+  </ul>
+</section>
+
 </main>
   </div>
 

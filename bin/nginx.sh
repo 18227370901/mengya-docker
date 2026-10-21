@@ -102,30 +102,15 @@ server {
 "
     fi
 
-    # 策略 3 高亮提示（无论是否存在或是否包含特定注释，均高亮输出，避免首次使用的用户不知道有这个功能）
-    echo -e "\033[1;36m[提示] 若需对 Nginx 配置进行手工深度定制并防止启动时被自动覆盖，可在配置文件首行添加: # MANAGED_BY_ADMIN_DO_NOT_OVERWRITE\033[0m"
-
-    # 策略 3 检查：是否已存在免打扰锁定标记
-    if [ -f "$NGINX_CONF" ] && grep -q "MANAGED_BY_ADMIN_DO_NOT_OVERWRITE" "$NGINX_CONF" 2>/dev/null; then
-        echo -e "\033[1;32m[免打扰] 检测到 $NGINX_CONF 包含 '# MANAGED_BY_ADMIN_DO_NOT_OVERWRITE' 锁定标记，跳过自动覆盖，完全保留现有手工定制配置。\033[0m"
-        echo "  SSL 证书路径:   $CERT_FILE"
-        echo "  SNI 匹配域名:   $SERVER_NAME (以 SERVER_NAME 为准，主域名: $MAIN_DOMAIN)"
-        print_access_urls "HTTPS 访问入口" "$EXTERNAL_PORT"
-        return 0
-    fi
-
-    # 临时生成目标配置文件，用于执行智能内容差分比对 (方案B: 智能比对与静默自愈)
+    # 临时生成目标配置文件，用于智能内容差分比对 (Diff 校验)
     local TMP_CONF="${NGINX_CONF}.tmp_$$"
     cat > "$TMP_CONF" << EOF
-# 提示: 若需对此配置文件进行个性化手工调优并防止后续启动被自动覆盖，请在首行保留或添加:
-# MANAGED_BY_ADMIN_DO_NOT_OVERWRITE
 # ============================================================
 # 萌芽平台 (Docker 版) - 宿主机 Nginx HTTPS (SNI 443) 反向代理配置
 # 配置文件: $NGINX_CONF (独立命名，绝不覆盖传统版 mengya_ssl.conf)
 # 访问端口: $EXTERNAL_PORT (HTTPS 标准端口，通过 SNI 域名识别)
 # 匹配域名: $SERVER_NAME (以 SERVER_NAME 配置为准，与传统版隔离)
 # 后端反代: http://127.0.0.1:$FRONTEND_PORT (Docker 映射端口)
-# 自动生成时间: $(date '+%Y-%m-%d %H:%M:%S')
 # ============================================================
 ${REDIRECT_BLOCK}
 server {
@@ -179,26 +164,57 @@ server {
 }
 EOF
 
-    local do_update="n"
+    local is_same=0
     if [ -s "$NGINX_CONF" ]; then
-        echo -e "\033[1;33m[提示] 检测到已存在 Nginx 配置文件: $NGINX_CONF\033[0m"
-        echo -e "\033[1;31m[注意] 若选择覆盖，将重新生成标准反代配置并覆盖现有文件内容（若有手工定制将被替换）！\033[0m"
-        local choice="n"
-        if [ -t 0 ]; then
-            printf "是否需要覆盖/更新 Nginx 配置文件内容？(y/N): "
-            read -r choice || choice="n"
+        # 剥离注释行与首尾空白，提取有效 Nginx 指令进行内容比对
+        local cur_effective
+        local new_effective
+        cur_effective=$(grep -v '^[[:space:]]*#' "$NGINX_CONF" 2>/dev/null | tr -s '[:space:]')
+        new_effective=$(grep -v '^[[:space:]]*#' "$TMP_CONF" 2>/dev/null | tr -s '[:space:]')
+        if [ -n "$cur_effective" ] && [ "$cur_effective" = "$new_effective" ]; then
+            is_same=1
         fi
-        case "$choice" in
-            [yY]|[yY][eE][sS])
-                do_update="y"
-                ;;
-            *)
-                do_update="n"
-                ;;
-        esac
-    else
+    fi
+
+    local do_update="n"
+    if [ ! -s "$NGINX_CONF" ]; then
         echo "  检测到 Nginx 反代配置缺失，自动生成初始配置以接入 443 SNI..."
         do_update="y"
+    elif [ "$is_same" = "1" ]; then
+        rm -f "$TMP_CONF"
+        echo -e "  \033[1;32m✅ [配置一致] 宿主机 Nginx 反代配置与当前环境（域名: $SERVER_NAME，端口: $EXTERNAL_PORT）完全匹配，无需更新。\033[0m"
+        echo "  SSL 证书路径:         $CERT_FILE"
+        echo "  SNI 匹配域名:         $SERVER_NAME (以 SERVER_NAME 为准，主域名: $MAIN_DOMAIN)"
+        echo "  外部访问端口:         $EXTERNAL_PORT"
+        print_access_urls "HTTPS 访问入口" "$EXTERNAL_PORT"
+        echo "  配置优势: 与传统版完全隔离，通过 SNI 域名 ($SERVER_NAME) 共享 443 端口！"
+        echo ""
+    else
+        echo -e "\033[1;33m[提示] 检测到已存在 Nginx 配置文件与当前环境配置（如域名/端口/规则）不一致:\033[0m"
+        echo "       配置文件路径: $NGINX_CONF"
+        echo "       当前目标域名: $SERVER_NAME (主域名: $MAIN_DOMAIN)"
+        echo "       当前监听端口: $EXTERNAL_PORT"
+        echo -e "\033[1;31m[注意] 若选择覆盖，将根据当前配置更新，原有旧配置将自动备份为 .bak_时间戳 快照！\033[0m"
+
+        local choice="n"
+        if [ "$NON_INTERACTIVE" = "1" ] || [ "$FORCE" = "1" ]; then
+            echo "  [非交互/强制模式] 自动执行安全覆盖更新..."
+            do_update="y"
+        elif [ -t 0 ]; then
+            printf "是否需要覆盖/更新 Nginx 配置文件内容？(y/N): "
+            read -r choice || choice="n"
+            case "$choice" in
+                [yY]|[yY][eE][sS])
+                    do_update="y"
+                    ;;
+                *)
+                    do_update="n"
+                    ;;
+            esac
+        else
+            echo "  [非交互环境] 默认安全保留现有 Nginx 配置文件不变。"
+            do_update="n"
+        fi
     fi
 
     if [ "$do_update" = "y" ]; then
@@ -210,18 +226,23 @@ EOF
         fi
         mv -f "$TMP_CONF" "$NGINX_CONF"
         echo -e "  \033[1;32m[配置生效] Nginx 反代配置已成功同步写入: $NGINX_CONF\033[0m"
-    else
+        echo "  SSL 证书路径:         $CERT_FILE"
+        echo "  SNI 匹配域名:         $SERVER_NAME (以 SERVER_NAME 为准，主域名: $MAIN_DOMAIN)"
+        echo "  外部访问端口:         $EXTERNAL_PORT"
+        print_access_urls "HTTPS 访问入口" "$EXTERNAL_PORT"
+        echo "  配置优势: 与传统版完全隔离，通过 SNI 域名 ($SERVER_NAME) 共享 443 端口！"
+        echo ""
+    elif [ "$is_same" = "0" ]; then
         rm -f "$TMP_CONF"
         echo "  保持现有 Nginx 配置文件内容不变，跳过配置更新。"
         echo "  ✅ 配置文件状态确认: 保留已有有效内容 ($NGINX_CONF)"
+        echo "  SSL 证书路径:         $CERT_FILE"
+        echo "  SNI 匹配域名:         $SERVER_NAME (以 SERVER_NAME 为准，主域名: $MAIN_DOMAIN)"
+        echo "  外部访问端口:         $EXTERNAL_PORT"
+        print_access_urls "HTTPS 访问入口" "$EXTERNAL_PORT"
+        echo "  配置优势: 与传统版完全隔离，通过 SNI 域名 ($SERVER_NAME) 共享 443 端口！"
+        echo ""
     fi
-
-    echo "  SSL 证书路径:         $CERT_FILE"
-    echo "  SNI 匹配域名:         $SERVER_NAME (以 SERVER_NAME 为准，主域名: $MAIN_DOMAIN)"
-    echo "  外部访问端口:         $EXTERNAL_PORT"
-    print_access_urls "HTTPS 访问入口" "$EXTERNAL_PORT"
-    echo "  配置优势: 与传统版完全隔离，通过 SNI 域名 ($SERVER_NAME) 共享 443 端口！"
-    echo ""
 
     # 检测并警告 NGINX_CONF_DIR 中遗留的 8000 端口旧配置
     if [ -d "$NGINX_CONF_DIR" ]; then
