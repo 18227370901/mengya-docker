@@ -36,19 +36,28 @@ interface ColumnSpec {
   en: string;
   cn: string;
   required: boolean;
+  requiredBadge: "required" | "core" | "optional";
+  requiredText: string;
   desc: string;
   example: string;
 }
 
-const MOM_BMI_COLUMNS: ColumnSpec[] = [
-  { key: "date", en: "date", cn: "日期", required: true, desc: "格式 YYYY-MM-DD，不能晚于今天", example: "2026-09-01" },
-  { key: "weight", en: "weight", cn: "体重", required: true, desc: "单位 kg，合理范围 25~250 kg", example: "58.20" },
-  { key: "waist", en: "waist", cn: "腹围", required: false, desc: "单位 cm，腹围测量值（选填）", example: "86.0" },
+const MOM_FULL_COLUMNS: ColumnSpec[] = [
+  { key: "date", en: "date", cn: "日期", required: true, requiredBadge: "required", requiredText: "必填项", desc: "格式 YYYY-MM-DD，不能晚于今天", example: "2026-09-01" },
+  { key: "weight", en: "weight", cn: "体重", required: false, requiredBadge: "core", requiredText: "核心项·至少填一项", desc: "单位 kg，合理范围 25~250 kg（体重、血压、血糖三者至少填一项）", example: "58.20" },
+  { key: "waist", en: "waist", cn: "腹围", required: false, requiredBadge: "optional", requiredText: "选填项", desc: "单位 cm，腹围测量值（选填）", example: "86.0" },
+  { key: "systolic", en: "systolic", cn: "收缩压", required: false, requiredBadge: "core", requiredText: "核心项·至少填一项", desc: "单位 mmHg（高压，与舒张压需同时填）", example: "118" },
+  { key: "diastolic", en: "diastolic", cn: "舒张压", required: false, requiredBadge: "core", requiredText: "核心项·至少填一项", desc: "单位 mmHg（低压，与收缩压需同时填）", example: "76" },
+  { key: "pulse", en: "pulse", cn: "脉搏", required: false, requiredBadge: "optional", requiredText: "选填项", desc: "单位 次/分（心率，选填）", example: "75" },
+  { key: "blood_sugar", en: "blood_sugar", cn: "血糖", required: false, requiredBadge: "core", requiredText: "核心项·至少填一项", desc: "单位 mmol/L（血糖值，选填）", example: "5.20" },
+  { key: "glucose_type", en: "glucose_type", cn: "测定场景", required: false, requiredBadge: "optional", requiredText: "选填项", desc: "fasting(空腹) | postprandial_1h | postprandial_2h | bedtime | random", example: "fasting" },
   {
     key: "stage",
     en: "stage",
     cn: "阶段",
     required: false,
+    requiredBadge: "optional",
+    requiredText: "选填项",
     desc: "pregnancy(孕期) | postpartum(产后) | general(非孕期/备孕)，留空默认按个人档案智能识别",
     example: "pregnancy",
   },
@@ -57,38 +66,24 @@ const MOM_BMI_COLUMNS: ColumnSpec[] = [
     en: "week",
     cn: "孕周",
     required: false,
+    requiredBadge: "optional",
+    requiredText: "选填项",
     desc: "仅孕期有效。若档案已设置预产期，此列可留空由系统自动推算为 x周x天；亦可手填(如 20)",
     example: "20",
   },
-  { key: "note", en: "note", cn: "备注", required: false, desc: "打卡说明与生活备忘（选填）", example: "早晨空腹体重" },
+  { key: "note", en: "note", cn: "备注", required: false, requiredBadge: "optional", requiredText: "选填项", desc: "打卡说明与生活备忘（选填）", example: "晨起空腹体重与静息血压" },
 ];
 
-const MOM_VITALS_COLUMNS: ColumnSpec[] = [
-  { key: "date", en: "date", cn: "日期", required: true, desc: "格式 YYYY-MM-DD，不能晚于今天", example: "2026-09-01" },
-  { key: "systolic", en: "systolic", cn: "收缩压", required: false, desc: "单位 mmHg（高压，选填）", example: "118" },
-  { key: "diastolic", en: "diastolic", cn: "舒张压", required: false, desc: "单位 mmHg（低压，选填）", example: "76" },
-  { key: "pulse", en: "pulse", cn: "脉搏", required: false, desc: "单位 次/分（心率，选填）", example: "75" },
-  { key: "blood_sugar", en: "blood_sugar", cn: "血糖", required: false, desc: "单位 mmol/L（血糖值，选填）", example: "5.20" },
-  { key: "glucose_type", en: "glucose_type", cn: "测定场景", required: false, desc: "fasting(空腹) | postprandial_1h | postprandial_2h | bedtime | random", example: "fasting" },
-  {
-    key: "stage",
-    en: "stage",
-    cn: "阶段",
-    required: false,
-    desc: "pregnancy(孕期) | postpartum(产后) | general(非孕期/备孕)，留空默认按个人档案智能识别",
-    example: "pregnancy",
-  },
-  { key: "note", en: "note", cn: "备注", required: false, desc: "测定说明与生活备忘（选填）", example: "晨起静息血压与空腹血糖" },
-];
-
-const MOM_COLUMNS = MOM_BMI_COLUMNS;
+const MOM_BMI_COLUMNS = MOM_FULL_COLUMNS;
+const MOM_VITALS_COLUMNS = MOM_FULL_COLUMNS;
+const MOM_COLUMNS = MOM_FULL_COLUMNS;
 
 const BABY_COLUMNS: ColumnSpec[] = [
-  { key: "date", en: "date", cn: "日期", required: true, desc: "格式 YYYY-MM-DD，不能晚于今天", example: "2026-09-01" },
-  { key: "height", en: "height", cn: "身高", required: false, desc: "单位 cm，身长/身高（身高/体重/头围至少填一项）", example: "92.0" },
-  { key: "weight", en: "weight", cn: "体重", required: false, desc: "单位 kg，宝宝实测体重", example: "13.8" },
-  { key: "head", en: "head", cn: "头围", required: false, desc: "单位 cm，宝宝头围", example: "48.5" },
-  { key: "note", en: "note", cn: "备注", required: false, desc: "测量说明与日常备忘（选填）", example: "满月体检" },
+  { key: "date", en: "date", cn: "日期", required: true, requiredBadge: "required", requiredText: "必填项", desc: "格式 YYYY-MM-DD，不能晚于今天", example: "2026-09-01" },
+  { key: "height", en: "height", cn: "身高", required: false, requiredBadge: "core", requiredText: "核心项·至少填一项", desc: "单位 cm，身长/身高（身高/体重/头围至少填一项）", example: "92.0" },
+  { key: "weight", en: "weight", cn: "体重", required: false, requiredBadge: "core", requiredText: "核心项·至少填一项", desc: "单位 kg，宝宝实测体重（身高/体重/头围至少填一项）", example: "13.8" },
+  { key: "head", en: "head", cn: "头围", required: false, requiredBadge: "core", requiredText: "核心项·至少填一项", desc: "单位 cm，宝宝头围（身高/体重/头围至少填一项）", example: "48.5" },
+  { key: "note", en: "note", cn: "备注", required: false, requiredBadge: "optional", requiredText: "选填项", desc: "测量说明与日常备忘（选填）", example: "满月体检" },
 ];
 
 const COLUMN_ALIASES: Record<string, string[]> = {
@@ -140,7 +135,7 @@ function normalizeStage(stageStr: string): string {
 
 function matchColumnKey(headerText: string, target: ImportTarget): string | null {
   const clean = headerText.trim().toLowerCase().replace(/[()（）\s_\-]/g, "");
-  const cols = target === "baby" ? BABY_COLUMNS : target === "mom_vitals" ? MOM_VITALS_COLUMNS : MOM_BMI_COLUMNS;
+  const cols = target === "baby" ? BABY_COLUMNS : MOM_FULL_COLUMNS;
   for (const c of cols) {
     const aliases = COLUMN_ALIASES[c.key] || [c.key, c.en, c.cn];
     for (const a of aliases) {
@@ -219,39 +214,11 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
         headerKeyMap.forEach((key, idx) => {
           if (key) row[key] = cols[idx] ?? "";
         });
-      } else if (target === "mom_vitals") {
-        const defaultKeys = ["date", "systolic", "diastolic", "pulse", "blood_sugar", "glucose_type", "stage", "note"];
+      } else if (target === "mom_vitals" || target === "mom_bmi" || target === "mom") {
+        const defaultKeys = ["date", "weight", "waist", "systolic", "diastolic", "pulse", "blood_sugar", "glucose_type", "stage", "week", "note"];
         defaultKeys.forEach((key, idx) => {
           row[key] = cols[idx] ?? "";
         });
-      } else if (target === "mom_bmi" || target === "mom") {
-        row.date = cols[0] ?? "";
-        row.weight = cols[1] ?? "";
-        const rest = cols.slice(2);
-        const stageColIdx = rest.findIndex((c) => isStageKeyword(c));
-        if (stageColIdx !== -1) {
-          row.stage = rest[stageColIdx];
-          const remaining = rest.filter((_, i) => i !== stageColIdx);
-          if (remaining.length === 1) {
-            const num = parseFloat(remaining[0]);
-            if (!Number.isNaN(num) && num > 0 && num <= 42 && (row.stage.includes("pregnancy") || row.stage.includes("孕"))) {
-              row.week = remaining[0];
-            } else if (!Number.isNaN(num) && num >= 30 && num <= 160) {
-              row.waist = remaining[0];
-            } else {
-              row.note = remaining[0];
-            }
-          } else if (remaining.length >= 2) {
-            row.waist = remaining[0];
-            row.week = remaining[1];
-            if (remaining[2]) row.note = remaining[2];
-          }
-        } else {
-          const defaultKeys = ["date", "weight", "waist", "stage", "week", "note"];
-          defaultKeys.forEach((key, idx) => {
-            row[key] = cols[idx] ?? "";
-          });
-        }
       } else {
         const defaultKeys = ["date", "height", "weight", "head", "note"];
         defaultKeys.forEach((key, idx) => {
@@ -268,21 +235,38 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
     return records.slice(0, 500);
   }, [rawText, target]);
 
-  /** 本地预检：日期格式与必填数值问题 */
+  /** 本地预检：日期格式与核心指标完整性（全能互通：体重、血压或血糖至少包含一项） */
   const previewIssues = useMemo(() => {
     const issues: string[] = [];
     if (parsedRows.length === 0) return issues;
     let badDate = 0;
     let missValue = 0;
+    let incompleteBp = 0;
     parsedRows.forEach((r) => {
       if (!/^\d{4}-\d{2}-\d{2}$/.test(r.date || "")) badDate += 1;
-      if (target === "mom_bmi" && !r.weight) missValue += 1;
-      if (target === "mom_vitals" && !r.systolic && !r.diastolic && !r.blood_sugar) missValue += 1;
-      if (target === "mom" && !r.weight && !r.systolic && !r.diastolic && !r.blood_sugar) missValue += 1;
-      if (target === "baby" && !r.height && !r.weight && !r.head) missValue += 1;
+      if (target === "baby") {
+        if (!r.height && !r.weight && !r.head) missValue += 1;
+      } else {
+        const hasWeight = Boolean(r.weight);
+        const hasBp = Boolean(r.systolic && r.diastolic);
+        const hasSugar = Boolean(r.blood_sugar);
+        if (!hasWeight && !hasBp && !hasSugar) missValue += 1;
+        if ((r.systolic && !r.diastolic) || (!r.systolic && r.diastolic)) {
+          incompleteBp += 1;
+        }
+      }
     });
     if (badDate) issues.push(`${badDate} 行日期格式异常（标准格式：YYYY-MM-DD）`);
-    if (missValue) issues.push(`${missValue} 行缺少核心测量数值`);
+    if (missValue) {
+      if (target === "baby") {
+        issues.push(`${missValue} 行缺少核心测量数值（身高、体重、头围至少填一项）`);
+      } else {
+        issues.push(`${missValue} 行缺少核心健康数据（体重、血压[高低压]或血糖至少填一项）`);
+      }
+    }
+    if (incompleteBp) {
+      issues.push(`${incompleteBp} 行血压数据不完整（需同时填写收缩压与舒张压）`);
+    }
     const dates = parsedRows.map((r) => r.date);
     if (new Set(dates).size !== dates.length) issues.push("本次导入存在重复日期，同日记录将按策略处理");
     return issues;
@@ -298,43 +282,11 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
     reader.readAsText(file, "utf-8");
   };
 
-  /** 下载模板：支持中英文表头 */
+  /** 下载模板：支持中英文表头（全能互通：体重与体征血压血糖均支持按需选填） */
   const downloadTemplate = (lang: "cn" | "en") => {
     let content = "";
     let filename = "";
-    if (target === "mom_vitals") {
-      if (lang === "cn") {
-        filename = "妈妈血压血糖体征导入模板(中文表头).csv";
-        content =
-          "日期,收缩压,舒张压,脉搏,血糖,测定场景,阶段,备注\n" +
-          "2026-09-01,118,76,75,5.20,空腹,孕期,晨起血压血糖\n" +
-          "2026-09-08,122,80,78,,,孕期,单录血压(收缩压+舒张压)\n" +
-          "2026-09-15,,,,6.40,餐后2小时,孕期,单录餐后血糖\n";
-      } else {
-        filename = "mom_vitals_import_template(en).csv";
-        content =
-          "date,systolic,diastolic,pulse,blood_sugar,glucose_type,stage,note\n" +
-          "2026-09-01,118,76,75,5.20,fasting,pregnancy,morning bp and glucose\n" +
-          "2026-09-08,122,80,78,,,pregnancy,bp only\n" +
-          "2026-09-15,,,,6.40,postprandial_2h,pregnancy,postprandial glucose\n";
-      }
-    } else if (target === "mom_bmi" || target === "mom") {
-      if (lang === "cn") {
-        filename = "妈妈体重与BMI监测导入模板(中文表头).csv";
-        content =
-          "日期,体重,腹围,阶段,孕周,备注\n" +
-          "2026-09-01,58.20,86.0,孕期,20,早晨空腹体重\n" +
-          "2026-09-08,58.80,87.0,孕期,21,按周体重监测\n" +
-          "2026-09-22,57.50,,产后,,产后体重恢复\n";
-      } else {
-        filename = "mom_bmi_import_template(en).csv";
-        content =
-          "date,weight,waist,stage,week,note\n" +
-          "2026-09-01,58.20,86.0,pregnancy,20,morning fasting weight\n" +
-          "2026-09-08,58.80,87.0,pregnancy,21,weekly weight monitoring\n" +
-          "2026-09-22,57.50,,postpartum,,postpartum recovery\n";
-      }
-    } else {
+    if (target === "baby") {
       if (lang === "cn") {
         filename = "宝宝生长测量导入模板(中文表头).csv";
         content =
@@ -347,6 +299,28 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
           "date,height,weight,head,note\n" +
           "2026-09-01,92.0,13.80,48.5,routine growth check\n" +
           "2026-09-08,92.5,14.00,48.6,follow-up test\n";
+      }
+    } else {
+      if (lang === "cn") {
+        filename = target === "mom_vitals"
+          ? "妈妈血压血糖体征导入模板(含体重选填·中文表头).csv"
+          : "妈妈体重与健康监测导入模板(含血压血糖选填·中文表头).csv";
+        content =
+          "日期,体重,腹围,收缩压,舒张压,脉搏,血糖,测定场景,阶段,孕周,备注\n" +
+          "2026-09-01,58.20,86.0,118,76,75,5.20,空腹,孕期,20,全能打卡(体重+腹围+血压+血糖)\n" +
+          "2026-09-08,58.80,87.0,,,,,空腹,孕期,21,单测体重与腹围(体征留空)\n" +
+          "2026-09-15,,,120,78,76,5.10,空腹,孕期,22,单测血压与血糖(体重留空)\n" +
+          "2026-09-22,57.50,,116,74,72,,,产后,,产后恢复体重与血压\n";
+      } else {
+        filename = target === "mom_vitals"
+          ? "mom_vitals_import_template(en).csv"
+          : "mom_bmi_import_template(en).csv";
+        content =
+          "date,weight,waist,systolic,diastolic,pulse,blood_sugar,glucose_type,stage,week,note\n" +
+          "2026-09-01,58.20,86.0,118,76,75,5.20,fasting,pregnancy,20,full check-in (weight+waist+bp+glucose)\n" +
+          "2026-09-08,58.80,87.0,,,,,fasting,pregnancy,21,weight and waist only\n" +
+          "2026-09-15,,,120,78,76,5.10,fasting,pregnancy,22,bp and glucose only\n" +
+          "2026-09-22,57.50,,116,74,72,,,postpartum,,postpartum recovery\n";
       }
     }
 
@@ -505,11 +479,9 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
               <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-700 dark:text-gray-300">
                 <Info className="h-4 w-4 text-brand-500" />
                 <span>
-                  {target === "mom_vitals"
-                    ? "血压/血糖体征导入规范（至少包含血压或血糖）"
-                    : target === "mom_bmi"
-                    ? "体重/BMI 导入规范（体重必填，阶段与孕周自动推算）"
-                    : "宝宝生长发育导入规范（身高、体重、头围至少一项）"}
+                  {target === "baby"
+                    ? "宝宝生长发育导入规范（身高、体重、头围三者至少填一项）"
+                    : "妈妈健康数据全能导入规范（体重、血压、血糖全面互通支持选填，阶段/孕周自动推算）"}
                 </span>
               </div>
               <div className="flex items-center gap-2">
@@ -547,11 +519,21 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
               {columns.map((c: ColumnSpec) => (
                 <span
                   key={c.key}
-                  className="inline-flex items-center gap-1 rounded-md bg-white/80 px-2 py-0.5 text-gray-700 dark:bg-gray-700 dark:text-gray-200"
+                  className="inline-flex items-center gap-1 rounded-md bg-white/90 px-2 py-0.5 text-gray-700 shadow-2xs dark:bg-gray-700 dark:text-gray-200"
                 >
-                  <span className="font-medium">{c.cn}</span>
+                  <span className="font-semibold">{c.cn}</span>
                   <span className="text-[10px] text-gray-400">({c.en})</span>
-                  {c.required && <span className="text-red-500 font-bold">*</span>}
+                  {c.requiredBadge === "required" ? (
+                    <span className="rounded bg-rose-100 px-1 py-0.2 text-[9px] font-bold text-rose-600 dark:bg-rose-950 dark:text-rose-300">
+                      必填
+                    </span>
+                  ) : c.requiredBadge === "core" ? (
+                    <span className="rounded bg-amber-100 px-1 py-0.2 text-[9px] font-bold text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+                      核心项
+                    </span>
+                  ) : (
+                    <span className="text-[9px] text-gray-400">选填</span>
+                  )}
                 </span>
               ))}
             </div>
@@ -575,10 +557,18 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
                         <td className="py-1.5 font-medium text-gray-800 dark:text-gray-200">{c.cn}</td>
                         <td className="py-1.5 font-mono text-gray-500 dark:text-gray-400">{c.en}</td>
                         <td className="py-1.5">
-                          {c.required ? (
-                            <span className="text-red-500 font-semibold">必填</span>
+                          {c.requiredBadge === "required" ? (
+                            <span className="inline-flex items-center rounded-md bg-rose-50 px-1.5 py-0.5 text-[10px] font-bold text-rose-600 dark:bg-rose-950/50 dark:text-rose-300">
+                              【必填项】
+                            </span>
+                          ) : c.requiredBadge === "core" ? (
+                            <span className="inline-flex items-center rounded-md bg-amber-50 px-1.5 py-0.5 text-[10px] font-bold text-amber-700 dark:bg-amber-950/50 dark:text-amber-300">
+                              【核心项·至少填一项】
+                            </span>
                           ) : (
-                            <span className="text-gray-400">选填</span>
+                            <span className="inline-flex items-center rounded-md bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-gray-700 dark:text-gray-400">
+                              【选填项】
+                            </span>
                           )}
                         </td>
                         <td className="py-1.5 text-gray-600 dark:text-gray-300">{c.desc}</td>

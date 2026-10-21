@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Scale,
   HeartPulse,
@@ -53,6 +53,33 @@ interface UnifiedHealthCheckInProps {
 }
 
 /** 依据宝宝生日自动推算天数差 */
+function getLocalDateStr(date: Date = new Date()): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function getPastLocalDateStr(daysAgo: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() - daysAgo);
+  return getLocalDateStr(d);
+}
+
+function formatDateFriendlyCN(dateStr: string): string {
+  if (!dateStr) return "";
+  try {
+    const parts = dateStr.split("-").map(Number);
+    if (parts.length < 3 || !parts[0] || !parts[1] || !parts[2]) return dateStr;
+    const dateObj = new Date(parts[0], parts[1] - 1, parts[2]);
+    const weekdays = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"];
+    const weekday = weekdays[dateObj.getDay()] || "";
+    return `${parts[0]}年${parts[1]}月${parts[2]}日 (${weekday})`;
+  } catch {
+    return dateStr;
+  }
+}
+
 function daysBetween(fromDate: string, toDate: string): number | null {
   const from = new Date(fromDate);
   const to = new Date(toDate);
@@ -136,7 +163,17 @@ export default function UnifiedHealthCheckIn({
     setInternalMode(m);
     onModeChange?.(m);
   };
-  const [recordDate, setRecordDate] = useState(() => new Date().toISOString().slice(0, 10));
+
+  const isModalOpenRef = useRef(false);
+  const lastInitialRecordIdRef = useRef<number | string | null | undefined>(undefined);
+  const todayStr = useMemo(() => getLocalDateStr(), []);
+  const yesterdayStr = useMemo(() => getPastLocalDateStr(1), []);
+  const beforeYesterdayStr = useMemo(() => getPastLocalDateStr(2), []);
+
+  const [recordDate, setRecordDate] = useState(() => initialDate || getLocalDateStr());
+  const [showDatePickerDialog, setShowDatePickerDialog] = useState(false);
+  const [tempPickerDate, setTempPickerDate] = useState(() => recordDate);
+
   const [height, setHeight] = useState(() => (initialHeight ? String(initialHeight) : ""));
   const [weight, setWeight] = useState("");
   const [waist, setWaist] = useState("");
@@ -179,7 +216,7 @@ export default function UnifiedHealthCheckIn({
     momPayload?: BmiAnalysisInput;
     babyPayload?: Partial<HealthRecord>;
   }>(null);
-  const todayStr = new Date().toISOString().slice(0, 10);
+// todayStr managed above
 
   // 打开/关闭/切换关键维度时重置冲突覆盖态，确保绝不无故预先展示覆盖确认框
   useEffect(() => {
@@ -192,52 +229,68 @@ export default function UnifiedHealthCheckIn({
     setConflict(null);
   }, [recordDate, mode, selectedBabyId]);
 
-  // 1. 打开弹窗或传入 initialRecord 时，解析初始打卡模式与初始日期
+  // 1. 打开弹窗或传入 initialRecord 时，解析初始打卡模式与初始日期（防重置：弹窗已处于打开态时绝不重置用户的选择）
   useEffect(() => {
-    if (!isOpen) return;
-    setErrorMsg("");
-    setConflict(null);
+    if (!isOpen) {
+      isModalOpenRef.current = false;
+      lastInitialRecordIdRef.current = undefined;
+      return;
+    }
 
-    if (initialRecord) {
-      const recItems = (initialRecord.exam_items && typeof initialRecord.exam_items === "object" ? initialRecord.exam_items : {}) as Record<string, unknown>;
-      const recStage = (recItems.stage as string) || initialRecord.stage_type;
-      let resolvedMode: CheckInMode = "mom_general";
+    const isFirstOpen = !isModalOpenRef.current;
+    const isDifferentRecord = initialRecord && initialRecord.id !== lastInitialRecordIdRef.current;
 
-      if (
-        initialRecord.record_type === "growth_measurement" ||
-        initialRecord.record_type === "vaccination" ||
-        initialRecord.record_type === "vaccine"
-      ) {
-        resolvedMode = "baby";
-      } else if (initialRecord.record_type === "postpartum_recovery" || recStage === "postpartum") {
-        resolvedMode = "mom_postpartum";
-      } else if (initialRecord.record_type === "prenatal_exam" || initialRecord.record_type === "checkup" || recStage === "pregnancy" || initialRecord.gestational_week) {
-        resolvedMode = "mom_pregnancy";
-      } else if (recStage === "general") {
-        resolvedMode = "mom_general";
-      } else if (initialMode && effectiveAllowedModes.includes(initialMode)) {
-        resolvedMode = initialMode;
-      }
-      setMode(resolvedMode);
-      setRecordDate(initialRecord.record_date || new Date().toISOString().slice(0, 10));
+    if (isFirstOpen || isDifferentRecord) {
+      isModalOpenRef.current = true;
+      lastInitialRecordIdRef.current = initialRecord?.id ?? null;
+      setErrorMsg("");
+      setConflict(null);
 
-      if (initialRecord.baby != null) {
-        setSelectedBabyId(Number(initialRecord.baby));
-      } else if (initialRecord.baby_name && babyList.length > 0) {
-        const found = babyList.find((b) => b.name === initialRecord.baby_name);
-        if (found) setSelectedBabyId(Number(found.id));
-      }
-    } else {
-      if (initialMode && effectiveAllowedModes.includes(initialMode)) {
-        setMode(initialMode);
-      } else if (effectiveAllowedModes.includes("mom_pregnancy") && user?.is_pregnant) {
-        setMode("mom_pregnancy");
-      } else if (effectiveAllowedModes.includes("baby") && (user?.baby_birthday || babyList.length > 0)) {
-        setMode("baby");
+      if (initialRecord) {
+        const recItems = (initialRecord.exam_items && typeof initialRecord.exam_items === "object" ? initialRecord.exam_items : {}) as Record<string, unknown>;
+        const recStage = (recItems.stage as string) || initialRecord.stage_type;
+        let resolvedMode: CheckInMode = "mom_general";
+
+        if (
+          initialRecord.record_type === "growth_measurement" ||
+          initialRecord.record_type === "vaccination" ||
+          initialRecord.record_type === "vaccine"
+        ) {
+          resolvedMode = "baby";
+        } else if (initialRecord.record_type === "postpartum_recovery" || recStage === "postpartum") {
+          resolvedMode = "mom_postpartum";
+        } else if (initialRecord.record_type === "prenatal_exam" || initialRecord.record_type === "checkup" || recStage === "pregnancy" || initialRecord.gestational_week) {
+          resolvedMode = "mom_pregnancy";
+        } else if (recStage === "general") {
+          resolvedMode = "mom_general";
+        } else if (initialMode && effectiveAllowedModes.includes(initialMode)) {
+          resolvedMode = initialMode;
+        }
+        setMode(resolvedMode);
+        const resolvedDate = initialRecord.record_date || getLocalDateStr();
+        setRecordDate(resolvedDate);
+        setTempPickerDate(resolvedDate);
+
+        if (initialRecord.baby != null) {
+          setSelectedBabyId(Number(initialRecord.baby));
+        } else if (initialRecord.baby_name && babyList.length > 0) {
+          const found = babyList.find((b) => b.name === initialRecord.baby_name);
+          if (found) setSelectedBabyId(Number(found.id));
+        }
       } else {
-        setMode(effectiveAllowedModes[0] || "mom_general");
+        if (initialMode && effectiveAllowedModes.includes(initialMode)) {
+          setMode(initialMode);
+        } else if (effectiveAllowedModes.includes("mom_pregnancy") && user?.is_pregnant) {
+          setMode("mom_pregnancy");
+        } else if (effectiveAllowedModes.includes("baby") && (user?.baby_birthday || babyList.length > 0)) {
+          setMode("baby");
+        } else {
+          setMode(effectiveAllowedModes[0] || "mom_general");
+        }
+        const resolvedDate = initialDate || getLocalDateStr();
+        setRecordDate(resolvedDate);
+        setTempPickerDate(resolvedDate);
       }
-      setRecordDate(initialDate || new Date().toISOString().slice(0, 10));
     }
   }, [
     isOpen,
@@ -248,6 +301,31 @@ export default function UnifiedHealthCheckIn({
     user?.is_pregnant,
     user?.baby_birthday,
   ]);
+
+  const openDatePickerDialog = () => {
+    setTempPickerDate(recordDate);
+    setShowDatePickerDialog(true);
+  };
+
+  const confirmPickerDate = () => {
+    if (!tempPickerDate) return;
+    if (tempPickerDate > todayStr) {
+      setErrorMsg("测量日期不能晚于今天，请重新选择");
+      return;
+    }
+    setRecordDate(tempPickerDate);
+    setShowDatePickerDialog(false);
+  };
+
+  const cancelPickerDate = () => {
+    setTempPickerDate(recordDate);
+    setShowDatePickerDialog(false);
+  };
+
+  const applyShortcutDate = (targetDate: string) => {
+    setRecordDate(targetDate);
+    setTempPickerDate(targetDate);
+  };
 
   // 2. 当日期、打卡对象（宝宝/妈妈）或打卡模式切换时，自动回显对应记录数据至输入框（多宝宝/妈妈数据隔离）
   useEffect(() => {
@@ -762,7 +840,12 @@ export default function UnifiedHealthCheckIn({
 
                     {/* 分区 1：记录对象（根据所在页面与权限严格隔离记录模式，杜绝混淆） */}
           <div>
-            <label className="label">① 我要记录</label>
+            <div className="flex items-center justify-between mb-1.5">
+              <label className="label m-0">① 我要记录</label>
+              <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-600 dark:bg-rose-950/40 dark:text-rose-400">
+                【必填项】
+              </span>
+            </div>
             {filteredModeOptions.length === 1 ? (
               <div className="flex items-center gap-3 rounded-xl border border-brand-200 bg-brand-50/70 p-3 dark:border-brand-900/60 dark:bg-brand-950/40">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-500 text-white shadow-xs">
@@ -823,20 +906,108 @@ export default function UnifiedHealthCheckIn({
             )}
           </div>
 
-          {/* 分区 2：日期（默认今天，支持补录；自动回显孕周/产后天数/宝宝月龄） */}
+          {/* 分区 2：日期（默认今天，支持补录历史；提供手机端确认/取消弹窗与快捷标签） */}
           <div>
-            <label className="label flex items-center gap-1">
-              <Calendar className="h-3.5 w-3.5 text-gray-400" />
-              ② 测量日期（支持补录历史）
-            </label>
-            <input
-              type="date"
-              className="input"
-              value={recordDate}
-              max={todayStr}
-              onChange={(e) => setRecordDate(e.target.value)}
-              required
-            />
+            <div className="flex flex-wrap items-center justify-between gap-1.5 mb-1.5">
+              <label className="label flex items-center gap-1.5 m-0">
+                <Calendar className="h-3.5 w-3.5 text-brand-500" />
+                <span>② 测量日期</span>
+                <span className="rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-600 dark:bg-rose-950/40 dark:text-rose-400">
+                  【必填项】
+                </span>
+              </label>
+              <div className="flex items-center gap-1 text-[11px]">
+                <span className="text-gray-400 text-[10px]">快捷:</span>
+                <button
+                  type="button"
+                  onClick={() => applyShortcutDate(todayStr)}
+                  className={`rounded-lg px-2 py-0.5 font-medium transition ${
+                    recordDate === todayStr
+                      ? "bg-brand-500 text-white shadow-2xs"
+                      : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300"
+                  }`}
+                >
+                  今天
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyShortcutDate(yesterdayStr)}
+                  className={`rounded-lg px-2 py-0.5 font-medium transition ${
+                    recordDate === yesterdayStr
+                      ? "bg-brand-500 text-white shadow-2xs"
+                      : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300"
+                  }`}
+                >
+                  昨天
+                </button>
+                <button
+                  type="button"
+                  onClick={() => applyShortcutDate(beforeYesterdayStr)}
+                  className={`rounded-lg px-2 py-0.5 font-medium transition ${
+                    recordDate === beforeYesterdayStr
+                      ? "bg-brand-500 text-white shadow-2xs"
+                      : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300"
+                  }`}
+                >
+                  前天
+                </button>
+              </div>
+            </div>
+
+            {/* 测量日期交互卡片（移动端友好，支持点击展开确认弹窗） */}
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-brand-100 bg-brand-50/40 p-2.5 dark:border-gray-700 dark:bg-gray-800/60">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-brand-600 shadow-2xs dark:bg-gray-700 dark:text-brand-300">
+                  <Calendar className="h-5 w-5" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="font-mono text-sm font-bold text-gray-800 dark:text-gray-100">
+                      {recordDate}
+                    </span>
+                    <span className="rounded-md bg-white/90 px-1.5 py-0.5 text-[10px] font-semibold text-brand-600 shadow-2xs dark:bg-gray-700 dark:text-brand-300">
+                      {recordDate === todayStr
+                        ? "今日测量"
+                        : recordDate === yesterdayStr
+                        ? "昨天补录"
+                        : recordDate === beforeYesterdayStr
+                        ? "前天补录"
+                        : "历史补录"}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate">
+                    {formatDateFriendlyCN(recordDate)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={openDatePickerDialog}
+                  className="btn-secondary flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-brand-600 hover:bg-brand-50 hover:text-brand-700 dark:text-brand-300 dark:hover:bg-gray-700"
+                >
+                  <Calendar className="h-3.5 w-3.5" />
+                  <span>选择/修改日期</span>
+                </button>
+                {/* 桌面端隐藏/备用原生输入框，保持无感双向同步 */}
+                <input
+                  type="date"
+                  aria-label="测量日期"
+                  className="hidden sm:inline-block w-32 rounded-xl border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-700 dark:text-gray-200"
+                  value={recordDate}
+                  max={todayStr}
+                  onChange={(e) => {
+                    if (e.target.value) {
+                      setRecordDate(e.target.value);
+                      setTempPickerDate(e.target.value);
+                    }
+                  }}
+                  required
+                />
+              </div>
+            </div>
+
             {/* v1.58：孕周自动推算提示（双基准：预产期 / 首次打卡锚点；与下方周+天输入框联动） */}
             {momMode && gestation && user?.due_date && (
               <p className="mt-1 text-[11px] text-emerald-600 dark:text-emerald-400">
@@ -875,10 +1046,15 @@ export default function UnifiedHealthCheckIn({
                 {momMode && (
                   <div>
                     <label className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-                      <span>
-                        孕周 * {hasAutoBasis && <span className="text-emerald-600 dark:text-emerald-400">（{gestation ? gestation.label : "推算中"}，可修改）</span>}
+                      <span className="flex items-center gap-1">
+                        <span>孕周</span>
+                        <span className="text-red-500 font-bold">*</span>
+                        <span className="rounded-full bg-rose-50 px-1.5 py-0.2 text-[10px] font-bold text-rose-600 dark:bg-rose-950/40 dark:text-rose-400">
+                          【必填项】
+                        </span>
+                        {hasAutoBasis && <span className="text-emerald-600 dark:text-emerald-400">（{gestation ? gestation.label : "推算中"}，可修改）</span>}
                       </span>
-                      {!hasAutoBasis && <span className="text-[11px] text-gray-400">首次打卡需手填</span>}
+                      {!hasAutoBasis && <span className="text-[11px] text-amber-500">首次打卡需手填</span>}
                     </label>
                     <div className="flex items-center gap-2">
                       <input
@@ -900,7 +1076,7 @@ export default function UnifiedHealthCheckIn({
                         min={0}
                         max={6}
                         className="input"
-                        placeholder="天"
+                        placeholder="天（选填）"
                         value={daysDisplay}
                         onChange={(e) => {
                           setManualDays(e.target.value);
@@ -958,13 +1134,14 @@ export default function UnifiedHealthCheckIn({
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
                       <div>
                         <label className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-                          <span>
-                            身高 (cm) {!initialHeight && !height ? <span className="font-bold text-red-500">*</span> : null}
+                          <span className="flex items-center gap-1">
+                            <span>身高 (cm)</span>
+                            {!initialHeight && !height ? <span className="font-bold text-red-500">*</span> : null}
                           </span>
                           {height || initialHeight ? (
-                            <span className="text-[10px] text-emerald-600 dark:text-emerald-400">已带入历史值</span>
+                            <span className="text-[10px] text-emerald-600 dark:text-emerald-400">【已带入历史值】</span>
                           ) : (
-                            <span className="text-[10px] text-amber-500">首次必填</span>
+                            <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400">【首次必填·之后自动继承】</span>
                           )}
                         </label>
                         <div>
@@ -982,7 +1159,13 @@ export default function UnifiedHealthCheckIn({
                         </div>
                       </div>
                       <div>
-                        <label className="text-xs text-gray-500 dark:text-gray-400">本次实测体重 (kg) *</label>
+                        <label className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+                          <span>本次实测体重 (kg)</span>
+                          <span className="text-red-500 font-bold">*</span>
+                          <span className="rounded-full bg-rose-50 px-1.5 py-0.2 text-[10px] font-bold text-rose-600 dark:bg-rose-950/40 dark:text-rose-400">
+                            【核心必填项】
+                          </span>
+                        </label>
                         <div>
                           <input
                             type="number"
@@ -998,7 +1181,12 @@ export default function UnifiedHealthCheckIn({
                         </div>
                       </div>
                       <div>
-                        <label className="text-xs text-gray-500 dark:text-gray-400">腹围 (cm, 选填)</label>
+                        <label className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+                          <span>腹围 (cm)</span>
+                          <span className="rounded-full bg-gray-100 px-1.5 py-0.2 text-[10px] font-medium text-gray-500 dark:bg-gray-700 dark:text-gray-400">
+                            【选填项】
+                          </span>
+                        </label>
                         <input
                           type="number"
                           step="0.1"
@@ -1021,7 +1209,10 @@ export default function UnifiedHealthCheckIn({
                       >
                         <span className="flex items-center gap-1.5">
                           <HeartPulse className="h-4 w-4 text-rose-500" />
-                          同时记录血压与血糖（选填，未测可收起留空）
+                          <span>同时记录血压与血糖</span>
+                          <span className="rounded-full bg-rose-100 px-1.5 py-0.2 text-[10px] font-medium text-rose-700 dark:bg-rose-950 dark:text-rose-300">
+                            【选填扩展项·未测可留空】
+                          </span>
                         </span>
                         <span className="text-[11px] text-gray-400">
                           {showVitalsSection ? "收起" : "展开录入"}
@@ -1106,9 +1297,14 @@ export default function UnifiedHealthCheckIn({
                   <>
                     {/* Vitals 模式：核心录入血压与血糖 */}
                     <div className="rounded-xl border border-rose-100 bg-rose-50/30 p-3.5 space-y-3 dark:border-rose-950/40 dark:bg-rose-950/10">
-                      <div className="text-xs font-semibold text-rose-800 dark:text-rose-300 flex items-center gap-1.5">
-                        <HeartPulse className="h-4 w-4 text-rose-500" />
-                        血压与血糖测量（核心录入项）
+                      <div className="text-xs font-semibold text-rose-800 dark:text-rose-300 flex items-center justify-between">
+                        <div className="flex items-center gap-1.5">
+                          <HeartPulse className="h-4 w-4 text-rose-500" />
+                          <span>血压与血糖测量（核心录入项）</span>
+                        </div>
+                        <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-bold text-rose-700 dark:bg-rose-950 dark:text-rose-300">
+                          【核心项·血压/血糖至少填一项】
+                        </span>
                       </div>
                       <div className="grid grid-cols-3 gap-2">
                         <div>
@@ -1189,7 +1385,10 @@ export default function UnifiedHealthCheckIn({
                       >
                         <span className="flex items-center gap-1.5">
                           <Scale className="h-4 w-4 text-brand-500" />
-                          同时记录体重与腹围（选填，未测可收起留空）
+                          <span>同时记录体重与腹围</span>
+                          <span className="rounded-full bg-brand-50 px-1.5 py-0.2 text-[10px] font-medium text-brand-600 dark:bg-gray-700 dark:text-brand-300">
+                            【选填扩展项·未测可留空】
+                          </span>
                         </span>
                         <span className="text-[11px] text-gray-400">
                           {showBmiSection ? "收起" : "展开录入"}
@@ -1309,33 +1508,42 @@ export default function UnifiedHealthCheckIn({
 
                 <div className="grid grid-cols-3 gap-3">
                   <div>
-                    <label className="text-xs text-gray-500 dark:text-gray-400">身高 (cm)</label>
+                    <label className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+                      <span>身长/身高 (cm)</span>
+                      <span className="text-[10px] text-gray-400">【至少填一项】</span>
+                    </label>
                     <div>
                       <input
                         type="number"
                         step="0.1"
                         className="input"
-                        placeholder={babyHeight ? `已录入: ${babyHeight} cm` : "身高"}
+                        placeholder={babyHeight ? `已录入: ${babyHeight} cm` : "例如 75.0"}
                         value={babyHeight}
                         onChange={(e) => setBabyHeight(e.target.value)}
                       />
                     </div>
                   </div>
                   <div>
-                    <label className="text-xs text-gray-500 dark:text-gray-400">体重 (kg)</label>
+                    <label className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+                      <span>实测体重 (kg)</span>
+                      <span className="text-[10px] text-gray-400">【至少填一项】</span>
+                    </label>
                     <div>
                       <input
                         type="number"
                         step="0.1"
                         className="input"
-                        placeholder={babyWeight ? `已录入: ${babyWeight} kg` : "体重"}
+                        placeholder={babyWeight ? `已录入: ${babyWeight} kg` : "例如 9.8"}
                         value={babyWeight}
                         onChange={(e) => setBabyWeight(e.target.value)}
                       />
                     </div>
                   </div>
                   <div>
-                    <label className="text-xs text-gray-500 dark:text-gray-400">头围 (cm)</label>
+                    <label className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+                      <span>宝宝头围 (cm)</span>
+                      <span className="text-[10px] text-gray-400">【选填/至少填一项】</span>
+                    </label>
                     <input
                       type="number"
                       step="0.1"
@@ -1362,7 +1570,12 @@ export default function UnifiedHealthCheckIn({
           </div>
 
           <div>
-            <label className="label">备注 (选填)</label>
+            <label className="label flex items-center justify-between">
+              <span>备注备忘</span>
+              <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-500 dark:bg-gray-700 dark:text-gray-400">
+                【选填项】
+              </span>
+            </label>
             <input
               className="input"
               placeholder={initialRecord?.notes ? `已录入: ${initialRecord.notes}` : "如：胎心正常 / 医生建议 / 本次测量感受"}
@@ -1381,6 +1594,102 @@ export default function UnifiedHealthCheckIn({
             </button>
           </div>
         </form>
+
+        {/* 手机端专用日期选择弹窗（带明确取消/确定按钮与快捷选择标签） */}
+        {showDatePickerDialog && (
+          <div className="fixed inset-0 z-60 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+            <div className="relative w-full max-w-sm rounded-3xl bg-white p-5 shadow-2xl dark:bg-gray-800 dark:text-gray-100 animate-in fade-in zoom-in-95 duration-150">
+              <button
+                onClick={cancelPickerDate}
+                className="absolute right-4 top-4 rounded-xl p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-700 dark:text-gray-200"
+                type="button"
+                aria-label="关闭日期选择"
+              >
+                <X className="h-4 w-4" />
+              </button>
+
+              <div className="flex items-center gap-2.5 border-b border-gray-100 pb-3 dark:border-gray-700">
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-brand-50 text-brand-600 dark:bg-gray-700 dark:text-brand-300">
+                  <Calendar className="h-4 w-4" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">选择健康打卡实测日期</h3>
+                  <p className="text-[11px] text-gray-400">选择后请点击确定以更新测量日期</p>
+                </div>
+              </div>
+
+              <div className="mt-4 space-y-3">
+                {/* 快捷选择标签 */}
+                <div>
+                  <label className="text-[11px] font-medium text-gray-400 block mb-1.5">快捷日期推荐</label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { label: "今天", date: todayStr },
+                      { label: "昨天", date: yesterdayStr },
+                      { label: "前天", date: beforeYesterdayStr },
+                    ].map((chip) => (
+                      <button
+                        key={chip.label}
+                        type="button"
+                        onClick={() => setTempPickerDate(chip.date)}
+                        className={`rounded-xl py-2 text-xs font-semibold transition ${
+                          tempPickerDate === chip.date
+                            ? "bg-brand-500 text-white shadow-xs"
+                            : "border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-700/60 dark:text-gray-300"
+                        }`}
+                      >
+                        <div>{chip.label}</div>
+                        <div className="text-[10px] opacity-80">{chip.date.slice(5)}</div>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 显式日期输入控件 */}
+                <div>
+                  <label className="text-[11px] font-medium text-gray-400 block mb-1.5">自定义测量日期</label>
+                  <input
+                    type="date"
+                    className="input w-full text-center text-base font-bold py-2.5 rounded-2xl"
+                    value={tempPickerDate}
+                    max={todayStr}
+                    onChange={(e) => setTempPickerDate(e.target.value)}
+                  />
+                </div>
+
+                {/* 选定状态描述 */}
+                <div className="rounded-xl bg-gray-50 p-2.5 text-center text-xs dark:bg-gray-900/40">
+                  <span className="text-gray-500 dark:text-gray-400">选定日期：</span>
+                  <span className="font-bold text-gray-800 dark:text-gray-200">
+                    {formatDateFriendlyCN(tempPickerDate)}
+                  </span>
+                  {tempPickerDate > todayStr && (
+                    <p className="mt-1 text-[11px] text-red-500 font-semibold">⚠️ 测量日期不能晚于今天，请重新选择</p>
+                  )}
+                </div>
+              </div>
+
+              {/* 明确的 取消 / 确定 操作按钮 */}
+              <div className="mt-5 grid grid-cols-2 gap-2 border-t border-gray-100 pt-3 dark:border-gray-700">
+                <button
+                  type="button"
+                  onClick={cancelPickerDate}
+                  className="btn-secondary w-full py-2 text-xs font-semibold"
+                >
+                  取消
+                </button>
+                <button
+                  type="button"
+                  disabled={!tempPickerDate || tempPickerDate > todayStr}
+                  onClick={confirmPickerDate}
+                  className="btn-primary w-full py-2 text-xs font-semibold disabled:opacity-50"
+                >
+                  确定选择
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

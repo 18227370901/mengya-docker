@@ -479,6 +479,31 @@
   </ul>
 </section>
 
+<section class="section" id="adr-10-44">
+  <h2>10.44 ADR 10.44：健康打卡历史日期持久性加固、移动端专属日期选择交互与打卡/批量导入全字段双向互通规范 (v1.82)</h2>
+  <h3>10.44.1 决策背景与核心痛点</h3>
+  <ul>
+    <li><strong>历史日期回退缺陷</strong>：在健康中心选择指定日期打卡时，录入数据后生成的记录日期被异常重置为当天。</li>
+    <li><strong>移动端日期选择交互痛点</strong>：手机端原生日期控件唤起及反馈不一致，缺少明确的确定/取消操作按钮。</li>
+    <li><strong>打卡与导入数据割裂</strong>：BMI与血压血糖页面隔离，无法跨指标同步录入，缺乏明确的字段必选/可选标注。</li>
+  </ul>
+  <h3>10.44.2 根因定位与缺陷机理</h3>
+  <ul>
+    <li><strong>组件重渲染与UTC时区偏移</strong>：模态框内依赖浅比较触发未加持久化的日期更新，且 <code>toISOString()</code> 在东八区导致日期回退；缺少二级确认弹窗。</li>
+  </ul>
+  <h3>10.44.3 架构治理方案与设计要点</h3>
+  <ul>
+    <li><strong>双重防护锁与时区安全</strong>：引入 <code>isModalOpenRef</code> 与 <code>lastInitialRecordIdRef</code> 锁定模态框开启时态，杜绝录入过程被外围渲染覆盖；封装 <code>getLocalDateStr()</code> 确保本地日期精准无偏。</li>
+    <li><strong>移动端专属交互重构</strong>：提供今天/昨天/前天快捷标签芯片，专属实现带明确「取消」与「确定选择」按钮的日期选择弹窗。</li>
+    <li><strong>全字段互通与规范标注</strong>：打卡与 CSV 导入全面开放体重、腹围、血压、心率、血糖跨指标录入；清晰标注【必填项】、【核心项·至少填一项】、【选填项】；后端 <code>batch_import</code> 自动关联多档案 <code>mother</code> 与 <code>baby</code> 外键。</li>
+  </ul>
+  <h3>10.44.4 实施与验证结果</h3>
+  <ul>
+    <li><strong>日期持久性验证</strong>：历史日期录入与保存精准持久化，无任何回退；移动端弹窗取消/确定交互顺畅。</li>
+    <li><strong>多端编译与服务重启</strong>：双端源码同步完成编译打包，传统版服务重启正常（PID: 51980，端口 5173），HTTP 200 OK。</li>
+  </ul>
+</section>
+
 </main>
   </div>
 

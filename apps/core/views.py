@@ -2619,13 +2619,18 @@ class HealthRecordViewSet(viewsets.ModelViewSet):
                         existing.weight = effective_weight
                         existing.exam_items = exam_items
                         existing.note = row.get("note") or existing.note
-                        existing.save(update_fields=["gestational_week", "height", "weight", "exam_items", "note", "updated_at"])
+                        if target_mother and not existing.mother_id:
+                            existing.mother = target_mother
+                            existing.save(update_fields=["gestational_week", "height", "weight", "exam_items", "note", "mother", "updated_at"])
+                        else:
+                            existing.save(update_fields=["gestational_week", "height", "weight", "exam_items", "note", "updated_at"])
                         updated += 1
                         audit(request, "health_record_import", "批量导入覆盖健康记录", "health", existing.id, "prenatal_exam", f"CSV 导入覆盖 {rec_date}")
                     else:
                         stage_cn = "全孕期" if stage == "pregnancy" else "产后恢复" if stage == "postpartum" else "非孕期/备孕"
                         new_rec = HealthRecord.objects.create(
                             user=user,
+                            mother=target_mother,
                             record_type="prenatal_exam",
                             record_date=rec_date,
                             gestational_week=gestational_week,
@@ -2666,7 +2671,11 @@ class HealthRecordViewSet(viewsets.ModelViewSet):
                         existing.head_circumference = head or existing.head_circumference
                         existing.baby_age_days = baby_age_days or existing.baby_age_days
                         existing.note = row.get("note") or existing.note
-                        existing.save(update_fields=["height", "weight", "head_circumference", "baby_age_days", "note", "updated_at"])
+                        if target_baby and not existing.baby_id:
+                            existing.baby = target_baby
+                            existing.save(update_fields=["height", "weight", "head_circumference", "baby_age_days", "note", "baby", "updated_at"])
+                        else:
+                            existing.save(update_fields=["height", "weight", "head_circumference", "baby_age_days", "note", "updated_at"])
                         updated += 1
                         audit(request, "health_record_import", "批量导入覆盖健康记录", "health", existing.id, "growth_measurement", f"CSV 导入覆盖 {rec_date}")
                     else:

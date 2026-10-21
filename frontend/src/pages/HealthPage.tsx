@@ -494,6 +494,20 @@ export default function HealthPage() {
   const momRecords = records.filter((r) => r.record_type === "prenatal_exam");
   const growthRecords = records.filter((r) => r.record_type === "growth_measurement");
 
+  // 统一健康打卡模式允许项（按子页面与当前选中记录严格隔离且保持引用稳定）
+  const allowedModesForCheckIn = useMemo<("mom_pregnancy" | "mom_postpartum" | "mom_general" | "baby")[] | undefined>(() => {
+    if (tab === "growth") return ["baby"];
+    if (tab === "mom") return ["mom_pregnancy", "mom_postpartum", "mom_general"];
+    if (hintRecord) {
+      return (hintRecord.record_type === "growth_measurement" ||
+        hintRecord.record_type === "vaccination" ||
+        hintRecord.record_type === "vaccine")
+        ? ["baby"]
+        : ["mom_pregnancy", "mom_postpartum", "mom_general"];
+    }
+    return undefined;
+  }, [tab, hintRecord]);
+
   // 妈妈最近一次打卡基线身高（用于健康打卡自动继承）
   const latestMomHeight = useMemo(() => {
     const rec = momRecords.find((r) => r.height && r.height > 0);
@@ -659,19 +673,7 @@ export default function HealthPage() {
         }}
         initialDate={checkInDate}
         initialMode={checkInMode}
-        allowedModes={
-          tab === "growth"
-            ? ["baby"]
-            : tab === "mom"
-            ? ["mom_pregnancy", "mom_postpartum", "mom_general"]
-            : hintRecord
-            ? hintRecord.record_type === "growth_measurement" ||
-              hintRecord.record_type === "vaccination" ||
-              hintRecord.record_type === "vaccine"
-              ? ["baby"]
-              : ["mom_pregnancy", "mom_postpartum", "mom_general"]
-            : undefined
-        }
+        allowedModes={allowedModesForCheckIn}
         initialHeight={latestMomHeight}
         gestationAnchor={gestationAnchor}
         motherId={currentMother?.id}
