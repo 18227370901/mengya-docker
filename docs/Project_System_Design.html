@@ -504,6 +504,29 @@
   </ul>
 </section>
 
+<section class="section" id="adr-10-45">
+  <h2>10.45 ADR 10.45：深度体重/BMI分析与生命体征卡片测量日期持久化、移动端确认弹窗补齐与时区安全规范 (v1.83)</h2>
+  <h3>10.45.1 决策背景与核心痛点</h3>
+  <ul>
+    <li><strong>深度体重/BMI分析历史日期回退</strong>：在模块“测量日期”处选择历史日期录入数据后，生成的记录依然错误回退为当天。</li>
+    <li><strong>移动端日期控件确认缺失</strong>：缺少独立的“取消/确定选择”二次确认弹窗，移动端选择后易被忽略。</li>
+  </ul>
+  <h3>10.45.2 根因定位与缺陷机理</h3>
+  <ul>
+    <li><strong>原生输入控件与时区漂移</strong>：移动端原生控件变更提交不确定，且前后端混合使用了 UTC 时间函数导致跨午夜日期漂移。</li>
+  </ul>
+  <h3>10.45.3 架构治理方案与设计要点</h3>
+  <ul>
+    <li><strong>全场景交互补齐</strong>：在 <code>BmiFormCard.tsx</code> 与 <code>VitalsFormCard.tsx</code> 中增加今天/昨天/前天快捷芯片，专属实现带明确「取消」与「确定选择」按钮的日期选择弹窗。</li>
+    <li><strong>时区安全与字段锁定</strong>：前端采用本地安全日期函数；后端 <code>BmiAnalysisView.post</code> 兜底硬化为 <code>timezone.localdate()</code> 并在更新覆盖时锁定 <code>record_date</code>。</li>
+  </ul>
+  <h3>10.45.4 实施与验证结果</h3>
+  <ul>
+    <li><strong>日期持久性验证</strong>：深度BMI卡片选择历史日期提交后准确记录，零回退；移动端弹窗交互顺畅。</li>
+    <li><strong>服务重启验证</strong>：传统版服务重启正常（端口 5173，PID: 33676），HTTP 200 OK。</li>
+  </ul>
+</section>
+
 </main>
   </div>
 

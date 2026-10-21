@@ -13,11 +13,43 @@ import {
   Check,
   Scale,
   CheckCircle2,
+  X,
 } from "lucide-react";
 import { useAuthStore } from "@/store/authStore";
 import { computeGestation, type GestationAnchor } from "@/utils/gestation";
 import type { BabyProfile } from "@/types";
 import type { PregnancyStage, VitalsAnalysisInput, SameDayConflictPayload } from "@/types/health";
+
+const getLocalDateStr = (d = new Date()) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
+
+const getPastLocalDateStr = (daysAgo: number) => {
+  const d = new Date();
+  d.setDate(d.getDate() - daysAgo);
+  return getLocalDateStr(d);
+};
+
+const formatDateFriendlyCN = (dateStr: string) => {
+  if (!dateStr) return "";
+  const parts = dateStr.split("-").map(Number);
+  if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) return dateStr;
+  const [y, m, d] = parts;
+  const target = new Date(y, m - 1, d);
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const diffDays = Math.round((today.getTime() - target.getTime()) / (1000 * 60 * 60 * 24));
+  let rel = "";
+  if (diffDays === 0) rel = " (今天)";
+  else if (diffDays === 1) rel = " (昨天)";
+  else if (diffDays === 2) rel = " (前天)";
+  else if (diffDays > 2) rel = ` (${diffDays}天前)`;
+  else if (diffDays < 0) rel = " (未来)";
+  return `${y}年${m}月${d}日${rel}`;
+};
 
 /** 基于宝宝生日自动推算产后月龄 */
 function autoPostpartumMonths(babyBirthday: string, recordDate: string): number | null {
@@ -74,9 +106,39 @@ export default function VitalsFormCard({
   gestationAnchor,
 }: VitalsFormCardProps) {
   const { user } = useAuthStore();
-  const todayStr = useMemo(() => new Date().toISOString().slice(0, 10), []);
+  const todayStr = useMemo(() => getLocalDateStr(), []);
+  const yesterdayStr = useMemo(() => getPastLocalDateStr(1), []);
+  const beforeYesterdayStr = useMemo(() => getPastLocalDateStr(2), []);
 
-  const [recordDate, setRecordDate] = useState<string>(todayStr);
+  const [recordDate, setRecordDate] = useState<string>(() => getLocalDateStr());
+  const [showDatePickerDialog, setShowDatePickerDialog] = useState(false);
+  const [tempPickerDate, setTempPickerDate] = useState<string>(() => getLocalDateStr());
+
+  const quickDateChips = useMemo(
+    () => [
+      { label: "今天", date: todayStr },
+      { label: "昨天", date: yesterdayStr },
+      { label: "前天", date: beforeYesterdayStr },
+    ],
+    [todayStr, yesterdayStr, beforeYesterdayStr]
+  );
+
+  const openDatePickerDialog = () => {
+    setTempPickerDate(recordDate || todayStr);
+    setShowDatePickerDialog(true);
+  };
+
+  const confirmPickerDate = () => {
+    if (tempPickerDate && tempPickerDate <= todayStr) {
+      setRecordDate(tempPickerDate);
+      setShowDatePickerDialog(false);
+    }
+  };
+
+  const cancelPickerDate = () => {
+    setTempPickerDate(recordDate || todayStr);
+    setShowDatePickerDialog(false);
+  };
   const [internalStage, setInternalStage] = useState<PregnancyStage>(stageType);
   const [week, setWeek] = useState<string>(() => (currentGestationalWeek ? String(currentGestationalWeek) : ""));
   const [days, setDays] = useState<string>(() => (currentGestationalDays != null ? String(currentGestationalDays) : "0"));
@@ -353,23 +415,94 @@ export default function VitalsFormCard({
       </div>
 
       <form onSubmit={handleSubmit} className="mt-4 space-y-4">
-        {/* 日期与阶段行 */}
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div>
-            <label className="mb-1 flex items-center gap-1.5 text-xs font-medium text-gray-600 dark:text-gray-300">
-              <Calendar className="h-3.5 w-3.5 text-gray-400" />
-              测量日期
+        {/* 测量日期区域：快捷芯片 + 可视化确认卡片 + 移动端专属确定/取消弹窗 */}
+        <div className="rounded-2xl border border-rose-100/80 bg-rose-50/30 p-3.5 dark:border-gray-800 dark:bg-gray-800/40 space-y-2.5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <label className="flex items-center gap-1.5 text-xs font-bold text-gray-700 dark:text-gray-200">
+              <Calendar className="h-4 w-4 text-rose-500" />
+              <span>测量日期 (支持按天补录) <span className="text-rose-500 font-bold">*</span></span>
             </label>
-            <input
-              type="date"
-              value={recordDate}
-              max={todayStr}
-              onChange={(e) => setRecordDate(e.target.value)}
-              className="input text-xs"
-              required
-            />
+
+            {/* 快捷日期芯片 */}
+            <div className="flex items-center gap-1">
+              <span className="text-[10px] text-gray-400 mr-1 hidden sm:inline">快捷选择:</span>
+              {quickDateChips.map((chip) => (
+                <button
+                  type="button"
+                  key={chip.date}
+                  onClick={() => {
+                    setRecordDate(chip.date);
+                    setTempPickerDate(chip.date);
+                  }}
+                  className={`rounded-lg px-2.5 py-1 text-xs font-semibold transition ${
+                    recordDate === chip.date
+                      ? "bg-rose-500 text-white shadow-xs"
+                      : "border border-gray-200 bg-white text-gray-600 hover:border-rose-300 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
+                  }`}
+                >
+                  {chip.label}
+                </button>
+              ))}
+            </div>
           </div>
 
+          {/* 选定日期卡片与操作按钮 */}
+          <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-rose-100 bg-white/90 p-2.5 dark:border-gray-700 dark:bg-gray-800">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-rose-50 text-rose-600 dark:bg-gray-700 dark:text-rose-300">
+                <Calendar className="h-4 w-4" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <span className="font-mono text-sm font-bold text-gray-800 dark:text-gray-100">
+                    {recordDate}
+                  </span>
+                  <span className="rounded-md bg-rose-50 px-1.5 py-0.5 text-[10px] font-semibold text-rose-600 dark:bg-gray-700 dark:text-rose-300">
+                    {recordDate === todayStr
+                      ? "今日打卡"
+                      : recordDate === yesterdayStr
+                      ? "昨日补录"
+                      : recordDate === beforeYesterdayStr
+                      ? "前天补录"
+                      : "历史补录"}
+                  </span>
+                </div>
+                <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate">
+                  {formatDateFriendlyCN(recordDate)}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={openDatePickerDialog}
+                className="btn-secondary flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:text-rose-300 dark:hover:bg-gray-700"
+              >
+                <Calendar className="h-3.5 w-3.5" />
+                <span>选择/修改日期</span>
+              </button>
+              {/* 桌面端隐藏/备用原生输入框，保持无感双向同步 */}
+              <input
+                type="date"
+                aria-label="测量日期"
+                className="hidden sm:inline-block w-32 rounded-xl border border-gray-200 bg-white px-2 py-1 text-xs text-gray-700 dark:border-gray-700 dark:bg-gray-700 dark:text-gray-200"
+                value={recordDate}
+                max={todayStr}
+                onChange={(e) => {
+                  if (e.target.value) {
+                    setRecordDate(e.target.value);
+                    setTempPickerDate(e.target.value);
+                  }
+                }}
+                required
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* 阶段参数行 */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {internalStage === "pregnancy" && (
             <>
               <div>
@@ -807,6 +940,98 @@ export default function VitalsFormCard({
                 className="btn btn-primary text-xs font-bold"
               >
                 确认合并覆盖
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* 移动端专属日期选择确认对话框（带明确的 取消 / 确定 按钮） */}
+      {showDatePickerDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div
+            className="w-full max-w-sm rounded-3xl bg-white p-5 shadow-2xl dark:bg-gray-800 animate-in fade-in zoom-in-95 duration-150"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3 dark:border-gray-700">
+              <div className="flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-rose-50 text-rose-600 dark:bg-gray-700 dark:text-rose-300">
+                  <Calendar className="h-4 w-4" />
+                </div>
+                <h4 className="text-sm font-bold text-gray-800 dark:text-gray-100">选择测量打卡日期</h4>
+              </div>
+              <button
+                type="button"
+                onClick={cancelPickerDate}
+                className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-700"
+                aria-label="关闭"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-4">
+              {/* 快捷选择标签 */}
+              <div>
+                <label className="text-[11px] font-medium text-gray-400 block mb-1.5">最近日期快捷选择</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {quickDateChips.map((chip) => (
+                    <button
+                      key={chip.date}
+                      type="button"
+                      onClick={() => setTempPickerDate(chip.date)}
+                      className={`rounded-xl py-2 text-xs font-semibold transition ${
+                        tempPickerDate === chip.date
+                          ? "bg-rose-500 text-white shadow-xs"
+                          : "border border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-gray-700 dark:bg-gray-700/60 dark:text-gray-300"
+                      }`}
+                    >
+                      <div>{chip.label}</div>
+                      <div className="text-[10px] opacity-80">{chip.date.slice(5)}</div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 显式日期输入控件 */}
+              <div>
+                <label className="text-[11px] font-medium text-gray-400 block mb-1.5">自定义测量日期</label>
+                <input
+                  type="date"
+                  className="input w-full text-center text-base font-bold py-2.5 rounded-2xl"
+                  value={tempPickerDate}
+                  max={todayStr}
+                  onChange={(e) => setTempPickerDate(e.target.value)}
+                />
+              </div>
+
+              {/* 选定状态描述 */}
+              <div className="rounded-xl bg-gray-50 p-2.5 text-center text-xs dark:bg-gray-900/40">
+                <span className="text-gray-500 dark:text-gray-400">选定日期：</span>
+                <span className="font-bold text-gray-800 dark:text-gray-200">
+                  {formatDateFriendlyCN(tempPickerDate)}
+                </span>
+                {tempPickerDate > todayStr && (
+                  <p className="mt-1 text-[11px] text-red-500 font-semibold">⚠️ 测量日期不能晚于今天，请重新选择</p>
+                )}
+              </div>
+            </div>
+
+            {/* 明确的 取消 / 确定 操作按钮 */}
+            <div className="mt-5 grid grid-cols-2 gap-2 border-t border-gray-100 pt-3 dark:border-gray-700">
+              <button
+                type="button"
+                onClick={cancelPickerDate}
+                className="btn-secondary w-full py-2 text-xs font-semibold"
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                disabled={!tempPickerDate || tempPickerDate > todayStr}
+                onClick={confirmPickerDate}
+                className="btn-primary w-full py-2 text-xs font-semibold disabled:opacity-50"
+              >
+                确定选择
               </button>
             </div>
           </div>

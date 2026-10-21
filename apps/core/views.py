@@ -2864,7 +2864,7 @@ class HealthBmiAnalysisView(APIView):
             )
 
         # ===== 孕周一致性校验引擎（孕期阶段专属；偏差 > 1 周直接拦截）=====
-        target_date = data.get("record_date") or timezone.now().date()
+        target_date = data.get("record_date") or timezone.localdate()
         # ===== v1.57 同日唯一性校验：当日已有妈妈打卡时返回 409，前端弹窗确认后携 overwrite=true 覆盖更新 =====
         overwrite = bool(data.get("overwrite", False))
         existing_same_day_qs = HealthRecord.objects.filter(
@@ -3050,6 +3050,7 @@ class HealthBmiAnalysisView(APIView):
         record_action = "created"
         try:
             if existing_same_day:
+                existing_same_day.record_date = target_date
                 existing_same_day.gestational_week = gestational_week
                 existing_same_day.height = height_cm
                 existing_same_day.weight = current_weight
@@ -3058,7 +3059,7 @@ class HealthBmiAnalysisView(APIView):
                 if mother:
                     existing_same_day.mother = mother
                 existing_same_day.save(
-                    update_fields=["gestational_week", "height", "weight", "exam_items", "note", "mother", "updated_at"]
+                    update_fields=["record_date", "gestational_week", "height", "weight", "exam_items", "note", "mother", "updated_at"]
                 )
                 created_record_id = existing_same_day.id
                 record_action = "updated"
