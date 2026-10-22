@@ -698,6 +698,7 @@ export default function HealthPage() {
         initialTarget={importTarget}
         onClose={() => setShowImport(false)}
         motherId={currentMother?.id}
+        currentMother={currentMother}
         onImported={(hint, resolvedStage) => {
           showToast(hint);
           if (resolvedStage) {

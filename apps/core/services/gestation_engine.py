@@ -66,16 +66,14 @@ def get_expected_week(user, record_date: date, mother=None) -> Optional[Dict[str
     try:
         from apps.core.models.health import HealthRecord
 
-        anchor = (
-            HealthRecord.objects.filter(
-                user=user,
-                record_type="prenatal_exam",
-                gestational_week__isnull=False,
-            )
-            .exclude(gestational_week=0)
-            .order_by("record_date", "created_at")
-            .first()
-        )
+        anchor_qs = HealthRecord.objects.filter(
+            user=user,
+            record_type="prenatal_exam",
+            gestational_week__isnull=False,
+        ).exclude(gestational_week=0)
+        if mother:
+            anchor_qs = anchor_qs.filter(mother=mother)
+        anchor = anchor_qs.order_by("record_date", "created_at").first()
         if anchor and anchor.gestational_week:
             lmp = anchor.record_date - timedelta(days=anchor.gestational_week * 7)
             week, days = _calc_week_from_lmp(record_date, lmp)
@@ -162,3 +160,66 @@ def validate_gestational_week(
         "basis": expected["basis"],
         "hint": "",
     }
+
+
+def resolve_and_fix_gestational_week(
+    user,
+    record_date: date,
+    input_week: Optional[float],
+    mother=None,
+    batch_records: Optional[list] = None,
+) -> Tuple[Optional[int], Optional[int], bool, str]:
+    """
+    为批量导入场景提供智能识别与修正：
+    返回: (final_week, final_days, is_corrected, explanation)
+    - 当未填孕周时：自动识别并填充推算孕周
+    - 当填写错误（如 <1, >44，或与理论偏差超过1周，或时序矛盾）时：自动修正为理论推算孕周
+    """
+    expected = get_expected_week(user, record_date, mother=mother)
+
+    # 尝试从同批次 CSV 提取锚点推算
+    if expected is None and batch_records:
+        for r in batch_records:
+            try:
+                b_date_str = str(r.get("date") or "").strip()
+                b_wk_val = r.get("week")
+                if not b_date_str or b_wk_val is None:
+                    continue
+                b_wk_float = float(b_wk_val)
+                if not (1 <= b_wk_float <= 42):
+                    continue
+                from datetime import datetime as _dt
+                b_date = _dt.strptime(b_date_str, "%Y-%m-%d").date()
+                lmp = b_date - timedelta(days=int(b_wk_float) * 7)
+                w, d = _calc_week_from_lmp(record_date, lmp)
+                expected = {
+                    "week": w,
+                    "days": d,
+                    "basis": "batch_anchor",
+                    "label": f"孕{w}周{d}天（基于表格中 {b_date} 孕{int(b_wk_float)}周推算）",
+                }
+                break
+            except Exception:
+                continue
+
+    # 场景 1：未填写孕周
+    if input_week is None:
+        if expected is not None:
+            return expected["week"], expected.get("days", 0), True, f"未填孕周，已自动推算识别为孕{expected['week']}周{expected.get('days', 0)}天"
+        return None, None, False, "未设置预产期且表格无孕周锚点，无法推算"
+
+    # 场景 2：填写了孕周
+    in_wk = int(input_week)
+    in_days = int(round((input_week - in_wk) * 7))
+    in_days = max(0, min(6, in_days))
+
+    # 判断是否合法与合理
+    is_invalid_range = not (1 <= in_wk <= 44)
+    is_deviated = (expected is not None) and (abs(in_wk - expected["week"]) > MAX_WEEK_DEVIATION)
+
+    if (is_invalid_range or is_deviated) and expected is not None:
+        exp_w = expected["week"]
+        exp_d = expected.get("days", 0)
+        return exp_w, exp_d, True, f"原填孕{in_wk}周与日期理论推算（孕{exp_w}周{exp_d}天）不符，系统已自动修正"
+
+    return in_wk, in_days, False, "手填孕周"

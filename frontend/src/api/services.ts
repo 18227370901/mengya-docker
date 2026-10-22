@@ -78,6 +78,8 @@ export const healthApi = {
     conflict_strategy: "skip" | "overwrite";
     records: Array<Record<string, string | number | undefined>>;
     mother_id?: number | null;
+    stage_mode?: "convert_to_profile" | "keep_csv";
+    allow_cross_stage?: boolean;
   }) =>
     api.post<ApiResponse<CsvImportResult>>("/health/records/batch-import/", data).then((r) => r.data.data),
 

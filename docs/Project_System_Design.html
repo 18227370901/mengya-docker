@@ -2394,6 +2394,23 @@ estart: unless-stopped；
     <li><strong>前端编译产物同步：</strong>通过 <code>tools/build_frontend.py</code> 重新编译并同步最新静态产物至 templates 与 static 目录；</li>
     <li><strong>502 Bad Gateway 根除与真实 HTTP 就绪探针：</strong><code>start_docker</code> 升级为 60s 真实 HTTP 200 探针，容器崩溃即刻抓取日志；接入 Docker 原生 <code>healthcheck</code>；Nginx 开启 HTTP/1.1 长连接、平滑重试与 128k/256k 缓冲区，彻底消除启动期与运行期 502 报错。</li>
   </ul>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-badge">ADR 10.46</span>
+        <span class="adr-title">健康数据 CSV 批量导入全链路韧性重构、GBK/ANSI 多编码智能探测、孕周自动识别修正与跨阶段交互闭环规范 (v1.84)</span>
+      </div>
+      <div class="adr-body">
+        <p><strong>决策背景</strong>：健康中心批量导入存在 Windows Excel ANSI/GBK 编码解析乱码、孕周未填或填错导致被严格产检时序阻断丢弃，以及阶段不一致确认时交互断裂（点击后黄框消失但页面无反应）三大缺陷。</p>
+        <p><strong>核心架构治理</strong>：</p>
+        <ul>
+          <li><strong>双编码自适应探测</strong>：<code>FileReader.readAsArrayBuffer</code> + strict UTF-8 优先解码，遇到非法字符平滑回退至 <code>gb18030</code>，安全剥离 Unicode BOM，彻底杜绝乱码；</li>
+          <li><strong>三级孕周自愈引擎</strong>：基于「当前妈妈档案预产期 > 历史打卡锚点 > 批次有效锚点」推算，未填孕周自动识别补齐，离谱孕周自动校正为医学理论值；</li>
+          <li><strong>跨阶段协议与交互全闭环</strong>：扩充 <code>stage_mode</code> 与 <code>allow_cross_stage</code> 豁免时序硬性拦截；执行中显示 Loading，成功自动弹出 Toast 并关闭弹窗，异常自动平滑滚动聚焦明细看板。</li>
+        </ul>
+      </div>
+    </div>
+
 </div>
 </body>
 </html>

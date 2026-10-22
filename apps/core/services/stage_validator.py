@@ -27,6 +27,7 @@ def validate_stage_transition(
     postpartum_months: Optional[int] = None,
     mother=None,
     exclude_record_id: Optional[int] = None,
+    allow_cross_stage: bool = False,
 ) -> Tuple[bool, str]:
     """
     校验指定妈妈在 record_date 录入 stage_type 的医学合理性。
@@ -84,17 +85,17 @@ def validate_stage_transition(
         for ex in parsed_existing:
             ex_date = ex["date"]
 
-            # 1.1 与已有非孕期 (general) 冲突：仅在同一孕期周期 [LMP - 14天, EDD + 14天] 拦截
-            if ex["stage"] == "general":
+            # 1.1 与已有非孕期 (general) 冲突：仅在同一孕期周期 [LMP - 14天, EDD + 14天] 拦截（批量导入且用户确认时豁免）
+            if ex["stage"] == "general" and not allow_cross_stage:
                 if lmp <= ex_date <= (edd + timedelta(days=7)):
                     return False, (
                         f"阶段类型时序冲突：本次录入为孕{cur_week}周，推算整个孕期为 {lmp} 至 {edd}，"
                         f"但该周期内的 {ex_date} 已存在「非孕期/备孕」记录。请核对测量日期或阶段类型。"
                     )
 
-            # 1.2 与已有产后 (postpartum) 冲突：仅在同一孕期周期内 [LMP - 14天, EDD - 21天] 拦截
+            # 1.2 与已有产后 (postpartum) 冲突：仅在同一孕期周期内 [LMP - 14天, EDD - 21天] 拦截（批量导入且用户确认时豁免）
             # 早于 cycle_start 的产后记录属于上一胎大宝的产后，完全允许共存！
-            elif ex["stage"] == "postpartum":
+            elif ex["stage"] == "postpartum" and not allow_cross_stage:
                 if lmp <= ex_date <= (edd - timedelta(days=21)):
                     return False, (
                         f"阶段类型时序冲突：本次录入为孕{cur_week}周（预产期推算为 {edd}），"
@@ -125,6 +126,8 @@ def validate_stage_transition(
 
     # ================= 规则分支 2：当前准备录入 general (非孕期/备孕) =================
     elif stage_type == "general":
+        if allow_cross_stage:
+            return True, ""
         for ex in parsed_existing:
             if ex["stage"] == "pregnancy" and ex["week"]:
                 ex_week = ex["week"]
@@ -139,6 +142,8 @@ def validate_stage_transition(
 
     # ================= 规则分支 3：当前准备录入 postpartum (产后恢复期) =================
     elif stage_type == "postpartum":
+        if allow_cross_stage:
+            return True, ""
         for ex in parsed_existing:
             if ex["stage"] == "pregnancy" and ex["week"]:
                 ex_week = ex["week"]

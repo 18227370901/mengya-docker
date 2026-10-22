@@ -2344,6 +2344,8 @@ class HealthRecordViewSet(viewsets.ModelViewSet):
         if target in ("mom_bmi", "mom_vitals"):
             target = "mom"
         strategy = request.data.get("conflict_strategy", "skip")  # skip | overwrite
+        stage_mode = request.data.get("stage_mode", "keep_csv")  # convert_to_profile | keep_csv
+        allow_cross_stage = bool(request.data.get("allow_cross_stage", False)) or (stage_mode == "keep_csv")
         if target not in ("mom", "baby"):
             return Response(
                 {"code": 4001, "message": "target 仅支持 mom（妈妈体重打卡）或 baby（宝宝生长测量）", "data": None},
@@ -2371,7 +2373,7 @@ class HealthRecordViewSet(viewsets.ModelViewSet):
         MOM_RANGE = {"weight": (25.0, 250.0), "height": (80.0, 250.0), "waist": (30.0, 220.0)}
         BABY_RANGE = {"height": (20.0, 200.0), "weight": (0.2, 60.0), "head": (20.0, 80.0)}
 
-        created, updated, skipped, errors = 0, 0, 0, []
+        created, updated, skipped, corrected, errors = 0, 0, 0, 0, []
 
         from apps.core.models.mother import MotherProfile
         mother_id = request.data.get("mother_id")
@@ -2379,7 +2381,7 @@ class HealthRecordViewSet(viewsets.ModelViewSet):
         if mother_id:
             target_mother = MotherProfile.objects.filter(id=mother_id, user=user).first()
         if not target_mother and target == "mom":
-            target_mother = MotherProfile.objects.filter(user=user, is_primary=True).first()
+            target_mother = MotherProfile.objects.filter(user=user, is_primary=True).first() or MotherProfile.objects.filter(user=user).first()
 
         # 妈妈：身高与孕前体重从最近一条打卡记录继承（批量导入免填，减少列数）
         last_mom_qs = HealthRecord.objects.filter(user=user, record_type="prenatal_exam")
@@ -2514,24 +2516,26 @@ class HealthRecordViewSet(viewsets.ModelViewSet):
                     gestational_week = None
                     gestational_days = None
                     auto_postpartum_months = None
+                    fix_explanation = ""
 
                     if stage == "pregnancy":
-                        wk = _to_float(row.get("week"))
-                        if wk is not None:
-                            gestational_week = int(wk)
-                            # week 列支持小数（如 23.5 = 孕23周3天），整数部分为周、小数×7为天
-                            gestational_days = int(round((wk - int(wk)) * 7))
-                            gestational_days = max(0, min(6, gestational_days))
+                        from apps.core.services.gestation_engine import resolve_and_fix_gestational_week
+                        final_wk, final_days, is_fixed, fix_msg = resolve_and_fix_gestational_week(
+                            user=user,
+                            record_date=rec_date,
+                            input_week=_to_float(row.get("week")),
+                            mother=target_mother,
+                            batch_records=records,
+                        )
+                        if final_wk is not None:
+                            gestational_week = final_wk
+                            gestational_days = final_days
+                            if is_fixed:
+                                corrected += 1
+                                fix_explanation = fix_msg
                         else:
-                            # 用户未填孕周：优先根据默认档案（预产期 due_date 或历史打卡基准）自动推算为 x周x天
-                            from apps.core.services.gestation_engine import get_expected_week
-                            expected = get_expected_week(user, rec_date)
-                            if expected and expected.get("week") is not None:
-                                gestational_week = expected["week"]
-                                gestational_days = expected.get("days", 0)
-                            else:
-                                _fail("未检测到预产期或宝宝档案配置，无法根据记录日期自动推算孕周，请先在档案中设置预产期/宝宝档案，或在 CSV 中填写 week（孕周）列")
-                                continue
+                            _fail("未检测到预产期或有效孕周锚点，无法自动推算孕周，请先在档案中设置预产期或在 CSV 中填写 week（孕周）列")
+                            continue
 
                     # 校验阶段合理性（按单个妈妈维度隔离拦截冲突行）
                     from apps.core.services.stage_validator import validate_stage_transition
@@ -2544,6 +2548,7 @@ class HealthRecordViewSet(viewsets.ModelViewSet):
                         postpartum_months=auto_postpartum_months,
                         mother=target_mother,
                         exclude_record_id=existing.id if existing else None,
+                        allow_cross_stage=allow_cross_stage,
                     )
                     if not is_st_ok:
                         _fail(st_msg)
@@ -2708,8 +2713,8 @@ class HealthRecordViewSet(viewsets.ModelViewSet):
         return Response(
             {
                 "code": 0,
-                "message": f"导入完成：新增 {created} 条，覆盖 {updated} 条，跳过 {skipped} 条，失败 {len(errors)} 条",
-                "data": {"created": created, "updated": updated, "skipped": skipped, "errors": errors[:50]},
+                "message": f"导入完成：新增 {created} 条，覆盖 {updated} 条，跳过 {skipped} 条，自动识别/校正孕周 {corrected} 条，失败 {len(errors)} 条",
+                "data": {"created": created, "updated": updated, "skipped": skipped, "corrected": corrected, "errors": errors[:50]},
             }
         )
 

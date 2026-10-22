@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import type { MotherProfile } from "@/types";
+import { computeGestation } from "@/utils/gestation";
 import {
   Scale,
   HeartPulse,
@@ -26,6 +28,7 @@ interface CsvImportModalProps {
   onImported: (hint: string, importedStage?: "pregnancy" | "postpartum" | "general") => void;
   initialTarget?: ImportTarget;
   motherId?: number | null;
+  currentMother?: MotherProfile | null;
 }
 
 export type ImportTarget = "mom_bmi" | "mom_vitals" | "baby" | "mom";
@@ -148,13 +151,20 @@ function matchColumnKey(headerText: string, target: ImportTarget): string | null
   return null;
 }
 
-export default function CsvImportModal({ isOpen, onClose, onImported, initialTarget, motherId }: CsvImportModalProps) {
+export default function CsvImportModal({ isOpen, onClose, onImported, initialTarget, motherId, currentMother }: CsvImportModalProps) {
   const { user } = useAuthStore();
   const defaultProfileStage = useMemo<"pregnancy" | "postpartum" | "general">(() => {
+    if (currentMother) {
+      if (currentMother.is_pregnant) return "pregnancy";
+      if (currentMother.due_date) return "pregnancy";
+    }
     if (user?.is_pregnant) return "pregnancy";
     if (user?.baby_birthday) return "postpartum";
     return "general";
-  }, [user?.is_pregnant, user?.baby_birthday]);
+  }, [currentMother, user?.is_pregnant, user?.baby_birthday]);
+
+  const resultRef = useRef<HTMLDivElement>(null);
+  const errorRef = useRef<HTMLDivElement>(null);
 
   const [target, setTarget] = useState<ImportTarget>(() => (initialTarget === "mom" ? "mom_bmi" : initialTarget || "mom_bmi"));
 
@@ -230,10 +240,26 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
         row.stage = normalizeStage(row.stage);
       }
 
+      // 孕期自动推算辅助标记
+      if (isMom && row.date && /^\d{4}-\d{2}-\d{2}$/.test(row.date)) {
+        if (currentMother?.due_date) {
+          const gest = computeGestation({ date: currentMother.due_date, week: 40 }, row.date);
+          if (gest && gest.week >= 0) {
+            const decWeek = `${gest.week}.${Math.round((gest.days * 10) / 7)}`;
+            row._inferredWeek = decWeek;
+            row._inferredLabel = gest.label;
+            const rawWk = row.week ? Number(row.week) : null;
+            if (rawWk === null || Number.isNaN(rawWk) || rawWk < 1 || rawWk > 44 || Math.abs(rawWk - gest.week) > 1) {
+              row._needAutoFix = "true";
+            }
+          }
+        }
+      }
+
       records.push(row);
     }
     return records.slice(0, 500);
-  }, [rawText, target]);
+  }, [rawText, target, isMom, currentMother?.due_date]);
 
   /** 本地预检：日期格式与核心指标完整性（全能互通：体重、血压或血糖至少包含一项） */
   const previewIssues = useMemo(() => {
@@ -276,10 +302,38 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
 
   const handleFileRead = (file: File) => {
     setFileName(file.name);
+    setError("");
     const reader = new FileReader();
-    reader.onload = () => setRawText(String(reader.result || ""));
+    reader.onload = () => {
+      try {
+        const buffer = reader.result as ArrayBuffer;
+        const bytes = new Uint8Array(buffer);
+        let text = "";
+
+        // 1. 检查 UTF-8 BOM (0xEF, 0xBB, 0xBF)
+        if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) {
+          text = new TextDecoder("utf-8").decode(bytes.subarray(3));
+        } else {
+          // 2. 优先 strict UTF-8 解码，遇到 ANSI/GBK 时回退至 gb18030
+          try {
+            const utf8Decoder = new TextDecoder("utf-8", { fatal: true });
+            text = utf8Decoder.decode(bytes);
+            if (text.includes("\uFFFD")) {
+              text = new TextDecoder("gb18030").decode(bytes);
+            }
+          } catch {
+            text = new TextDecoder("gb18030").decode(bytes);
+          }
+        }
+        // 3. 去除首部 Unicode BOM 标记
+        text = text.replace(/^\uFEFF/, "");
+        setRawText(text);
+      } catch (err: any) {
+        setError("文件解析失败，请检查文件编码或直接粘贴文本内容");
+      }
+    };
     reader.onerror = () => setError("文件读取失败，请重试或直接粘贴文本");
-    reader.readAsText(file, "utf-8");
+    reader.readAsArrayBuffer(file);
   };
 
   /** 下载模板：支持中英文表头（全能互通：体重与体征血压血糖均支持按需选填） */
@@ -336,20 +390,22 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
   /** 执行导入 API 调用 */
   const executeImport = async (mode: "default_profile" | "imported_type") => {
     const currentMismatch = stageMismatchConfirm;
-    setStageMismatchConfirm(null);
     setSubmitting(true);
     setError("");
     try {
-      let rowsToSubmit = parsedRows;
+      let rowsToSubmit = parsedRows.map((r) => ({ ...r }));
       let targetStageResolved: "pregnancy" | "postpartum" | "general" = defaultProfileStage;
 
       if (isMom) {
         if (mode === "default_profile") {
           // 强制将所有记录阶段覆盖为用户当前档案默认阶段
-          rowsToSubmit = parsedRows.map((r) => ({
-            ...r,
-            stage: defaultProfileStage,
-          }));
+          rowsToSubmit = rowsToSubmit.map((r) => {
+            const copy: Record<string, string> = { ...r, stage: defaultProfileStage };
+            if (defaultProfileStage === "pregnancy" && (!copy.week || copy._needAutoFix === "true") && copy._inferredWeek) {
+              copy.week = copy._inferredWeek;
+            }
+            return copy;
+          });
           targetStageResolved = defaultProfileStage;
         } else {
           // 按照用户导入类型导入数据
@@ -363,22 +419,36 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
         conflict_strategy: strategy,
         records: rowsToSubmit,
         mother_id: isMom && motherId ? motherId : undefined,
+        stage_mode: mode === "default_profile" ? "convert_to_profile" : "keep_csv",
+        allow_cross_stage: mode === "imported_type",
       });
+
       setResult(res);
+      setStageMismatchConfirm(null);
+
       if (res.errors.length === 0) {
         const modeText =
           mode === "default_profile"
-            ? `已按照当前宝宝默认档案类型【${currentMismatch?.defaultProfileLabel || STAGE_LABELS[defaultProfileStage]}】转换并完成导入`
+            ? `已按照当前档案类型【${currentMismatch?.defaultProfileLabel || STAGE_LABELS[defaultProfileStage]}】转换并完成导入`
             : currentMismatch
             ? `已按照您指定的导入类型【${currentMismatch.importedLabel}】完成导入`
             : "CSV 导入完成";
+        const fixText = res.corrected ? `（系统已智能识别/校正 ${res.corrected} 条孕周）` : "";
         onImported(
-          `${modeText}：新增 ${res.created} 条，覆盖 ${res.updated} 条，跳过 ${res.skipped} 条`,
+          `${modeText}：新增 ${res.created} 条，覆盖 ${res.updated} 条，跳过 ${res.skipped} 条${fixText}`,
           isMom ? targetStageResolved : undefined
         );
+        onClose();
+      } else {
+        setTimeout(() => {
+          resultRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+        }, 120);
       }
     } catch (err: any) {
       setError(err?.message || "导入请求失败，请稍后重试");
+      setTimeout(() => {
+        errorRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      }, 120);
     } finally {
       setSubmitting(false);
     }
@@ -435,7 +505,7 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
 
         <form onSubmit={handleSubmit} className="mt-4 space-y-4">
           {error && (
-            <div className="flex items-start gap-2 rounded-2xl bg-red-50 p-3 text-xs text-red-600 dark:bg-red-950/30 dark:text-red-400">
+            <div ref={errorRef} className="flex items-start gap-2 rounded-2xl bg-red-50 p-3 text-xs text-red-600 dark:bg-red-950/30 dark:text-red-400">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               <span>{error}</span>
             </div>
@@ -701,10 +771,17 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
 
           {/* 6. 导入结果看板 */}
           {result && (
-            <div className="rounded-2xl border border-gray-200 bg-white p-3.5 text-xs shadow-xs dark:border-gray-700 dark:bg-gray-800">
-              <div className="flex items-center gap-1.5 font-bold text-gray-800 dark:text-gray-100">
-                <Sparkles className="h-4 w-4 text-brand-500" />
-                <span>导入执行结果</span>
+            <div ref={resultRef} className="rounded-2xl border border-gray-200 bg-white p-3.5 text-xs shadow-xs dark:border-gray-700 dark:bg-gray-800">
+              <div className="flex items-center justify-between font-bold text-gray-800 dark:text-gray-100">
+                <div className="flex items-center gap-1.5">
+                  <Sparkles className="h-4 w-4 text-brand-500" />
+                  <span>导入执行结果</span>
+                </div>
+                {result.corrected ? (
+                  <span className="rounded-md bg-emerald-100 px-2 py-0.5 text-[11px] font-normal text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+                    已智能识别/校正 {result.corrected} 条孕周
+                  </span>
+                ) : null}
               </div>
               <div className="mt-2 grid grid-cols-4 gap-2 text-center text-xs">
                 <div className="rounded-xl bg-emerald-50 p-2 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300">
@@ -732,6 +809,15 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
                   ))}
                 </div>
               )}
+              <div className="mt-3 flex justify-end">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="btn-secondary px-3 py-1.5 text-xs"
+                >
+                  确认并关闭
+                </button>
+              </div>
             </div>
           )}
 
@@ -751,17 +837,19 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
                   type="button"
                   disabled={submitting}
                   onClick={() => executeImport("default_profile")}
-                  className="btn-secondary px-3 py-1.5 text-xs"
+                  className="btn-secondary flex items-center gap-1 px-3 py-1.5 text-xs"
                 >
-                  转换并归档至【{stageMismatchConfirm.defaultProfileLabel}】
+                  {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  <span>转换并归档至【{stageMismatchConfirm.defaultProfileLabel}】</span>
                 </button>
                 <button
                   type="button"
                   disabled={submitting}
                   onClick={() => executeImport("imported_type")}
-                  className="btn-primary px-3 py-1.5 text-xs"
+                  className="btn-primary flex items-center gap-1 px-3 py-1.5 text-xs"
                 >
-                  保持 CSV 所填阶段直接导入
+                  {submitting && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                  <span>保持 CSV 所填阶段直接导入</span>
                 </button>
               </div>
             </div>

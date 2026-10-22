@@ -174,6 +174,7 @@ export interface CsvImportResult {
   created: number;
   updated: number;
   skipped: number;
+  corrected?: number;
   errors: Array<{ row: number; date: string; reason: string }>;
 }
 
