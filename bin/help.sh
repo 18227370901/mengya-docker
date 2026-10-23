@@ -39,7 +39,10 @@ show_cli_help() {
   --db-host <HOST>             自定义 PostgreSQL 主机地址（默认 db 或 共享容器名）
   --database-url <URL>         直接指定完整 DATABASE_URL 连接串"
         echo "  --shared-pg <CONTAINER>      指定共享模式下的宿主机 PostgreSQL 容器名称"
-        echo "  -y, --yes                    非交互式模式，免去任何等待（Cron / 重启自动采用推荐值）"
+        echo "  --cron, --batch              定时任务模式（自动禁用人工交互，完全使用默认参数与推荐策略）"
+        echo "  -y, --yes, --non-interactive 非交互式模式，免去任何等待（Cron / 重启自动采用推荐值）"
+        echo "  --renew-ssl, --force-update-ssl 强制更新并重新生成自签名 SSL 证书（覆盖现有证书）"
+        echo "  --force-update-nginx         强制按当前环境参数覆写 Nginx 反代配置（生成时间戳备份）"
         echo ""
         echo "实用启动示例："
         echo "  ./run.sh start                                 # 默认启动（端口 5174，管理员 admin / admin123）"
@@ -51,6 +54,7 @@ show_cli_help() {
         echo "  ./run.sh start -m shared                       # 直接以共享宿主机已有 PG 模式启动并保存至 .env"
         echo "  ./run.sh start -p 5200 -u superadmin -P Pass123 # 自定义端口与管理员账密启动"
         echo "  ./run.sh restart -p 5300                       # 重启并变更为 5300 端口"
+        echo "  ./run.sh restart --cron                        # 定时任务执行重启（零人工交互，自动采用安全默认策略）"
         echo "  ./run.sh add_nginx -d mengya.myhost.com        # 为指定域名生成独立反代配置"
         echo ""
         show_db_reconfig_guide

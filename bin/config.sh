@@ -75,6 +75,21 @@ init_default_configs() {
     CUSTOM_DATABASE_URL=""
     RECONFIG_DB=0
     NON_INTERACTIVE=0
+    CRON_MODE=0
+    IS_INTERACTIVE=1
+    FORCE_UPDATE_SSL=0
+    FORCE_UPDATE_NGINX=0
+    FORCE=0
+
+    # 自动环境探测：若标准输入非终端，或处于 Crontab / CI / 免交互环境变量中，自动激活免交互/定时任务模态
+    if [ ! -t 0 ] || [ -z "$TERM" ] || [ "$TERM" = "dumb" ] || \
+       [ "${CRON:-0}" = "1" ] || [ "${CRONTAB:-0}" = "1" ] || \
+       [ "${CI:-}" = "true" ] || [ "${DEBIAN_FRONTEND:-}" = "noninteractive" ] || \
+       [ "${NON_INTERACTIVE:-0}" = "1" ]; then
+        NON_INTERACTIVE=1
+        IS_INTERACTIVE=0
+        CRON_MODE=1
+    fi
     DO_BUILD=0
     NO_CACHE=0
     EXTRA_ARGS=""
@@ -140,8 +155,29 @@ while [ $# -gt 0 ]; do
             RECONFIG_DB=1
             shift
             ;;
+        --cron|--batch)
+            CRON_MODE=1
+            NON_INTERACTIVE=1
+            IS_INTERACTIVE=0
+            shift
+            ;;
         -y|--yes|--non-interactive)
             NON_INTERACTIVE=1
+            IS_INTERACTIVE=0
+            shift
+            ;;
+        --renew-ssl|--force-update-ssl|--update-ssl)
+            FORCE_UPDATE_SSL=1
+            shift
+            ;;
+        --force-update-nginx|--update-nginx)
+            FORCE_UPDATE_NGINX=1
+            shift
+            ;;
+        -f|--force)
+            FORCE=1
+            FORCE_UPDATE_NGINX=1
+            FORCE_UPDATE_SSL=1
             shift
             ;;
         -p|--port)
@@ -309,6 +345,11 @@ export_runtime_vars() {
     export COMPOSE_FILE
     export RECONFIG_DB
     export NON_INTERACTIVE
+    export CRON_MODE
+    export IS_INTERACTIVE
+    export FORCE_UPDATE_SSL
+    export FORCE_UPDATE_NGINX
+    export FORCE
 
     # CLI 自定义覆盖暂存变量
     export CUSTOM_DB_IMAGE

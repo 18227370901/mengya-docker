@@ -193,20 +193,14 @@ choose_db_mode() {
         return 0
     fi
 
-    # 3. 显式指定 -y / --yes / --non-interactive：直接采用推荐模式并同步
-    if [ "$NON_INTERACTIVE" = "1" ]; then
-        DB_MODE="${DB_MODE:-$rec_mode}"
-        update_env_var "DB_MODE" "$DB_MODE"
-        echo -e "\033[0;36m[免交互自愈] 显式指定 -y/--non-interactive，已自动采用智能推荐模式: $DB_MODE ($rec_reason)\033[0m"
-        return 0
-    fi
-
-    # 4. 定时任务 / 无TTY 环境（且未显式指定 --reconfig）：自动采用推荐模式，绝不挂起进程
-    if [ "$RECONFIG_DB" != "1" ] && [ ! -t 0 ]; then
-        DB_MODE="${DB_MODE:-$rec_mode}"
-        update_env_var "DB_MODE" "$DB_MODE"
-        echo -e "\033[0;36m[免交互自愈] 检测到处于非交互环境/定时任务，已自动采用智能推荐模式: $DB_MODE ($rec_reason)\033[0m"
-        return 0
+    # 3. 显式指定 -y / --yes / --non-interactive / --cron 或处于定时任务非交互环境
+    if [ "$NON_INTERACTIVE" = "1" ] || [ "$CRON_MODE" = "1" ] || [ "$IS_INTERACTIVE" = "0" ] || [ ! -t 0 ]; then
+        if [ "$RECONFIG_DB" != "1" ] || [ "$NON_INTERACTIVE" = "1" ] || [ "$CRON_MODE" = "1" ]; then
+            DB_MODE="${DB_MODE:-$rec_mode}"
+            update_env_var "DB_MODE" "$DB_MODE"
+            echo -e "\033[0;36m[免交互自愈] 检测到处于定时任务/非交互环境，已自动采用智能推荐模式: $DB_MODE ($rec_reason)\033[0m"
+            return 0
+        fi
     fi
 
     # 5. 交互式终端菜单展示

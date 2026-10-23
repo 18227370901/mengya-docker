@@ -26,21 +26,27 @@ gen_ssl_cert() {
 
     local do_update="n"
     if [ -s "$CERT_FILE" ] && [ -s "$KEY_FILE" ]; then
-        echo -e "\033[1;33m[提示] 检测到已存在有效的 SSL 证书与私钥文件。\033[0m"
-        echo -e "\033[1;31m[注意] 若选择更新，将重新生成自签名证书并覆盖现有文件内容（已有正式证书将被替换）！\033[0m"
-        local choice="n"
-        if [ -t 0 ]; then
+        if [ "$FORCE_UPDATE_SSL" = "1" ]; then
+            echo -e "  \033[1;32m[强制更新] 显式指定更新 SSL 证书 (--renew-ssl)，准备重新生成...\033[0m"
+            do_update="y"
+        elif [ "$IS_INTERACTIVE" = "1" ] && [ "$NON_INTERACTIVE" = "0" ] && [ -t 0 ]; then
+            echo -e "\033[1;33m[提示] 检测到已存在有效的 SSL 证书与私钥文件。\033[0m"
+            echo -e "\033[1;31m[注意] 若选择更新，将重新生成自签名证书并覆盖现有文件内容（已有正式证书将被替换）！\033[0m"
+            local choice="n"
             printf "是否需要更新 SSL 证书文件内容？(y/N): "
             read -r choice || choice="n"
+            case "$choice" in
+                [yY]|[yY][eE][sS])
+                    do_update="y"
+                    ;;
+                *)
+                    do_update="n"
+                    ;;
+            esac
+        else
+            echo "  [定时任务/免交互模式] 检测到已有有效证书，默认安全保留现有证书不变。"
+            do_update="n"
         fi
-        case "$choice" in
-            [yY]|[yY][eE][sS])
-                do_update="y"
-                ;;
-            *)
-                do_update="n"
-                ;;
-        esac
     else
         echo "  检测到 SSL 证书缺失或文件为空，自动生成自签名证书以保障 Nginx 正常加载..."
         do_update="y"
@@ -197,10 +203,10 @@ EOF
         echo -e "\033[1;31m[注意] 若选择覆盖，将根据当前配置更新，原有旧配置将自动备份为 .bak_时间戳 快照！\033[0m"
 
         local choice="n"
-        if [ "$NON_INTERACTIVE" = "1" ] || [ "$FORCE" = "1" ]; then
-            echo "  [非交互/强制模式] 自动执行安全覆盖更新..."
+        if [ "$FORCE_UPDATE_NGINX" = "1" ] || [ "$FORCE" = "1" ]; then
+            echo "  [强制模式] 显式指定更新 Nginx 配置，执行安全覆盖更新..."
             do_update="y"
-        elif [ -t 0 ]; then
+        elif [ "$IS_INTERACTIVE" = "1" ] && [ "$NON_INTERACTIVE" = "0" ] && [ -t 0 ]; then
             printf "是否需要覆盖/更新 Nginx 配置文件内容？(y/N): "
             read -r choice || choice="n"
             case "$choice" in
@@ -212,7 +218,7 @@ EOF
                     ;;
             esac
         else
-            echo "  [非交互环境] 默认安全保留现有 Nginx 配置文件不变。"
+            echo "  [定时任务/免交互环境] 存在配置差异，默认安全保留现有 Nginx 配置文件不变。"
             do_update="n"
         fi
     fi

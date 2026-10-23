@@ -2411,6 +2411,24 @@ estart: unless-stopped；
       </div>
     </div>
 
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-badge">ADR 10.47</span>
+        <span class="adr-title">run.sh 运维脚本双模态环境自愈、手动交互与定时任务免介入兼容及安全默认策略规范 (v1.85)</span>
+      </div>
+      <div class="adr-body">
+        <p><strong>决策背景</strong>：运维脚本中 SSL 证书更新与 Nginx 差异覆盖仅单一研判终端描述符，非交互场景下存在 <code>read</code> 挂起阻塞风险；且原有配置差异在非交互下粗暴强制覆盖，违背 <code>(y/N)</code> 默认保留原则，容易冲掉生产调优配置；缺少统一的模态状态机。</p>
+        <p><strong>核心架构治理</strong>：</p>
+        <ul>
+          <li><strong>四层渐进式双模态研判中枢</strong>：<code>bin/config.sh</code> 统一综合研判 TTY 描述符、<code></code>、定时任务环境变量（<code>CRON=1</code>、<code>CI=true</code> 等）及 CLI 参数，统一导出 <code>IS_INTERACTIVE</code>、<code>CRON_MODE</code> 与 <code>NON_INTERACTIVE</code> 全局状态；</li>
+          <li><strong>SSL 证书安全策略</strong>：检测到已有有效证书时，交互模式下正常询问 <code>(y/N)</code>（默认 N）；定时任务模式下自动采用默认值保留现有证书（防冲掉正式证书）；缺失时自动补全生成；支持 <code>--renew-ssl</code> 显式强制更新；</li>
+          <li><strong>Nginx 配置防覆盖策略</strong>：检测到配置差异时，交互模式下正常询问 <code>(y/N)</code>（默认 N）；定时任务模式下默认安全保留现有配置（防冲掉自定义调优规则）；缺失时自动补齐；支持 <code>--force-update-nginx</code> 显式强制更新并生成时间戳备份；</li>
+          <li><strong>数据库部署零等待</strong>：定时任务下秒级直用 <code>.env</code> 持久化配置或推荐模式，彻底消除 <code>read -t 30</code> 造成的 30 秒超时等待；</li>
+          <li><strong>CLI 参数矩阵扩充</strong>：新增 <code>--cron</code>、<code>--batch</code>、<code>--renew-ssl</code>、<code>--force-update-nginx</code>。</li>
+        </ul>
+      </div>
+    </div>
+
 </div>
 </body>
 </html>

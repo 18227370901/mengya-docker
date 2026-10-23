@@ -2120,3 +2120,52 @@ flowchart TD
 1. **多重编码兼容**：经测试，无论是 Windows Excel 导出的 ANSI/GBK CSV，还是 UTF-8 带/不带 BOM 的 CSV，解析准确率达到 100%，中文零乱码；
 2. **孕周自愈修正**：在预产期已设或批次内存在锚点时，未填孕周 100% 自动识别补齐，离谱填错（如手填 99 周或偏差过大）100% 自动修正为医学理论推算值，杜绝时序阻断；
 3. **交互闭环完整**：阶段不一致确认后，执行中明确显示 Loading，成功时自动关闭弹窗，异常时平滑滚动至错误明细看板，彻底消除“点击无反应”缺陷。
+
+## 10.47 ADR 10.47：run.sh 运维脚本双模态环境自愈、手动交互与定时任务免介入兼容及安全默认策略规范 (v1.85)
+
+### 10.47.1 决策背景与核心痛点
+在 `mengya-local` 及 `mengya-docker` 的日常运维和生产自动化中，`run.sh` 脚本承担着服务启停、证书生成、Nginx 反代配置及数据库初始化的核心职责。随着自动化运维推进，两大阻断性场景痛点愈发显著：
+1. **人工交互阻塞定时任务**：原脚本中的 SSL 证书生成与 Nginx 配置覆写检测逻辑仅单一判断终端描述符 `[ -t 0 ]`，未充分感知 `--cron`、`-y`、非交互环境变量等上下文。在部分自动化调度器或终端下，`read` 提示会直接造成进程挂起阻塞或无意义的 30 秒超时等待；
+2. **非交互默认行为违背安全设计**：在配置出现差异时，原逻辑在非交互模式下直接强行执行覆写（`do_update="y"`）。但在生产环境中，运维工程师常针对 Nginx 做过特定性能或安全调优，根据通用 CLI 规范 `(y/N)` 的大写 `N` 语义，**默认行为应当是安全保留现有文件（即不覆盖）**，强行覆写会导致自定义调优规则丢失；
+3. **缺乏全局统一的模态决策中枢**：各子脚本各自进行孤立的 TTY 判断，缺少全局统一的“用户交互 vs 定时任务”状态机。
+
+### 10.47.2 根因定位与机理剖析
+1. **判定孤立性**：`bin/nginx.sh: gen_ssl_cert` 仅检查 `[ -t 0 ]`，完全忽略了 `NON_INTERACTIVE` 变量与 CLI 参数，导致终端传入 `-y` 时依然等待用户键盘输入；
+2. **策略反转缺陷**：`bin/nginx.sh: gen_nginx_config` 将 `NON_INTERACTIVE=1` 绑定为强制覆盖，而将无 TTY 环境绑定为保留，二者语义割裂且行为不确定；
+3. **自适应降级缺失**：缺少对 Linux Crontab 特征环境（如 `TERM=dumb`、`CRON=1`、`DEBIAN_FRONTEND=noninteractive`）的主动感知与预设安全默认值。
+
+### 10.47.3 架构重构与设计要点
+```mermaid
+flowchart TD
+    Start["执行 ./run.sh [cmd] [args]"] --> Tier1{"第1层: 显式 CLI 参数?<br/>(--cron / -y / --batch)"}
+    Tier1 -- 是 --> SetNonInteractive["激活【定时任务/免交互模态】<br/>IS_INTERACTIVE=0<br/>CRON_MODE=1<br/>NON_INTERACTIVE=1"]
+    Tier1 -- 否 --> Tier2{"第2层: 定时任务环境变量?<br/>(CRON=1 / CI=true / NON_INTERACTIVE=1)"}
+    Tier2 -- 是 --> SetNonInteractive
+    Tier2 -- 否 --> Tier3{"第3层: TTY 终端探测?<br/>([ -t 0 ] && [ -t 1 ])"}
+    Tier3 -- 否 --> SetNonInteractive
+    Tier3 -- 是 --> Tier4{"第4层: TERM 环境变量是否为 dumb/空?"}
+    Tier4 -- 是 --> SetNonInteractive
+    Tier4 -- 否 --> SetInteractive["激活【用户手动交互模态】<br/>IS_INTERACTIVE=1<br/>CRON_MODE=0<br/>NON_INTERACTIVE=0"]
+
+    SetInteractive --> BranchInteractive["保留友好人机交互 (y/N)<br/>等待人工输入确认<br/>回车应用默认安全值"]
+    SetNonInteractive --> BranchCron["彻底跳过所有 read 阻塞<br/>零等待快速执行<br/>SSL已有: 默认安全保留<br/>Nginx差异: 默认安全保留<br/>缺失资源: 自动补齐创建<br/>强制参数: 显式指定时执行覆写"]
+```
+
+1. **四层渐进式环境与模态决策机制**：在 `bin/config.sh` 的 `init_default_configs` 阶段即完成环境研判，统一导出 `IS_INTERACTIVE`、`CRON_MODE` 与 `NON_INTERACTIVE` 全局变量；
+2. **SSL 证书双模态安全策略**：
+   - 证书与私钥有效存在：手动交互模式下提示 `是否需要更新 SSL 证书文件内容？(y/N): `；定时任务模式下自动采用默认值 `do_update="n"`（安全保留现有证书，防止冲掉已有正式 CA 证书）；
+   - 证书缺失或文件为空：无论何种模式，均自动生成自签名证书以确保 Nginx 顺利加载；
+   - 强制刷新支持：提供 `--renew-ssl` / `--force-update-ssl` 显式强制更新；
+3. **Nginx 反代配置差异自适应策略**：
+   - 配置内容与目标一致（Diff 校验无差异）：直接跳过；
+   - 配置内容存在差异：手动交互模式下提示 `是否需要覆盖/更新 Nginx 配置文件内容？(y/N): `；定时任务模式下遵循默认值 `do_update="n"`（安全保留现有配置，防覆盖调优规则）；
+   - 配置文件缺失：自动生成初始反代配置并关联 443 SNI；
+   - 强制覆盖支持：提供 `--force-update-nginx` 显式强制覆写并自动创建 `.bak_时间戳` 快照；
+4. **数据库零等待探针**：定时任务下秒级直用 `.env` 已存模式或默认 `sqlite`，彻底根除向导超时延迟；
+5. **CLI 参数矩阵扩充**：新增 `--cron`, `--batch`, `--renew-ssl`, `--force-update-nginx`。
+
+### 10.47.4 实施与验证结果
+1. **代码静态语法验证**：两套工程经 `bash -n` 校验，全部 0 警告 0 报错；
+2. **手动交互模态验证**：终端环境下正常启动 `./run.sh add_nginx`，精准显示人机交互提示并等待人工决策，默认回车安全生效；
+3. **定时任务模态验证**：模拟 Crontab 环境（无 TTY / 传入 `--cron`），实测脚本全链路 0 阻塞、0 挂起、0 报错，安全默认策略 100% 达成预期；
+4. **服务平滑运行**：传统版一体化服务（端口 5173，PID: 78264）成功平滑重启，HTTP 200 验证通过。
