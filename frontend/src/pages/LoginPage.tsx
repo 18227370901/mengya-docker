@@ -77,7 +77,16 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const kicked = searchParams.get("kicked") === "1";
-  const timeoutLogout = searchParams.get("timeout") === "1";
+  const [timeoutLogout, setTimeoutLogout] = useState(() => {
+    return searchParams.get("timeout") === "1" || sessionStorage.getItem("mengya_timeout_logout") === "1";
+  });
+
+  useEffect(() => {
+    if (sessionStorage.getItem("mengya_timeout_logout")) {
+      setTimeoutLogout(true);
+      sessionStorage.removeItem("mengya_timeout_logout");
+    }
+  }, []);
 
   // 验证码（风控）
   const [needCaptcha, setNeedCaptcha] = useState(false);

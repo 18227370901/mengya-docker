@@ -1,14 +1,17 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useAuthStore } from "@/store/authStore";
+import { Lock } from "lucide-react";
 
-/** 需要登录的页面包装：初始化 auth 状态，未登录重定向 /login，全员会话无操作超时防护，权限实时静默同步 */
+/** 需要登录的页面包装：初始化 auth 状态，全员会话无操作超时防护与现场弹窗提示，权限实时静默同步 */
 export default function RequireAuth({ children }: { children: React.ReactNode }) {
   const { user, loading, init, logout, fetchMe } = useAuthStore();
   const navigate = useNavigate();
   const location = useLocation();
   const called = useRef(false);
   const lastSyncTimeRef = useRef(0);
+  const [isTimedOut, setIsTimedOut] = useState(false);
+  const [timeoutMinsDisplay, setTimeoutMinsDisplay] = useState(30);
 
   // 初次挂载时执行初始化（只一次）
   useEffect(() => {
@@ -18,50 +21,72 @@ export default function RequireAuth({ children }: { children: React.ReactNode })
     }
   }, [init]);
 
-  // 初始化完成后，若没有 token 或没有 user，重定向登录
+  // 获取当前配置的无操作超时分钟数
+  const getTimeoutMinutes = useCallback(() => {
+    const str = localStorage.getItem("mengya_admin_timeout");
+    if (str === null || str === undefined || str === "") {
+      return 30;
+    }
+    const val = Number(str);
+    return Number.isNaN(val) ? 30 : val;
+  }, []);
+
+  // 获取上次活动时间戳
+  const getLastActive = useCallback(() => {
+    const str = localStorage.getItem("mengya_last_active");
+    if (!str) return Date.now();
+    const val = Number(str);
+    return Number.isNaN(val) ? Date.now() : val;
+  }, []);
+
+  // 核心超时判定函数
+  const checkIsTimedOut = useCallback(() => {
+    const timeoutMins = getTimeoutMinutes();
+    if (timeoutMins <= 0) return false; // 0 表示禁用
+    const lastActive = getLastActive();
+    const idleMs = Date.now() - lastActive;
+    return idleMs >= timeoutMins * 60 * 1000;
+  }, [getTimeoutMinutes, getLastActive]);
+
+  // 触发超时处理流程：阻断式弹窗并清理认证状态
+  const triggerTimeout = useCallback(() => {
+    const mins = getTimeoutMinutes();
+    setTimeoutMinsDisplay(mins > 0 ? mins : 30);
+    sessionStorage.setItem("mengya_timeout_logout", "1");
+    localStorage.removeItem("mengya_last_active");
+    logout();
+    setIsTimedOut(true);
+  }, [getTimeoutMinutes, logout]);
+
+  // 初始化完成后，若没有 token 或没有 user，且非超时状态，重定向到登录页
   useEffect(() => {
-    if (!loading && !user) {
+    if (!loading && !user && !isTimedOut) {
       navigate("/login", { replace: true });
     }
-  }, [loading, user, navigate]);
+  }, [loading, user, isTimedOut, navigate]);
 
-  // ===== 全员登录会话无操作超时核心判定（模式 A：覆盖全平台所有登录账号） =====
-  const checkIdleTimeout = useCallback(() => {
-    if (!user) return false;
-    const timeoutMinsStr = localStorage.getItem("mengya_admin_timeout");
-    const timeoutMins = timeoutMinsStr !== null ? Number(timeoutMinsStr) : 30;
-    // 0 表示禁用无操作超时检测
-    if (timeoutMins <= 0) return false;
-
-    const lastActiveStr = localStorage.getItem("mengya_last_active");
-    const lastActive = lastActiveStr ? Number(lastActiveStr) : Date.now();
-    const idleMs = Date.now() - lastActive;
-
-    if (idleMs >= timeoutMins * 60 * 1000) {
-      logout();
-      localStorage.removeItem("mengya_last_active");
-      navigate("/login?timeout=1", { replace: true });
-      return true;
-    }
-    return false;
-  }, [user, logout, navigate]);
-
-  // 路由变化时静默同步最新用户信息与权限（3秒节流防抖；优先判定超时状态）
+  // 路由变化时静默同步最新用户信息与权限（优先判定超时状态）
   useEffect(() => {
-    if (!user) return;
-    if (checkIdleTimeout()) return;
+    if (!user || isTimedOut) return;
+    if (checkIsTimedOut()) {
+      triggerTimeout();
+      return;
+    }
     const now = Date.now();
     if (now - lastSyncTimeRef.current > 3000) {
       lastSyncTimeRef.current = now;
       fetchMe();
     }
-  }, [location.pathname, user, fetchMe, checkIdleTimeout]);
+  }, [location.pathname, user, isTimedOut, checkIsTimedOut, triggerTimeout, fetchMe]);
 
-  // 窗口聚焦与页面可见性恢复时静默同步权限（优先做超时判定，避免已超时仍被后台同步重置）
+  // 窗口聚焦与页面可见性恢复时（优先做超时判定，防止已超时仍被后台同步重置）
   useEffect(() => {
-    if (!user) return;
+    if (!user || isTimedOut) return;
     const handleFocus = () => {
-      if (checkIdleTimeout()) return;
+      if (checkIsTimedOut()) {
+        triggerTimeout();
+        return;
+      }
       const now = Date.now();
       if (now - lastSyncTimeRef.current > 3000) {
         lastSyncTimeRef.current = now;
@@ -79,24 +104,26 @@ export default function RequireAuth({ children }: { children: React.ReactNode })
       window.removeEventListener("focus", handleFocus);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, [user, fetchMe, checkIdleTimeout]);
+  }, [user, isTimedOut, checkIsTimedOut, triggerTimeout, fetchMe]);
 
-  // 定时静默同步权限：前台活动且未超时时每60秒同步一次
+  // 定时静默同步权限：前台活动且未超时时每 60 秒同步一次
   useEffect(() => {
-    if (!user) return;
+    if (!user || isTimedOut) return;
     const timer = setInterval(() => {
       if (document.visibilityState === "visible") {
-        if (!checkIdleTimeout()) {
+        if (checkIsTimedOut()) {
+          triggerTimeout();
+        } else {
           fetchMe();
         }
       }
     }, 60000);
     return () => clearInterval(timer);
-  }, [user, fetchMe, checkIdleTimeout]);
+  }, [user, isTimedOut, checkIsTimedOut, triggerTimeout, fetchMe]);
 
-  // ===== 物理人机交互事件监听与空闲心跳轮询引擎 =====
+  // ===== 物理人机交互事件监听与高频空闲巡检引擎 =====
   useEffect(() => {
-    if (!user) return;
+    if (!user || isTimedOut) return;
 
     if (!localStorage.getItem("mengya_last_active")) {
       localStorage.setItem("mengya_last_active", String(Date.now()));
@@ -104,39 +131,78 @@ export default function RequireAuth({ children }: { children: React.ReactNode })
 
     let lastThrottleTime = 0;
     const updateActivity = () => {
+      // 核心防线：若已经达到超时时限，绝不允许任何人机事件重置活跃时间，立即触发超时弹窗！
+      if (checkIsTimedOut()) {
+        triggerTimeout();
+        return;
+      }
       const now = Date.now();
-      // 3秒节流写入 localStorage
-      if (now - lastThrottleTime > 3000) {
+      // 2 秒节流落盘
+      if (now - lastThrottleTime > 2000) {
         lastThrottleTime = now;
         localStorage.setItem("mengya_last_active", String(now));
       }
     };
 
-    // 仅监听真实的物理人机交互事件（键鼠、触屏、滚动、点击）
+    // 仅监听真实的物理人机交互事件（键鼠点击/移动、键盘敲击、触屏拖拽、滚轮滚动）
     const events = ["mousedown", "mousemove", "keydown", "scroll", "touchstart", "click"];
     events.forEach((evt) => window.addEventListener(evt, updateActivity, { passive: true }));
 
-    // 跨 Tab / 跨窗口活动状态同步监听
+    // 跨 Tab / 跨窗口状态监听
     const handleStorage = (e: StorageEvent) => {
-      if (e.key === "mengya_last_active" && e.newValue) {
-        // 其他 Tab 产生了交互，本 Tab 也及时感知
+      if (e.key === "mengya_admin_timeout") {
+        // 管理员更新了超时配置，立即重新判定
+        if (checkIsTimedOut()) {
+          triggerTimeout();
+        }
       }
     };
     window.addEventListener("storage", handleStorage);
 
-    // 每 5 秒轮询检查一次空闲是否达标（及时触发踢出与友好跳转）
+    // 每 2 秒高频轮询检查一次空闲是否达标（及时触发弹窗提示）
     const timer = setInterval(() => {
-      checkIdleTimeout();
-    }, 5000);
+      if (checkIsTimedOut()) {
+        triggerTimeout();
+      }
+    }, 2000);
 
     return () => {
       events.forEach((evt) => window.removeEventListener(evt, updateActivity));
       window.removeEventListener("storage", handleStorage);
       clearInterval(timer);
     };
-  }, [user, checkIdleTimeout]);
+  }, [user, isTimedOut, checkIsTimedOut, triggerTimeout]);
 
-  // loading 或未登录时仅显示加载界面，不渲染业务子组件，防止闪烁
+  // 1. 若触发会话超时，直接呈现全屏遮罩强提示模态框，彻底阻断操作并提示用户重新登录
+  if (isTimedOut) {
+    return (
+      <div className="fixed inset-0 z-[999999] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+        <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl dark:bg-gray-800 text-center animate-in fade-in zoom-in-95 duration-200">
+          <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-orange-100 text-orange-600 dark:bg-orange-950/60 dark:text-orange-400 mb-4">
+            <Lock className="h-7 w-7" />
+          </div>
+          <h3 className="text-lg font-bold text-gray-900 dark:text-white">登录会话已超时</h3>
+          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400 leading-relaxed">
+            您已连续 <span className="font-semibold text-orange-600">{timeoutMinsDisplay} 分钟</span> 未进行任何操作。为保障账户数据安全，系统已自动退出登录，请重新登录以继续使用。
+          </p>
+          <div className="mt-6 flex flex-col gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                window.location.href = "/login?timeout=1";
+              }}
+              className="w-full btn btn-primary py-2.5 font-medium shadow-md flex items-center justify-center gap-2"
+            >
+              <Lock className="h-4 w-4" />
+              重新登录
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. loading 或未登录时仅显示加载界面，不渲染业务子组件，防止闪烁
   if (loading || !user) {
     return (
       <div className="flex min-h-[60vh] items-center justify-center text-gray-400">

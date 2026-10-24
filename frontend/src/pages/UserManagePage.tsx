@@ -778,6 +778,7 @@ export default function UserManagePage() {
                   <p className="text-[10px] text-gray-400 mt-0.5">覆盖全平台所有登录账号，闲置达指定分钟数自动安全退出；0表示禁用超时。</p>
                   <div className="mt-1 flex flex-wrap gap-1">
                     {[
+                      { label: "1分(测试)", val: 1 },
                       { label: "15分(严格)", val: 15 },
                       { label: "30分(推荐)", val: 30 },
                       { label: "60分(1小时)", val: 60 },

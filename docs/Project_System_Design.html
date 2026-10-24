@@ -2231,6 +2231,7 @@ apps/core/                                    apps/core/
           <li><strong>短路熔断与切屏防御</strong>：在窗口重新获得焦点（Focus / VisibilityChange）时优先执行 <code>checkIdleTimeout()</code>，一旦超时即刻终止后续网络请求并执行 <code>logout()</code>；</li>
           <li><strong>模式 A 全员覆盖</strong>：移除 <code>is_staff</code> 限制，全平台所有登录用户统一受全局会话无操作超时基线保护；</li>
           <li><strong>跨 Tab 协同机制</strong>：接入 <code>StorageEvent</code> 监听，保障多标签页操作状态互通，杜绝误踢。</li>
+          <li><strong>现场阻断模态弹窗与交互防线</strong>：空闲达标时顶层即刻渲染全屏强提示模态框（包含超时时长、锁图标与重新登录按钮）；物理事件监听优先拦截已超时动作，杜绝切屏点击重置时间戳；登录页采用 <code>sessionStorage</code> 双保险提示。</li>
         </ul>
       </div>
     </div>
