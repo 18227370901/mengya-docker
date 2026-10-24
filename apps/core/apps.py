@@ -1,3 +1,4 @@
+import sys
 from django.apps import AppConfig
 from django.db.backends.signals import connection_created
 
@@ -19,3 +20,12 @@ class CoreConfig(AppConfig):
 
     def ready(self):
         connection_created.connect(_enable_sqlite_wal)
+
+        # 仅在实际服务运行（非管理脚本/迁移/测试等）时启动后台定时备份调度器
+        skip_commands = {"makemigrations", "migrate", "collectstatic", "check", "shell", "test"}
+        if not any(arg in skip_commands for arg in sys.argv):
+            try:
+                from .services.backup_service import start_backup_scheduler
+                start_backup_scheduler()
+            except Exception:
+                pass

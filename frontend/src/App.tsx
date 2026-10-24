@@ -42,8 +42,8 @@ function PermissionGuard({ perm, children }: { perm: string; children: React.Rea
   return <>{children}</>;
 }
 
-function AdminGuard({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuthStore();
+function AdminGuard({ perm, children }: { perm?: string; children: React.ReactNode }) {
+  const { user, loading, hasPermission } = useAuthStore();
   const navigate = useNavigate();
 
   if (loading) {
@@ -59,26 +59,28 @@ function AdminGuard({ children }: { children: React.ReactNode }) {
     return null;
   }
 
-  if (!user.is_staff) {
-    return (
-      <div className="card my-12 mx-auto max-w-md space-y-4 py-12 text-center">
-        <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-red-50 text-red-500">
-          <ShieldAlert className="h-7 w-7" />
-        </div>
-        <div>
-          <h2 className="text-lg font-bold text-gray-800">无权访问管理后台</h2>
-          <p className="mt-1 text-xs text-gray-400">该页面仅限系统超级管理员访问，已对非授权账号严格阻断。</p>
-        </div>
-        <button
-          className="btn-primary inline-flex items-center gap-1.5"
-          onClick={() => navigate("/")}
-        >
-          <Home className="h-4 w-4" /> 返回首页
-        </button>
-      </div>
-    );
+  // 管理员或拥有指定管理菜单权限的用户放行
+  if (user.is_staff || (perm && hasPermission(perm))) {
+    return <>{children}</>;
   }
-  return <>{children}</>;
+
+  return (
+    <div className="card my-12 mx-auto max-w-md space-y-4 py-12 text-center">
+      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-red-50 text-red-500">
+        <ShieldAlert className="h-7 w-7" />
+      </div>
+      <div>
+        <h2 className="text-lg font-bold text-gray-800">无权访问管理后台</h2>
+        <p className="mt-1 text-xs text-gray-400">该页面需要系统管理员身份或对应的管理菜单权限授权，您暂未获得该模块访问权限。</p>
+      </div>
+      <button
+        className="btn-primary inline-flex items-center gap-1.5"
+        onClick={() => navigate("/")}
+      >
+        <Home className="h-4 w-4" /> 返回首页
+      </button>
+    </div>
+  );
 }
 
 import { Route, Routes } from "react-router-dom";
@@ -107,6 +109,7 @@ import UserManagePage from "./pages/UserManagePage";
 import AuditLogPage from "./pages/AuditLogPage";
 import DailyTipsManagePage from "./pages/DailyTipsManagePage";
 import AdminServiceConfigPage from "./pages/AdminServiceConfigPage";
+import AdminBackupPage from "./pages/AdminBackupPage";
 import BrandListPage from "./pages/BrandListPage";
 import BrandDetailPage from "./pages/BrandDetailPage";
 import PregnancyWeeklyPage from "./pages/PregnancyWeeklyPage";
@@ -147,12 +150,13 @@ export default function App() {
         <Route path="/weather" element={<PermissionGuard perm="menu_weather"><WeatherPage /></PermissionGuard>} />
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/settings/ai" element={<AIConfigPage />} />
-        <Route path="/admin/registration" element={<AdminGuard><RegistrationManagePage /></AdminGuard>} />
-        <Route path="/admin/products" element={<AdminGuard><ProductAdminPage /></AdminGuard>} />
-        <Route path="/admin/users" element={<AdminGuard><UserManagePage /></AdminGuard>} />
-        <Route path="/admin/audit-logs" element={<AdminGuard><AuditLogPage /></AdminGuard>} />
-        <Route path="/admin/daily-tips" element={<AdminGuard><DailyTipsManagePage /></AdminGuard>} />
-        <Route path="/admin/service-config" element={<AdminGuard><AdminServiceConfigPage /></AdminGuard>} />
+        <Route path="/admin/registration" element={<AdminGuard perm="menu_admin_registration"><RegistrationManagePage /></AdminGuard>} />
+        <Route path="/admin/products" element={<AdminGuard perm="menu_admin_products_manage"><ProductAdminPage /></AdminGuard>} />
+        <Route path="/admin/users" element={<AdminGuard perm="menu_admin_users"><UserManagePage /></AdminGuard>} />
+        <Route path="/admin/audit-logs" element={<AdminGuard perm="menu_admin_audit_logs"><AuditLogPage /></AdminGuard>} />
+        <Route path="/admin/daily-tips" element={<AdminGuard perm="menu_admin_daily_tips"><DailyTipsManagePage /></AdminGuard>} />
+        <Route path="/admin/service-config" element={<AdminGuard perm="menu_admin_service_config"><AdminServiceConfigPage /></AdminGuard>} />
+        <Route path="/admin/backups" element={<AdminGuard perm="menu_admin_backups"><AdminBackupPage /></AdminGuard>} />
         <Route path="/brands" element={<BrandListPage />} />
         <Route path="/brands/:id" element={<BrandDetailPage />} />
         <Route path="/fetal-stories" element={<PermissionGuard perm="menu_fetal_stories"><FetalStoryPage /></PermissionGuard>} />

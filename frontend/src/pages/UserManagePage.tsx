@@ -76,6 +76,26 @@ const PERMISSION_PARENT_MAP: Record<string, string> = {
   ai_session_rename: "menu_ai_assistant",
   ai_session_delete: "menu_ai_assistant",
   ai_fetch_models: "menu_ai_assistant",
+
+  // 管理后台模块
+  backup_config_manage: "menu_admin_backups",
+  backup_trigger: "menu_admin_backups",
+  backup_restore: "menu_admin_backups",
+  backup_task_manage: "menu_admin_backups",
+  service_config_view: "menu_admin_service_config",
+  service_config_update: "menu_admin_service_config",
+  daily_tips_view: "menu_admin_daily_tips",
+  daily_tips_manage: "menu_admin_daily_tips",
+  registration_manage: "menu_admin_registration",
+  product_manage_create: "menu_admin_products_manage",
+  product_manage_edit: "menu_admin_products_manage",
+  product_manage_delete: "menu_admin_products_manage",
+  user_manage_view: "menu_admin_users",
+  user_manage_edit: "menu_admin_users",
+  user_manage_freeze: "menu_admin_users",
+  permission_manage: "menu_admin_users",
+  audit_log_view: "menu_admin_audit_logs",
+  audit_log_clean: "menu_admin_audit_logs",
 };
 
 const PERMISSION_CHILDREN_MAP: Record<string, string[]> = {};

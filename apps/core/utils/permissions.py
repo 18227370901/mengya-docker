@@ -48,7 +48,39 @@ DEFAULT_USER_PERMISSIONS = {
     "ai_session_create": True,      # 增：创建新会话
     "ai_session_rename": True,      # 改：重命名会话
     "ai_session_delete": True,      # 删：删除会话
-    "ai_fetch_models": False,       # 查：拉取可用模型列表（高级管理权限）
+    "ai_fetch_models": False,
+    # 管理后台与高级运维权限 (Admin Menus & Management - 普通用户默认全部关闭 False)
+    "menu_admin_backups": False,            # 云端容灾备份菜单
+    "backup_config_manage": False,          # WebDAV 服务器配置与连通测试
+    "backup_trigger": False,                # 手动触发备份与离线快照导出
+    "backup_restore": False,                # 执行云端/本地快照系统还原高危操作
+    "backup_task_manage": False,            # 定时自动备份调度任务管理
+
+    "menu_admin_service_config": False,     # 外部接口配置菜单
+    "service_config_view": False,           # 查看接口配置与单项测试
+    "service_config_update": False,         # 修改天气/节假日/搜索管线引擎配置
+
+    "menu_admin_daily_tips": False,         # 关怀贴士管理菜单
+    "daily_tips_view": False,               # 查看贴士库与展示规则
+    "daily_tips_manage": False,             # 增删改贴士与重置内置题库
+
+    "menu_admin_registration": False,       # 注册管理菜单
+    "registration_manage": False,           # 切换注册模式与生成邀请链接
+
+    "menu_admin_products_manage": False,    # 商品发布管理菜单
+    "product_manage_create": False,         # 录入新商品
+    "product_manage_edit": False,           # 编辑商品资料
+    "product_manage_delete": False,         # 下架/删除商品
+
+    "menu_admin_users": False,              # 用户管理与权限管控菜单
+    "user_manage_view": False,              # 查看用户列表与详情
+    "user_manage_edit": False,              # 编辑用户资料与角色
+    "user_manage_freeze": False,            # 冻结/解冻用户账号
+    "permission_manage": False,             # 配置全局或单用户权限及风控重置
+
+    "menu_admin_audit_logs": False,         # 审计安全日志菜单
+    "audit_log_view": False,                # 查阅全平台安全审计流水
+    "audit_log_clean": False,               # 清理历史审计日志
 }
 
 # 父子关联映射表：子权限 key -> 其直接父权限 key（支持多级继承联动）
@@ -205,6 +237,44 @@ PERMISSION_DEFINITIONS = [
             {"key": "ai_session_rename", "name": "重命名会话 (改)", "desc": "修改会话列表中的主题标题", "parent_key": "menu_ai_assistant"},
             {"key": "ai_session_delete", "name": "删除会话 (删)", "desc": "删除历史对话会话及其全部聊天记录", "parent_key": "menu_ai_assistant"},
             {"key": "ai_fetch_models", "name": "拉取模型列表 (查)", "desc": "在 AI 配置中通过 Base URL 自动拉取可用模型列表", "parent_key": "menu_ai_assistant"},
+        ],
+    },
+    {
+        "group_key": "admin_operations",
+        "group_name": "管理后台与系统运维权限",
+        "description": "控制平台容灾备份、外部接口、关怀贴士、用户权限、注册策略、商品运营与审计日志等高级管理权限（新注册用户默认全部关闭）",
+        "permissions": [
+            {"key": "menu_admin_backups", "name": "云端容灾备份菜单", "desc": "进入 WebDAV 云端备份与系统容灾管理页面", "parent_key": None},
+            {"key": "backup_config_manage", "name": "WebDAV配置 (改)", "desc": "配置 WebDAV 服务器、账号授权码及加密策略", "parent_key": "menu_admin_backups"},
+            {"key": "backup_trigger", "name": "生成备份 (增)", "desc": "手动创建系统快照并上传或离线导出", "parent_key": "menu_admin_backups"},
+            {"key": "backup_restore", "name": "系统还原 (高危)", "desc": "从云端或本地快照执行灾难恢复覆盖", "parent_key": "menu_admin_backups"},
+            {"key": "backup_task_manage", "name": "定时任务管理 (改)", "desc": "创建、启停、编辑自动定时备份任务", "parent_key": "menu_admin_backups"},
+
+            {"key": "menu_admin_service_config", "name": "外部接口配置菜单", "desc": "进入天气、节假日及 AI 公网搜索管线配置页面", "parent_key": None},
+            {"key": "service_config_view", "name": "查看接口配置 (查)", "desc": "查阅各外部服务状态及单项连通测试", "parent_key": "menu_admin_service_config"},
+            {"key": "service_config_update", "name": "修改接口配置 (改)", "desc": "调整天气、历法与搜索引擎权重与密钥", "parent_key": "menu_admin_service_config"},
+
+            {"key": "menu_admin_daily_tips", "name": "关怀贴士管理菜单", "desc": "进入今日小锦囊贴士题库管理页面", "parent_key": None},
+            {"key": "daily_tips_view", "name": "查看贴士库 (查)", "desc": "查阅贴士库列表与展示数量规则", "parent_key": "menu_admin_daily_tips"},
+            {"key": "daily_tips_manage", "name": "编辑贴士题库 (改/删)", "desc": "新增自定义贴士、修改、删除及一键重置内置题库", "parent_key": "menu_admin_daily_tips"},
+
+            {"key": "menu_admin_registration", "name": "注册管理菜单", "desc": "进入注册策略与邀请链接管理页面", "parent_key": None},
+            {"key": "registration_manage", "name": "注册策略调控 (改)", "desc": "切换开放/邀请码/关闭注册模式及生成邀请链接", "parent_key": "menu_admin_registration"},
+
+            {"key": "menu_admin_products_manage", "name": "商品发布管理菜单", "desc": "进入母婴选品库后台管理页面", "parent_key": None},
+            {"key": "product_manage_create", "name": "发布商品 (增)", "desc": "在商品选品库中录入全新商品及规格", "parent_key": "menu_admin_products_manage"},
+            {"key": "product_manage_edit", "name": "编辑商品 (改)", "desc": "修改已有商品基本信息、标签、图片与购买链接", "parent_key": "menu_admin_products_manage"},
+            {"key": "product_manage_delete", "name": "下架删除商品 (删)", "desc": "从选品库中下架或彻底删除商品", "parent_key": "menu_admin_products_manage"},
+
+            {"key": "menu_admin_users", "name": "用户管理菜单", "desc": "进入用户列表与权限管控中心", "parent_key": None},
+            {"key": "user_manage_view", "name": "查看用户列表 (查)", "desc": "查阅全站用户手机、角色、注册信息与状态", "parent_key": "menu_admin_users"},
+            {"key": "user_manage_edit", "name": "编辑用户资料 (改)", "desc": "修改用户昵称、角色及密码重置", "parent_key": "menu_admin_users"},
+            {"key": "user_manage_freeze", "name": "冻结/解冻账号 (改)", "desc": "冻结违规账号或解冻受限用户", "parent_key": "menu_admin_users"},
+            {"key": "permission_manage", "name": "权限管控与风控 (高危)", "desc": "定制单用户权限、保存全局权限模板与调整风控熔断阈值", "parent_key": "menu_admin_users"},
+
+            {"key": "menu_admin_audit_logs", "name": "审计日志菜单", "desc": "进入系统安全审计流水查看页面", "parent_key": None},
+            {"key": "audit_log_view", "name": "查看审计日志 (查)", "desc": "查阅登录、操作、数据修改等全量审计流水", "parent_key": "menu_admin_audit_logs"},
+            {"key": "audit_log_clean", "name": "清理审计日志 (删)", "desc": "按保留天数清理过期历史审计日志", "parent_key": "menu_admin_audit_logs"},
         ],
     },
 ]

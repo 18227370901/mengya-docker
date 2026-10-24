@@ -18,6 +18,7 @@ from .notification import Notification
 from .system import SystemSetting, InviteLink
 from .daily_tip import DailyTip
 from .fetal_story import FetalStory
+from .backup import BackupConfig, ScheduledBackupTask, ScheduledTaskExecutionLog
 
 __all__ = [
     "User",
@@ -43,5 +44,8 @@ __all__ = [
     "SystemSetting",
     "InviteLink",
     "FetalStory",
+    "BackupConfig",
+    "ScheduledBackupTask",
+    "ScheduledTaskExecutionLog",
     "ROLE_CHOICES",
 ]

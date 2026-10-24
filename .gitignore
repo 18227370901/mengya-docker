@@ -60,3 +60,15 @@ nginx/ssl/*
 *.swp
 *~
 *.bak
+
+# 系统容灾与安全回滚快照（严禁推送到 GitHub 远程仓库）
+logs/db_rollback_pre_restore_*.db
+logs/*.db
+logs/*.sqlite*
+*.db
+*.bak
+*.bundle
+*.tar.gz
+*.zip
+.temp/
+mengya_backups/

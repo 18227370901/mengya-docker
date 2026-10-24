@@ -47,6 +47,11 @@
    - 涵盖备孕、孕期 1~40 周胎儿发育、妈妈体重/BMI 监测、血压/血糖生命体征智能分析、幼儿生长曲线（WHO 标准）、产检与疫苗智能日历；
    - 结合大语言模型与 SearXNG / 公网多引擎容灾管线，提供智能育儿顾问、胎教故事及母婴商品多维对比雷达。
 
+4. 🛡️ **WebDAV 云端热备与全量系统容灾体系**
+   - 支持坚果云、群晖、Nextcloud、Alist 等 WebDAV 在线热原子备份与 AES-256 高强度加密；
+   - 全量覆盖全部 37 张业务与管理数据表、SystemSetting 基础配置、离线缓存与用户媒体附件；
+   - 内置安全回滚副本强制保留（logs/db_rollback_pre_restore_*.db）、完整性校验与轻量 Cron 定时调度。
+
 ---
 
 ## 🚀 快速启动与运维管理
@@ -123,7 +128,7 @@ mengya-docker/
 ├── docs/                              # 📁 [文档中心] 统一管理架构设计、HTML视图与发布日志
 │   ├── Project_System_Design.md       # 系统架构设计规范 (PSD) 与重构权威决策
 │   ├── Project_System_Design.html     # 架构设计离线 HTML 交互视图 (Mermaid 图表)
-│   └── CHANGELOG.md                   # 全量版本演化与历史变更日志 (v1.13~v1.85+)
+│   └── CHANGELOG.md                   # 全量版本演化与历史变更日志 (v1.13~v1.86+)
 │
 ├── tools/                             # 📁 [工具中心] 归集非线上常驻的本地开发调试脚本
 │   ├── build_frontend.py              # 前端一键构建与静态产物同步脚本 (Path两级回退)

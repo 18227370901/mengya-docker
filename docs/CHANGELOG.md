@@ -6,6 +6,41 @@
 
 ---
 
+## 2026-10-23 最新更新说明（v1.86 版本）： WebDAV 云端备份与全量系统容灾恢复体系移植与多层防护落地
+
+1. **WebDAV 远端备份与灾难恢复核心服务（对齐传统 gift 备份能力并完成萌芽业务定制）**：
+   - **全量业务数据与基础配置完整覆盖**：不同于单一账本数据库备份，萌芽平台全量系统快照备份（`create_full_snapshot_package`）完整打包了全部 37 张业务与管理数据表、`SystemSetting` 核心基础配置（注册模式、验证码阈值、锁定周期、会话超时、审计留存天数等）、`data/` 运行时持久化缓存（如 `holiday_cache.json`）以及 `media/` 用户上传附件资源，并生成带有 SHA-256 校验与表行数清单的 `manifest.json` 元数据；
+   - **SQLite 在线热原子快照机制**：采用 Python 原生 `sqlite3.backup()` API 建立在线热备份，彻底杜绝 WAL 缓存未落盘导致的数据不一致或数据库锁死；
+   - **AES-256 高强度加密与离线打包**：基于 `pyzipper` 标准库提供 AES-256 加密与解密支持，保护云端网盘存储的数据安全性。
+
+2. **多层安全防线与回滚自愈机制**：
+   - **安全回滚副本强制保留**：在执行任何还原操作前，系统强制先将当前主库备份至 `logs/db_rollback_pre_restore_*.db`；若待恢复文件损坏或解密失败，即刻熔断并阻止主库替换；
+   - **数据库完整性校验先行**：在覆盖前调用 `PRAGMA integrity_check` 深度验证待恢复库结构，损坏镜像拒绝写入；
+   - **连接池安全复位与缓存清理**：原子覆盖前后自动清理 `-wal` 与 `-shm` 缓存并复位 Django 数据库连接；自动执行补丁迁移，支持跨版本数据库自愈；WebDAV 配置自动延续保障。
+
+3. **轻量 Cron 定时自动备份调度器**：
+   - 内置纯标准库轻量 Cron 解析器（支持标准 5 位表达式），基于守护线程常驻工作，自动执行全量或纯数据库定时备份并上传至 WebDAV，记录执行日志。
+
+4. **管理后台可视化面板与交互体系**：
+   - 前端新增 `AdminBackupPage.tsx` 及其 5 个模块化组件（`BackupConfigCard`、`ManualBackupCard`、`RemoteBackupListCard`、`LocalRestoreCard`、`ScheduledTasksCard`）；
+   - 在个人中心（`ProfilePage.tsx`）增加管理员专用导航入口，在 `App.tsx` 接入 `AdminGuard` 鉴权路由；
+   - 支持 Blob 认证直链流式下载本地/远端备份，支持离线紧急急救上传恢复。
+
+5. **WebDAV 预设凭证回显优化与 .db 数据库快照还原 500 缺陷彻底修复**：
+   - **凭证回显与明密文即时切换体验**：解决保存 WebDAV 账号应用授权码与预设 AES-256 加密密码后刷新页面仅显示空文本框与占位提示语的问题。后端向授权管理员安全回显明文配置，前端表单自动填充当前生效值，并提供眼睛图标切换明密文核验，手动备份及云端恢复模态框自动带入预设密码；
+   - **.db 纯数据库备份还原 500 根因彻底修复**：定位并修复了 `backup_service.restore_system_from_backup` 中 `config_snapshot_data` 仅在解压 `.zip` 作用域内声明、导致还原 `.db` 文件在构建返回字典时触发 `UnboundLocalError` 的致命缺陷；在顶部前置初始化并为视图增加了全局异常捕获兜底，彻底根除 500 报错。
+
+6. **本地急救恢复与 logs 回滚副本生命周期治理 (避免过多磁盘占用与 Git 敏感泄露防护)**：
+   - **可配置回滚快照上限**：在备份配置数据模型 BackupConfig 中新增 max_rollback_copies 字段（默认 3 个），管理员可在管理面板自由定制上限数量；
+   - **自动智能修剪与容量状态看板**：后端在执行任何恢复前自动扫描 logs/ 目录下的 db_rollback_pre_restore_*.db 快照，严格按照文件生成时间仅保留最新的 N 份，自动剔除历史冗余快照；提供 /admin/backups/rollbacks/ 与 /clean/ 接口供前端实时感知快照数量、磁盘占用并在卡片上一键手动修剪；
+   - **Git 敏感资产强制排除**：在 .gitignore 中严密加入 logs/db_rollback_pre_restore_*.db、*.bak、*.temp/ 等规则，防止包含真实业务数据的数据库回滚副本和临时转储包泄露至 GitHub 远端仓库。
+
+7. **管理后台功能菜单权限与用户权限管控中心全量打通（新注册用户默认关闭）**：
+   - **菜单权限矩阵全量补齐**：将 WebDAV 容灾中心（menu_admin_backups）、第三方外部接口配置（menu_admin_service_config）、每日关怀贴士管理（menu_admin_daily_tips）、用户注册模式管控（menu_admin_registration）、母婴商品对比管理（menu_admin_products_manage）等功能页面的菜单管理权限全面纳入 pps/core/utils/permissions.py 及权限管控中心可视化树；
+   - **零越权安全默认策略**：DEFAULT_USER_PERMISSIONS 中新纳入的所有管理权限默认一律设为 False，确保普通新注册用户零越权风险，唯有超级管理员或通过权限中心明确授权后方可显式访问对应功能面板。
+
+---
+
 ## 2026-10-23 最新更新说明（v1.85 版本）： run.sh 运维脚本双模态环境自愈、手动交互与定时任务免介入兼容及安全默认策略落地
 
 1. **运维脚本双模态智能感知与执行环境自愈体系构建**：

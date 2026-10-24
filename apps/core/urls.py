@@ -1,7 +1,7 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
-from . import views, views_searxng, views_daily_tips, views_service_config
+from . import views, views_searxng, views_daily_tips, views_service_config, views_backup
 
 router = DefaultRouter()
 router.register(r"mothers", views.MotherViewSet, basename="mother")
@@ -55,6 +55,23 @@ urlpatterns = [
     path("admin/service-config/", views_service_config.AdminServiceConfigView.as_view(), name="admin-service-config"),
     path("admin/service-config/test/", views_service_config.AdminServiceConfigTestView.as_view(), name="admin-service-config-test"),
     path("admin/service-config/restore/", views_service_config.AdminServiceConfigRestoreView.as_view(), name="admin-service-config-restore"),
+    # WebDAV 云端备份与全量容灾恢复 API
+    path("admin/backups/config/", views_backup.AdminBackupConfigView.as_view(), name="admin-backup-config"),
+    path("admin/backups/test/", views_backup.AdminBackupTestView.as_view(), name="admin-backup-test"),
+    path("admin/backups/list/", views_backup.AdminBackupListView.as_view(), name="admin-backup-list"),
+    path("admin/backups/upload/", views_backup.AdminBackupUploadView.as_view(), name="admin-backup-upload"),
+    path("admin/backups/restore/", views_backup.AdminBackupRestoreView.as_view(), name="admin-backup-restore"),
+    path("admin/backups/delete/", views_backup.AdminBackupDeleteView.as_view(), name="admin-backup-delete"),
+    path("admin/backups/download-local/", views_backup.AdminBackupDownloadLocalView.as_view(), name="admin-backup-download-local"),
+    path("admin/backups/download-remote/", views_backup.AdminBackupDownloadRemoteView.as_view(), name="admin-backup-download-remote"),
+    path("admin/backups/upload-local/", views_backup.AdminBackupUploadLocalView.as_view(), name="admin-backup-upload-local"),
+    path("admin/backups/tasks/", views_backup.AdminScheduledTaskListView.as_view(), name="admin-backup-tasks"),
+    path("admin/backups/tasks/<int:pk>/", views_backup.AdminScheduledTaskDetailView.as_view(), name="admin-backup-task-detail"),
+    path("admin/backups/tasks/<int:pk>/toggle/", views_backup.AdminScheduledTaskToggleView.as_view(), name="admin-backup-task-toggle"),
+    path("admin/backups/tasks/<int:pk>/run/", views_backup.AdminScheduledTaskRunView.as_view(), name="admin-backup-task-run"),
+    path("admin/backups/tasks/<int:pk>/logs/", views_backup.AdminScheduledTaskLogsView.as_view(), name="admin-backup-task-logs"),
+    path("admin/backups/rollbacks/", views_backup.AdminBackupRollbackListView.as_view(), name="admin-backup-rollbacks"),
+    path("admin/backups/rollbacks/clean/", views_backup.AdminBackupRollbackCleanView.as_view(), name="admin-backup-rollbacks-clean"),
     path("ai/chat/", views.ai_chat, name="ai-chat"),
     path("ai/compare/", views.ai_compare, name="ai-compare"),
     path("ai/history/", views.ai_history, name="ai-history"),

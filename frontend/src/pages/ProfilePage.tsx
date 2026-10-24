@@ -1,7 +1,7 @@
 import SetStageModal from "@/components/SetStageModal";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Bot, Baby, Bell, Edit3, Eye, EyeOff, Heart, HeartOff, HeartPulse, KeyRound, LogOut, Moon, Network, Package, Plus, Settings, ShieldCheck, Sun, Trash2, UserCheck, Users, ClipboardList, X, Loader2, Sparkles } from "lucide-react";
+import { Bot, Baby, Bell, Edit3, Eye, EyeOff, Heart, HeartOff, HeartPulse, KeyRound, LogOut, Moon, Network, Package, Plus, Settings, ShieldCheck, Sun, Trash2, UserCheck, Users, ClipboardList, X, Loader2, Sparkles, CloudUpload } from "lucide-react";
 import { useThemeStore } from "@/store/themeStore";
 import { authApi } from "@/api/auth";
 import { useAuthStore } from "@/store/authStore";
@@ -789,62 +789,91 @@ export default function ProfilePage() {
         </div>
       </section>
 
-      {/* 管理员：管理面板 */}
-      {user?.is_staff && (
+      {/* 管理员与受授权用户：管理面板 */}
+      {(user?.is_staff ||
+        hasPermission("menu_admin_users") ||
+        hasPermission("menu_admin_audit_logs") ||
+        hasPermission("menu_admin_products_manage") ||
+        hasPermission("menu_admin_registration") ||
+        hasPermission("menu_admin_daily_tips") ||
+        hasPermission("menu_admin_service_config") ||
+        hasPermission("menu_admin_backups")) && (
         <section className="card">
           <div className="mb-3 flex items-center gap-2">
             <Settings className="h-5 w-5 text-brand-500" />
             <h2 className="font-semibold text-gray-800">管理面板</h2>
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <button
-              className="flex flex-col items-center gap-1.5 rounded-xl border border-gray-100 py-4 hover:border-brand-200 hover:bg-brand-50/50 transition"
-              onClick={() => navigate("/admin/users")}
-            >
-              <Users className="h-5 w-5 text-brand-500" />
-              <span className="text-xs font-medium text-gray-600">用户管理</span>
-              <span className="text-[10px] text-gray-400">编辑/冻结/重置密码</span>
-            </button>
-            <button
-              className="flex flex-col items-center gap-1.5 rounded-xl border border-gray-100 py-4 hover:border-brand-200 hover:bg-brand-50/50 transition"
-              onClick={() => navigate("/admin/audit-logs")}
-            >
-              <ClipboardList className="h-5 w-5 text-brand-500" />
-              <span className="text-xs font-medium text-gray-600">审计日志</span>
-              <span className="text-[10px] text-gray-400">操作记录</span>
-            </button>
-            <button
-              className="flex flex-col items-center gap-1.5 rounded-xl border border-gray-100 py-4 hover:border-brand-200 hover:bg-brand-50/50 transition"
-              onClick={() => navigate("/admin/products")}
-            >
-              <Package className="h-5 w-5 text-brand-500" />
-              <span className="text-xs font-medium text-gray-600">商品管理</span>
-              <span className="text-[10px] text-gray-400">发布/编辑/下架</span>
-            </button>
-            <button
-              className="flex flex-col items-center gap-1.5 rounded-xl border border-gray-100 py-4 hover:border-brand-200 hover:bg-brand-50/50 transition"
-              onClick={() => navigate("/admin/registration")}
-            >
-              <UserCheck className="h-5 w-5 text-brand-500" />
-              <span className="text-xs font-medium text-gray-600">注册管理</span>
-              <span className="text-[10px] text-gray-400">注册模式/邀请链接</span>
-            </button>
-            <button
-              className="flex flex-col items-center gap-1.5 rounded-xl border border-gray-100 py-4 hover:border-brand-200 hover:bg-brand-50/50 transition"
-              onClick={() => navigate("/admin/daily-tips")}
-            >
-              <Sparkles className="h-5 w-5 text-amber-500" />
-              <span className="text-xs font-medium text-gray-600">关怀贴士管理</span>
-              <span className="text-[10px] text-gray-400">今日小锦囊/展示设置</span>
-            </button>
-            <button
-              className="flex flex-col items-center gap-1.5 rounded-xl border border-gray-100 py-4 hover:border-brand-200 hover:bg-brand-50/50 transition"
-              onClick={() => navigate("/admin/service-config")}
-            >
-              <Network className="h-5 w-5 text-sky-500" />
-              <span className="text-xs font-medium text-gray-600">外部接口配置</span>
-              <span className="text-[10px] text-gray-400">天气/节假日/搜索管线</span>
-            </button>
+            {(user?.is_staff || hasPermission("menu_admin_users")) && (
+              <button
+                className="flex flex-col items-center gap-1.5 rounded-xl border border-gray-100 py-4 hover:border-brand-200 hover:bg-brand-50/50 transition"
+                onClick={() => navigate("/admin/users")}
+              >
+                <Users className="h-5 w-5 text-brand-500" />
+                <span className="text-xs font-medium text-gray-600">用户管理</span>
+                <span className="text-[10px] text-gray-400">编辑/冻结/重置密码</span>
+              </button>
+            )}
+            {(user?.is_staff || hasPermission("menu_admin_audit_logs")) && (
+              <button
+                className="flex flex-col items-center gap-1.5 rounded-xl border border-gray-100 py-4 hover:border-brand-200 hover:bg-brand-50/50 transition"
+                onClick={() => navigate("/admin/audit-logs")}
+              >
+                <ClipboardList className="h-5 w-5 text-brand-500" />
+                <span className="text-xs font-medium text-gray-600">审计日志</span>
+                <span className="text-[10px] text-gray-400">操作记录</span>
+              </button>
+            )}
+            {(user?.is_staff || hasPermission("menu_admin_products_manage")) && (
+              <button
+                className="flex flex-col items-center gap-1.5 rounded-xl border border-gray-100 py-4 hover:border-brand-200 hover:bg-brand-50/50 transition"
+                onClick={() => navigate("/admin/products")}
+              >
+                <Package className="h-5 w-5 text-brand-500" />
+                <span className="text-xs font-medium text-gray-600">商品管理</span>
+                <span className="text-[10px] text-gray-400">发布/编辑/下架</span>
+              </button>
+            )}
+            {(user?.is_staff || hasPermission("menu_admin_registration")) && (
+              <button
+                className="flex flex-col items-center gap-1.5 rounded-xl border border-gray-100 py-4 hover:border-brand-200 hover:bg-brand-50/50 transition"
+                onClick={() => navigate("/admin/registration")}
+              >
+                <UserCheck className="h-5 w-5 text-brand-500" />
+                <span className="text-xs font-medium text-gray-600">注册管理</span>
+                <span className="text-[10px] text-gray-400">注册模式/邀请链接</span>
+              </button>
+            )}
+            {(user?.is_staff || hasPermission("menu_admin_daily_tips")) && (
+              <button
+                className="flex flex-col items-center gap-1.5 rounded-xl border border-gray-100 py-4 hover:border-brand-200 hover:bg-brand-50/50 transition"
+                onClick={() => navigate("/admin/daily-tips")}
+              >
+                <Sparkles className="h-5 w-5 text-amber-500" />
+                <span className="text-xs font-medium text-gray-600">关怀贴士管理</span>
+                <span className="text-[10px] text-gray-400">今日小锦囊/展示设置</span>
+              </button>
+            )}
+            {(user?.is_staff || hasPermission("menu_admin_service_config")) && (
+              <button
+                className="flex flex-col items-center gap-1.5 rounded-xl border border-gray-100 py-4 hover:border-brand-200 hover:bg-brand-50/50 transition"
+                onClick={() => navigate("/admin/service-config")}
+              >
+                <Network className="h-5 w-5 text-sky-500" />
+                <span className="text-xs font-medium text-gray-600">外部接口配置</span>
+                <span className="text-[10px] text-gray-400">天气/节假日/搜索管线</span>
+              </button>
+            )}
+            {(user?.is_staff || hasPermission("menu_admin_backups")) && (
+              <button
+                className="flex flex-col items-center gap-1.5 rounded-xl border border-gray-100 py-4 hover:border-brand-200 hover:bg-brand-50/50 transition"
+                onClick={() => navigate("/admin/backups")}
+              >
+                <CloudUpload className="h-5 w-5 text-indigo-500" />
+                <span className="text-xs font-medium text-gray-600">云端容灾备份</span>
+                <span className="text-[10px] text-gray-400">WebDAV/全量快照/定时任务</span>
+              </button>
+            )}
           </div>
         </section>
       )}
