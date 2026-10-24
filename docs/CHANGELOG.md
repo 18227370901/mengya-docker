@@ -6,6 +6,22 @@
 
 ---
 
+## 2026-10-24 最新更新说明（v1.87 版本）： 全员登录会话无操作超时引擎重构与模式 A（覆盖全平台所有登录账号）落地
+
+1. **登录会话无操作空闲超时检测引擎重构与失效缺陷彻底根治**：
+   - **痛点与根因**：原 `frontend/src/api/client.ts` 在全局 Axios 请求拦截器中粗暴执行 `localStorage.setItem("mengya_last_active", String(Date.now()))`，导致后台静默轮询（如 `RequireAuth.tsx` 中每 60 秒触发的 `fetchMe()` 权限与用户信息静默同步请求）持续刷新活跃时间戳。空闲时间（`idleMs`）永远被截断在 60 秒以内，导致管理员在风控面板设定的任何分钟级超时（如 15、30 分钟）永远无法触发；且切回窗口（Focus/VisibilityChange）时先触发请求刷新，导致历史空闲时间被意外冲刷。
+   - **架构解耦与精准修复**：
+     - 从 Axios 全局请求拦截器中彻底剥离对 `mengya_last_active` 的盲目更新，空闲时间记录专职交由真实的物理人机交互事件（`mousedown, mousemove, keydown, scroll, touchstart, click`）按 3 秒节流写入；
+     - 在 `RequireAuth.tsx` 提取统一的 `checkIdleTimeout()` 判定中枢，在路由切换、窗口聚焦与页面可见性恢复时**优先**进行超时判定；一旦空闲时间达到设定阈值，立即熔断后续一切后台请求，执行 `logout()` 并带参跳转 `/login?timeout=1`；
+     - 轮询检查周期由 10 秒提升至 5 秒，并接入 `storage` 事件监听，实现多标签页（Tab）跨窗口人机交互状态无缝互通。
+
+2. **采用模式 A 全量扩容：覆盖全平台所有登录账号（普通用户与特权管理员通用）**：
+   - 将无操作超时保护机制由单一特权管理账号（`user.is_staff == true`）全面扩展为全平台所有登录账号（普通注册用户与管理员一视同仁）；
+   - 更新「用户与权限管控中心」风控面板文案与提示语（「登录会话无操作超时（分钟，全员通用）」），明确说明 0 为禁用，默认推荐 30 分钟；
+   - 同步后端数据模型 `SystemSetting.admin_session_timeout_minutes` 字段定义与迁移（`0032_alter_systemsetting_admin_session_timeout_minutes`），保持全局安全基线策略向前兼容。
+
+---
+
 ## 2026-10-23 最新更新说明（v1.86 版本）： WebDAV 云端备份与全量系统容灾恢复体系移植与多层防护落地
 
 1. **WebDAV 远端备份与灾难恢复核心服务（对齐传统 gift 备份能力并完成萌芽业务定制）**：

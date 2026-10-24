@@ -128,7 +128,7 @@ mengya-docker/
 ├── docs/                              # 📁 [文档中心] 统一管理架构设计、HTML视图与发布日志
 │   ├── Project_System_Design.md       # 系统架构设计规范 (PSD) 与重构权威决策
 │   ├── Project_System_Design.html     # 架构设计离线 HTML 交互视图 (Mermaid 图表)
-│   └── CHANGELOG.md                   # 全量版本演化与历史变更日志 (v1.13~v1.86+)
+│   └── CHANGELOG.md                   # 全量版本演化与历史变更日志 (v1.13~v1.87+)
 │
 ├── tools/                             # 📁 [工具中心] 归集非线上常驻的本地开发调试脚本
 │   ├── build_frontend.py              # 前端一键构建与静态产物同步脚本 (Path两级回退)

@@ -2217,6 +2217,24 @@ apps/core/                                    apps/core/
       </div>
     </div>
 
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-badge">ADR 10.49</span>
+        <span class="adr-title">全员登录会话无操作超时引擎重构与模式 A（覆盖全平台所有登录账号）落地决策 (v1.87)</span>
+      </div>
+      <div class="adr-body">
+        <p><strong>决策背景</strong>：原有登录安全风控中「管理员无操作超时」配置后无法生效。根因在于全局 Axios 请求拦截器盲目刷新活跃时间，与每 60 秒后台静默轮询 <code>fetchMe()</code> 产生死锁踩踏，空闲时间永远被截断在 60 秒内；且原有逻辑仅对管理员生效，普通账号缺乏会话空闲保护。</p>
+        <p><strong>核心架构治理（模式 A）</strong>：</p>
+        <ul>
+          <li><strong>人机物理交互专职解耦</strong>：Axios 请求拦截器不再操作活跃时间戳，<code>mengya_last_active</code> 100% 由鼠标、键盘、触控、滚动物理事件维护；</li>
+          <li><strong>短路熔断与切屏防御</strong>：在窗口重新获得焦点（Focus / VisibilityChange）时优先执行 <code>checkIdleTimeout()</code>，一旦超时即刻终止后续网络请求并执行 <code>logout()</code>；</li>
+          <li><strong>模式 A 全员覆盖</strong>：移除 <code>is_staff</code> 限制，全平台所有登录用户统一受全局会话无操作超时基线保护；</li>
+          <li><strong>跨 Tab 协同机制</strong>：接入 <code>StorageEvent</code> 监听，保障多标签页操作状态互通，杜绝误踢。</li>
+        </ul>
+      </div>
+    </div>
+
 </div>
 </body>
 

@@ -29,7 +29,7 @@ class SystemSetting(models.Model):
     login_lock_minutes = models.IntegerField(default=5, verbose_name="风控等待时长（分钟）")
     # 审计日志保留期限（天，0 表示永久保留）
     forgot_password_max_attempts = models.IntegerField(default=5, verbose_name="找回密码密保最大尝试次数")
-    admin_session_timeout_minutes = models.IntegerField(default=30, verbose_name="管理员登录无操作超时时长（分钟，0表示不超时）")
+    admin_session_timeout_minutes = models.IntegerField(default=30, verbose_name="全员登录会话无操作超时时长（分钟，0表示不超时）")
     audit_retention_days = models.IntegerField(default=90, verbose_name="审计日志保留天数（0=永久）")
     daily_tip_display_count = models.IntegerField(default=5, verbose_name="今日关怀锦囊前台展示条数限制（0为不限制）")
     # 普通用户功能与菜单权限配置（JSON字典，颗粒度覆盖菜单及增删改查）

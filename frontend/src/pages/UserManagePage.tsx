@@ -688,7 +688,7 @@ export default function UserManagePage() {
                 </button>
               </div>
               <p className="text-xs text-gray-500">
-                当前风控规则：连续密码失败 {secConfig.login_captcha_threshold} 次开启验证码，{secConfig.login_freeze_threshold} 次直接冻结账号（熔断锁定 {secConfig.login_lock_seconds ?? (secConfig.login_lock_minutes * 60)} 秒 / 约 {Math.ceil((secConfig.login_lock_seconds ?? (secConfig.login_lock_minutes * 60)) / 60)} 分钟）；找回密码密保最多尝试 {secConfig.forgot_password_max_attempts ?? 5} 次；管理员无操作超时 {(secConfig.admin_session_timeout_minutes ?? 30) > 0 ? `${secConfig.admin_session_timeout_minutes ?? 30} 分钟` : "已禁用"}。
+                当前风控规则：连续密码失败 {secConfig.login_captcha_threshold} 次开启验证码，{secConfig.login_freeze_threshold} 次直接冻结账号（熔断锁定 {secConfig.login_lock_seconds ?? (secConfig.login_lock_minutes * 60)} 秒 / 约 {Math.ceil((secConfig.login_lock_seconds ?? (secConfig.login_lock_minutes * 60)) / 60)} 分钟）；找回密码密保最多尝试 {secConfig.forgot_password_max_attempts ?? 5} 次；全员登录无操作超时 {(secConfig.admin_session_timeout_minutes ?? 30) > 0 ? `${secConfig.admin_session_timeout_minutes ?? 30} 分钟` : "已禁用"}。
               </p>
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
                 <div>
@@ -766,7 +766,7 @@ export default function UserManagePage() {
                   />
                 </div>
                 <div>
-                  <label className="label text-xs">管理员无操作超时（分钟）</label>
+                  <label className="label text-xs">登录会话无操作超时（分钟，全员通用）</label>
                   <input
                     type="number"
                     min={0}
@@ -775,6 +775,7 @@ export default function UserManagePage() {
                     value={secConfigForm.admin_session_timeout_minutes ?? 30}
                     onChange={(e) => setSecConfigForm((f) => ({ ...f, admin_session_timeout_minutes: Math.max(0, Number(e.target.value)) }))}
                   />
+                  <p className="text-[10px] text-gray-400 mt-0.5">覆盖全平台所有登录账号，闲置达指定分钟数自动安全退出；0表示禁用超时。</p>
                   <div className="mt-1 flex flex-wrap gap-1">
                     {[
                       { label: "15分(严格)", val: 15 },
