@@ -134,9 +134,10 @@ class RegisterSerializer(serializers.ModelSerializer):
         user = User(username=username, **validated_data)
         user.set_password(password)
 
-        # 依据用户配置的宝宝年龄阶段自动精准初始化可分配的菜单与功能权限
-        from apps.core.utils.permissions import get_default_permissions_for_stage
-        default_perms = get_default_permissions_for_stage(
+        # v1.88.6 依据「当前全局默认权限模板 + 宝宝年龄阶段」固化该新用户的初始权限快照
+        # （此后管理员修改全局模板不会自动覆盖该用户，仅影响之后新注册用户）
+        from apps.core.utils.permissions import build_initial_permissions
+        default_perms = build_initial_permissions(
             due_date=user.due_date,
             baby_birthday=user.baby_birthday,
             is_pregnant=user.is_pregnant,

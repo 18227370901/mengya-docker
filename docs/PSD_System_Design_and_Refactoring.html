@@ -2291,6 +2291,25 @@ apps/core/                                    apps/core/
       </div>
     </div>
 
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-badge">ADR 10.53</span>
+        <span class="adr-title">权限模板快照固化与自动同步根除决策 (v1.88.6)</span>
+      </div>
+      <div class="adr-body">
+        <p><strong>决策背景</strong>：<code>get_user_permissions()</code> 每次运行时都将全局默认权限模板（<code>SystemSetting.default_user_permissions</code>）叠加进权限解析，导致管理员修改模板保存的瞬间，所有未固化个性化快照（<code>custom_permissions</code> 为空）的用户权限立即全量变化，出现「所有用户的权限全部变更为一样」的问题。同时原「重置为系统默认」按钮直接清空快照，实际让用户进入永久实时跟随模板的状态（越重置越扩散，形成恶性循环）；且新注册用户初始快照从不吸收全局模板，与模板「新用户默认底色」的产品语义不符。</p>
+        <p><strong>核心架构治理</strong>：</p>
+        <ul>
+          <li><strong>快照固化模式</strong>：新增 <code>build_initial_permissions()</code> 统一构建「代码基线 + 最新全局模板 + 宝宝阶段自适应」初始权限快照，作为模板的唯一读取入口；<code>get_user_permissions()</code> 彻底移除模板实时覆盖段——模板仅在新用户注册与管理员点击「重置为系统默认」两个时机固化落库，此后修改模板不对任何已有用户生效；</li>
+          <li><strong>重置按钮重定义</strong>：<code>reset_to_default</code> 分支由清空快照改为固化「最新模板 + 该用户当前宝宝阶段」，不打 <code>_admin_customized</code> 标记（保留后续阶段切换联动资格）；</li>
+          <li><strong>阶段切换局部联动</strong>：<code>MeView</code> 资料更新时，未定制用户仅基于自身现有快照调整 4 个阶段菜单键（时间轴/食谱/胎教故事/幼儿百科），其余权限键原样保留；管理员单独定制过的用户完全静态；</li>
+          <li><strong>存量数据迁移固化</strong>：新增数据迁移 <code>0035_permission_snapshot</code>，为所有空快照普通用户固化"当前实际生效权限"（基线 + 模板 + 阶段），升级前后权限零感知变化；</li>
+          <li><strong><code>has_custom</code> 显式下发</strong>：用户列表接口改以 <code>_admin_customized</code> 标记返回是否已单独定制，前端列表徽标与弹窗标签不再以"快照是否为空"误判；</li>
+          <li><strong>前端文案协同</strong>：全局模板 Tab 说明与保存提示明确「仅应用于之后新注册用户，已有用户需手动点击重置才更新」；重置确认弹窗强化「用最新模板覆盖该用户现有全部权限、不可撤销」警示文案。</li>
+        </ul>
+      </div>
+    </div>
+
 </div>
 </body>
 

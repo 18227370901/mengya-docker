@@ -421,15 +421,55 @@ def get_default_permissions_for_stage(
     return normalize_permissions(base)
 
 
+def build_initial_permissions(due_date=None, baby_birthday=None, is_pregnant=None, template=None) -> dict:
+    """构建普通用户的「初始权限快照」：代码基线 + 全局默认权限模板 + 宝宝阶段自适应。
+
+    该函数作为权限模板的唯二快照源（新用户注册初始化、管理员点击「重置为系统默认」、
+    以及存量用户数据迁移），返回已父子联动规范化、且剔除内部键（_ 开头）的完整权限字典。
+
+    - template 为 None 时，自动读取系统全局默认权限模板 (SystemSetting.default_user_permissions)；
+    - 宝宝阶段自适应固定覆盖 4 个阶段菜单键（时间轴/食谱/胎教故事/幼儿百科）。
+    """
+    merged = dict(DEFAULT_USER_PERMISSIONS)
+
+    # 1. 系统全局默认权限模板覆盖
+    if template is None:
+        try:
+            from apps.core.models import SystemSetting
+            template = getattr(SystemSetting.get_settings(), "default_user_permissions", {}) or {}
+        except Exception:
+            template = {}
+    if isinstance(template, dict):
+        for k, v in template.items():
+            if k in merged:
+                merged[k] = bool(v)
+
+    # 2. 宝宝阶段自适应覆盖 4 个阶段菜单键
+    stage_defaults = get_default_permissions_for_stage(
+        due_date=due_date,
+        baby_birthday=baby_birthday,
+        is_pregnant=is_pregnant,
+    )
+    for sk in ("menu_timeline", "menu_recipes", "menu_fetal_stories", "menu_encyclopedia"):
+        merged[sk] = stage_defaults[sk]
+
+    norm = normalize_permissions(merged)
+    return {k: v for k, v in norm.items() if not k.startswith("_")}
+
+
 def get_user_permissions(user) -> dict:
     """获取指定用户的最终生效权限字典。
     管理员(is_staff/is_superuser)拥有全部 True 权限，任何时候不可禁用菜单与功能。
+
+    【v1.88.6 快照固化模式】全局默认权限模板不参与实时解析：
+      全局模板仅作为快照源，在新用户注册、管理员点击「重置为系统默认」时固化写入
+      用户 custom_permissions；此后修改全局模板不会自动覆盖任何已有用户权限。
+
     普通用户：
       1. 基础系统默认配置 (DEFAULT_USER_PERMISSIONS)
-      2. 系统全局设置默认模板 (SystemSetting.default_user_permissions)
-      3. 若无单独 custom_permissions，自动应用宝宝阶段自适应菜单过滤规则；
-      4. 用户个性化权限覆盖 (user.custom_permissions，管理员配置拥有最高优先级)
-      5. 严格执行递归父子联动规范化
+      2. 用户个性化权限快照覆盖 (user.custom_permissions，注册/重置/管理员定制均固化于此)
+      3. 无任何快照的异常兜底：自动应用宝宝阶段自适应菜单过滤规则
+      4. 严格执行递归父子联动规范化
     """
     if not user:
         return normalize_permissions(DEFAULT_USER_PERMISSIONS)
@@ -440,21 +480,9 @@ def get_user_permissions(user) -> dict:
 
     merged = dict(DEFAULT_USER_PERMISSIONS)
 
-    # 1. 读取系统全局默认权限模板
-    try:
-        from apps.core.models import SystemSetting
-        setting = SystemSetting.get_settings()
-        sys_perms = getattr(setting, "default_user_permissions", {}) or {}
-        if isinstance(sys_perms, dict):
-            for k, v in sys_perms.items():
-                if k in merged:
-                    merged[k] = bool(v)
-    except Exception:
-        pass
-
     custom = getattr(user, "custom_permissions", {}) or {}
     if not custom:
-        # 用户未配置独立个性化权限：自动依据宝宝年龄阶段精准初始化默认菜单权限
+        # 异常兜底：用户无任何权限快照（理论上注册/迁移后不会出现），依据宝宝年龄阶段初始化默认菜单权限
         is_pregnant = getattr(user, "is_pregnant", None)
         baby_birthday = getattr(user, "baby_birthday", None)
         due_date = getattr(user, "due_date", None)
@@ -463,11 +491,10 @@ def get_user_permissions(user) -> dict:
             baby_birthday=baby_birthday,
             is_pregnant=is_pregnant,
         )
-        stage_keys = ["menu_timeline", "menu_recipes", "menu_fetal_stories", "menu_encyclopedia"]
-        for sk in stage_keys:
+        for sk in ("menu_timeline", "menu_recipes", "menu_fetal_stories", "menu_encyclopedia"):
             merged[sk] = stage_defaults[sk]
     else:
-        # 用户已有独立个性化权限（管理员随时定制）：管理员配置优先级最高
+        # 用户已有权限快照（注册固化/管理员定制/重置固化）：快照优先级最高
         if isinstance(custom, dict):
             for k, v in custom.items():
                 if k in merged:

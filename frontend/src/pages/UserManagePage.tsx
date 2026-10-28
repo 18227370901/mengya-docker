@@ -456,7 +456,7 @@ export default function UserManagePage() {
       setUsers((prev) =>
         prev.map((item) =>
           item.id === targetUserModal.id
-            ? { ...item, custom_permissions: res.data?.custom_permissions || targetUserPerms }
+            ? { ...item, custom_permissions: res.data?.custom_permissions || targetUserPerms, has_custom: true }
             : item
         )
       );
@@ -483,7 +483,7 @@ export default function UserManagePage() {
       setUsers((prev) =>
         prev.map((item) =>
           item.id === targetUserModal.id
-            ? { ...item, custom_permissions: res.data?.custom_permissions || payload }
+            ? { ...item, custom_permissions: res.data?.custom_permissions || payload, has_custom: true }
             : item
         )
       );
@@ -496,19 +496,22 @@ export default function UserManagePage() {
     }
   };
 
-  // 重置指定用户权限为系统默认
+  // 重置指定用户权限为系统默认：用最新全局默认模板（叠加宝宝阶段）固化覆盖该用户
   const resetTargetUserToDefault = async () => {
     if (!targetUserModal) return;
-    if (!window.confirm(`确定要将用户【${targetUserModal.nickname || targetUserModal.username}】的权限重置为系统默认配置吗？`)) {
+    if (!window.confirm(`确定要将用户【${targetUserModal.nickname || targetUserModal.username}】的权限重置为系统默认配置吗？\n\n重置将用当前最新全局默认模板覆盖该用户现有全部权限设置，此操作不可撤销。`)) {
       return;
     }
     setTargetUserSaving(true);
     try {
       const res = await authApi.resetUserPermissions(targetUserModal.id);
       showToast(res.message || "已恢复为系统默认配置");
+      const resetData = (res.data || {}) as any;
       setUsers((prev) =>
         prev.map((item) =>
-          item.id === targetUserModal.id ? { ...item, custom_permissions: {} } : item
+          item.id === targetUserModal.id
+            ? { ...item, custom_permissions: resetData?.custom_permissions || {}, has_custom: false }
+            : item
         )
       );
       setTargetUserHasCustom(false);
@@ -615,7 +618,7 @@ export default function UserManagePage() {
       await authApi.updateAdminPermissions(permissionsState);
       // v1.88.2 全量保存成功后同步基线，后续分组保存以此为底色
       setSavedPermissionsState(permissionsState);
-      showToast("普通用户功能与菜单权限配置已保存并全平台生效！");
+      showToast("全局默认权限模板已保存，将应用于之后新注册用户；已有用户需手动点击「重置为系统默认」才会更新");
     } catch {
       showToast("保存权限配置失败，请重试");
     } finally {
@@ -931,12 +934,12 @@ export default function UserManagePage() {
                                 管理员 (全部权限)
                               </span>
                             )}
-                            {!u.is_staff && u.custom_permissions && Object.keys(u.custom_permissions).length > 0 && (
+                            {!u.is_staff && u.has_custom && (
                               <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-600 border border-indigo-100">
                                 已定制权限
                               </span>
                             )}
-                            {!u.is_staff && (!u.custom_permissions || Object.keys(u.custom_permissions).length === 0) && (
+                            {!u.is_staff && !u.has_custom && (
                               <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs text-gray-500">
                                 系统默认权限
                               </span>
@@ -1117,7 +1120,7 @@ export default function UserManagePage() {
                           className={`flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs transition ${
                             u.is_staff
                               ? "bg-purple-50 text-purple-700 hover:bg-purple-100 font-medium"
-                              : u.custom_permissions && Object.keys(u.custom_permissions).length > 0
+                              : u.has_custom
                               ? "bg-indigo-50 text-indigo-700 font-semibold hover:bg-indigo-100 border border-indigo-200"
                               : "bg-gray-100 text-gray-700 hover:bg-gray-200 font-medium"
                           }`}
@@ -1125,7 +1128,7 @@ export default function UserManagePage() {
                           title={u.is_staff ? "管理员内置全部最高权限（不可禁用）" : "针对该用户配置独立功能与菜单权限"}
                         >
                           <Shield className="h-3.5 w-3.5" />
-                          <span>{u.is_staff ? "管理员权限" : u.custom_permissions && Object.keys(u.custom_permissions).length > 0 ? "权限(已定制)" : "权限设置"}</span>
+                          <span>{u.is_staff ? "管理员权限" : u.has_custom ? "权限(已定制)" : "权限设置"}</span>
                         </button>
                         <button
                           className="flex items-center gap-1 rounded-lg bg-amber-50 px-3 py-1.5 text-xs text-amber-600 hover:bg-amber-100"
@@ -1218,7 +1221,7 @@ export default function UserManagePage() {
                   <h2 className="text-base font-bold text-gray-800">新用户全局默认权限模板 (CRUD 细粒度)</h2>
                 </div>
                 <p className="mt-1 text-xs text-gray-500 max-w-2xl">
-                  此处配置作为新注册普通用户与未单独配置权限用户的全局默认底色。系统管理员始终默认具备全部权限，不受任何限制；若需针对具体用户单独配置，请在【用户账号管理】列表中点击对应用户的【权限设置】。
+                  此处配置仅作为【新注册用户】的初始权限底色：保存后将应用于之后新注册用户的初始权限，不会自动套用或覆盖任何已有用户。如需让某位已有用户改用最新模板，请在【用户账号管理】列表中点击该用户的【权限设置】→【重置为系统默认】。系统管理员始终默认具备全部权限，不受任何限制。
                 </p>
               </div>
 
@@ -1330,7 +1333,7 @@ export default function UserManagePage() {
                       </span>
                     ) : (
                       <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
-                        跟随系统默认模板
+                        系统默认权限（未单独定制）
                       </span>
                     )}
                   </div>

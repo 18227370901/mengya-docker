@@ -585,15 +585,30 @@ class MeView(APIView):
             user.due_date = None
             fields_to_update.append("due_date")
 
-        # 若未被管理员单独定制权限，随阶段切换同步更新初始阶段菜单权限
+        # 若未被管理员单独定制权限：随阶段切换仅调整 4 个阶段菜单键
+        # （基于该用户现有权限快照调整，不吸收全局默认模板新内容，模板改动不借此渗透已有用户）
         custom_perms = getattr(user, "custom_permissions", {}) or {}
         if not custom_perms.get("_admin_customized"):
-            from apps.core.utils.permissions import get_default_permissions_for_stage
-            user.custom_permissions = get_default_permissions_for_stage(
-                due_date=user.due_date,
-                baby_birthday=user.baby_birthday,
-                is_pregnant=user.is_pregnant,
-            )
+            from apps.core.utils.permissions import build_initial_permissions, normalize_permissions
+            if custom_perms:
+                # 已有快照：仅按新阶段覆盖阶段菜单键
+                stage_defaults = build_initial_permissions(
+                    due_date=user.due_date,
+                    baby_birthday=user.baby_birthday,
+                    is_pregnant=user.is_pregnant,
+                )
+                base = dict(custom_perms)
+                for sk in ("menu_timeline", "menu_recipes", "menu_fetal_stories", "menu_encyclopedia"):
+                    if sk in stage_defaults:
+                        base[sk] = stage_defaults[sk]
+                user.custom_permissions = {k: v for k, v in normalize_permissions(base).items() if not k.startswith("_")}
+            else:
+                # 异常兜底：无任何快照时按最新模板+阶段完整初始化
+                user.custom_permissions = build_initial_permissions(
+                    due_date=user.due_date,
+                    baby_birthday=user.baby_birthday,
+                    is_pregnant=user.is_pregnant,
+                )
             fields_to_update.append("custom_permissions")
 
         if fields_to_update:
@@ -4844,6 +4859,8 @@ class UserManageView(APIView):
                 if not u.get("is_active"):
                     u["is_active"] = True
                     User.objects.filter(id=u["id"]).update(is_active=True, locked_until=None)
+            # v1.88.6 是否被管理员单独定制（基于 _admin_customized 标记，而非快照是否为空）
+            u["has_custom"] = bool((u.get("custom_permissions") or {}).get("_admin_customized"))
 
         setting = SystemSetting.get_settings()
         return Response({"code": 0, "message": "success", "data": {
@@ -5913,19 +5930,25 @@ class AdminPermissionsView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            # 重置该用户的权限为系统默认
+            # 重置该用户的权限为系统默认：将最新全局默认模板（叠加宝宝阶段自适应）固化写入该用户
             if request.data.get("reset_to_default"):
-                target.custom_permissions = {}
+                from apps.core.utils.permissions import build_initial_permissions
+                snapshot = build_initial_permissions(
+                    due_date=target.due_date,
+                    baby_birthday=target.baby_birthday,
+                    is_pregnant=target.is_pregnant,
+                )
+                target.custom_permissions = snapshot
                 target.save(update_fields=["custom_permissions"])
                 audit(request, "permission_update", "重置用户权限为默认", "用户", target.id,
                       target.nickname or target.username,
-                      f"已清除用户 {target.username} 的个性化权限覆盖，恢复为系统默认配置")
+                      f"已将用户 {target.username} 的权限重置为最新系统默认模板（启用项：{sum(1 for v in snapshot.values() if v)}/{len(snapshot)}）")
                 return Response({
                     "code": 0,
-                    "message": f"已将用户 {target.username} 的权限重置为系统默认配置",
+                    "message": f"已将用户 {target.username} 的权限重置为最新系统默认配置",
                     "data": {
                         "user_id": target.id,
-                        "custom_permissions": {},
+                        "custom_permissions": snapshot,
                         "effective_permissions": get_user_permissions(target),
                     },
                 })
@@ -5986,10 +6009,11 @@ class AdminPermissionsView(APIView):
         setting.save(update_fields=["default_user_permissions"])
 
         audit(request, "permission_update", "修改全局默认权限模板", "系统", 1, "全局权限配置",
-              f"更新系统全局默认权限模板，启用项数：{sum(1 for v in cleaned.values() if v)}/{len(cleaned)}")
+              f"更新系统全局默认权限模板，启用项数：{sum(1 for v in cleaned.values() if v)}/{len(cleaned)}；"
+              f"仅影响之后新注册用户与手动点击「重置为系统默认」的用户")
         return Response({
             "code": 0,
-            "message": "全局默认权限模板已成功保存并立即生效",
+            "message": "全局默认权限模板已保存，将应用于之后新注册用户的初始权限；已有用户需在其权限弹窗点击「重置为系统默认」后才会更新",
             "data": {
                 "default_permissions": setting.default_user_permissions,
             },

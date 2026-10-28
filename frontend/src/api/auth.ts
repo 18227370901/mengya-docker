@@ -248,6 +248,7 @@ export interface UserManageItem {
   is_active: boolean;
   ai_authorized: boolean;
   custom_permissions?: Record<string, boolean>;
+  has_custom?: boolean;
   security_question: string;
   security_answer: string;
   login_fail_count?: number;

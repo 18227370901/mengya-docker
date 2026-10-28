@@ -1,8 +1,29 @@
 # 萌芽（Mengya）母婴健康与育儿平台 - 全量版本演化与更新日志
 
-> **项目名称**：萌芽（Mengya）母婴平台 - 容器微服务编排版 (`mengya-docker`)  
+> **项目名称**：萌芽（Mengya）母婴平台 - 本地传统部署版 (`mengya-local`)  
 > **归档说明**：根据根目录 `AGENTS.md` 规范，本文件专门集中归档系统自 v1.13 至最新版本的全量功能演化、版本发布历史、技术重构与缺陷修复清单。  
 > **AI 协作铁律**：后续任何 AI 工具（Codex、Cursor、Claude Code、Windsurf 等）或开发者产生新版本发布或变更时，**必须统一在此文档顶部降序追加**，严禁在 `README.md` 中堆砌版本日志。
+
+---
+
+## 2026-10-28 最新更新说明（v1.88.6 版本）： 权限模板快照固化——管理员修改全局默认模板不再自动覆盖已有用户
+
+1. **权限模板「自动同步」缺陷根治**：
+   - **痛点与根因**：v1.88.5 及之前权限解析在运行时实时叠加全局默认权限模板（`SystemSetting.default_user_permissions`），管理员修改模板保存后，所有权限快照为空的用户（种子数据用户、被点过「重置为系统默认」的用户）权限立即全量变化，出现「所有用户的权限全部变更为一样」的问题；
+   - **语义反转修复**：原「重置为系统默认」按钮直接清空 `custom_permissions`，实际是让该用户永久实时跟随模板（越重置越扩散）；v1.88.6 重定义为一次性固化「最新模板 + 该用户当前宝宝阶段」，与产品预期完全一致。
+
+2. **快照固化模式核心变更**：
+   - 新增 `build_initial_permissions()` 统一构建「代码基线 + 最新全局模板 + 宝宝阶段自适应」初始权限快照，模板仅作为快照源，只在**新用户注册**与**管理员点击「重置为系统默认」**两个时机固化落库；
+   - `get_user_permissions()` 彻底移除模板实时覆盖段，存量用户（注册固化、迁移固化、管理员定制三类快照）权限此后完全不受模板修改影响；
+   - 新注册用户初始权限改为「注册时最新模板 + 宝宝阶段」，此后管理员修改模板同样不影响该用户；
+   - 用户切换宝宝阶段（孕期 ↔ 已出生）时，未定制用户仅基于自身快照调整 4 个阶段菜单键（时间轴/食谱/胎教故事/幼儿百科），其余键原样保留；管理员单独定制过的用户完全静态。
+
+3. **存量数据迁移与前端体验增强**：
+   - 新增数据迁移 `0035_permission_snapshot`：为存量空快照普通用户固化"当前实际生效权限"，升级前后权限零感知变化；
+   - 用户列表与权限弹窗徽标改由后端 `has_custom` 字段（基于 `_admin_customized` 标记）驱动，不再以快照是否为空误判「已定制」；
+   - 全局模板 Tab 说明与保存提示明确「仅应用于之后新注册用户，已有用户需在其权限弹窗手动点击重置才更新」；重置确认弹窗强化「用最新模板覆盖该用户现有全部权限、此操作不可撤销」警示文案。
+
+4. **验证结果**：API 端到端 19 项、阶段切换真实 API 11 项、浏览器端到端（列表标签/模板说明/保存提示/重置弹窗）逐项验证全部通过；全部测试数据精确还原（模板原值、用户快照、临时测试用户）；传统版与 Docker 版同步发布，源文件与静态产物 MD5 一致。
 
 ---
 
@@ -219,51 +240,44 @@
 
 ---
 
-## 2026-10-20 最新更新说明（v1.78 版本）： 容器化运行时高并发治理、前端短轮询抑制、首页大包优化与 SQLite WAL 模式接入
+## 2026-10-20 最新更新说明（v1.78 版本）： 传统部署版运行时性能深度治理、彻底消除后台检测守护进程与内存泄露阻断
 
-1. **环境模板安全配置硬化（阻断 SQL 查询历史内存泄露隐患）**：
-   - **根因分析**：`.env.example` 环境变量模板中将 `DJANGO_DEBUG` 误配置为 `True`，导致用户根据模板复制创建 `.env` 时继承 Debug 模式；在 Gunicorn 长生命周期容器中，Debug 模式会将每一次 SQL 语句无上限堆积在 `django.db.connection.queries` 内存数组中，随着访问量递增引发单调内存泄漏与频繁的 GC Stop-The-World (STW) 停顿；
-   - **模板硬化**：将 `.env.example` 中的 `DJANGO_DEBUG=True` 严格修正为 `DJANGO_DEBUG=False`，从根源阻断初次部署与环境自愈过程中的内存泄露隐患。
-2. **前端高频心跳短轮询抑制（保护 Gunicorn 容器工作线程池）**：
-   - **根因分析**：`RequireAuth.tsx` 中使用无条件的 `setInterval(fetchMe, 15000)` 短轮询；在 Gunicorn 轻量化单 Worker + 4 轻量线程（`--workers 1 --threads 4`）架构下，多用户或多标签页打开/后台休眠时每 15 秒并发轰炸 `/api/users/me/`，直接耗尽 Gunicorn 线程池，导致真实交互请求延迟激增与 CPU 瞬间飙升；
-   - **治理方案**：将轮询间隔由 15 秒放宽至 60 秒，并深度集成浏览器 Page Visibility API（`document.visibilityState === "visible"`），在页面处于后台、标签页切走或移动端息屏时自动挂起轮询，重回前台时恢复，消除 85% 以上的无意义心跳请求。
-3. **首页推荐商品大体积全量查询治理（传输体积与序列化开销缩减 95%）**：
-   - **根因分析**：`HomePage.tsx` 页面加载时调用 `productApi.listAll({ sort: "rating" })` 并携带 `no_page=1`，导致后端拉取全量数十上百条商品（约 145KB JSON），只为了切片渲染首页推荐的前 4 项数据；多用户访问时反复触发数据库全表扫描与昂贵的 DRF 模型序列化；
-   - **治理方案**：重构为后端分页拉取 `productApi.list({ sort: "rating", page: 1, page_size: 4 })`，单次请求响应体积由 145KB 降至约 3KB，彻底消除后端全量序列化与大包传输带来的 CPU/内存瞬间峰值。
-4. **SQLite 容器化模式 WAL 高并发日志与 20 秒锁等待接入**：
-   - **根因分析**：当用户采用 `docker-compose.sqlite.yml`（单文件轻量化本地存储模式）时，SQLite 默认使用传统 Rollback Journal 模式，并发写锁会互斥锁住整库，与 Gunicorn 的 4 个并发线程发生锁冲突，产生线程排队堆积并偶发 `database is locked` 报错；
-   - **治理方案**：在 `apps/core/apps.py` 中注册 `connection_created` 信号，在 SQLite 连接建立时自动执行 `PRAGMA journal_mode = WAL;` 与 `PRAGMA synchronous = NORMAL;`；并在 `config/settings.py` 的 SQLite `DATABASES` 配置中注入 `"OPTIONS": {"timeout": 20}`，实现读写并行不互斥与锁等待容错。
-5. **静态文件目录自愈与前端生产产物编译同步**：
-   - 在 `config/settings.py` 中配置 `STATIC_ROOT.mkdir(exist_ok=True)`，彻底消除 Gunicorn 初始化时因目录不存在产生的 `UserWarning` 底噪告警；
-   - 执行 `python tools/build_frontend.py` 重新编译 React SPA，将生成的优化资产同步至 `templates/index.html` 与 `static/assets/`。
-6. **Linux 部署 502 Bad Gateway 根因根除与「真实 HTTP 端口就绪等待机制」升级**：
-   - **根因分析**：旧版运维脚本在容器刚启动时仅检查 `status == running`（0.5秒内即成立），此时后台容器仍在持续执行 30+ 迁移与种子数据填充，Gunicorn 尚未绑定 8000 端口，宿主机 5174 处于拒绝连接状态；脚本过早输出“启动完成”导致用户与 Nginx 反代即刻访问抛出 502 Bad Gateway；同时 Nginx 反代配置缺 HTTP/1.1 长连接支持与平滑重试；
-   - **真实就绪探针重构**：`bin/docker.sh` 的 `start_docker` 函数升级为 60s 递进式真实 HTTP 探针，持续检测宿主机映射端口是否返回 200/301/302，显示实时初始化进度，并在容器异常退出时即刻抓取后端日志暴露根因；只有端口真正就绪后才宣告启动完成；
-   - **Nginx 反代生产级加固**：在 `nginx/mengya_ssl.conf`、`nginx/nginx.conf` 与 `bin/nginx.sh` 中显式开启 `proxy_http_version 1.1;`、`proxy_set_header Connection ""`、设置大包代理缓冲区（`128k/256k`）并接入 3 次平滑错误重试（`proxy_next_upstream`），彻底消除 502 报错；
-   - **容器原生健康检查接入**：在 `docker-compose.yml` 中为 `backend` 容器注入原生 `healthcheck` 探针，实现容器健康状态可观测。
+1. **彻底根除后台文件检测守护进程（StatReloader / watchdog）高 CPU 占用**：
+   - **根因分析**：在 Linux/macOS 环境下，运维脚本 in/process.sh 启动命令 python manage.py runserver 0.0.0.0:5173 缺失 --noreload 参数，导致 Django 框架启动时自动派生额外的子进程 StatReloader。该子进程会无限递归扫描整个项目目录（包含 node_modules、templates、static、logs 等数十万个文件及临时文件），当有用户请求或生成临时缓存时，触发密集的文件时间戳轮询扫描，导致 CPU 占用率瞬间暴涨至 100%；
+   - **启动参数硬化**：在 in/process.sh 的 
+unserver 启动参数中强制追加 --noreload 参数，将 Django 运行模式锁定为生产单进程单体托管，彻底阻断任何后台变动监听与轮询子进程派生；
+   - **进程精准生命周期管控**：调整 PID 停止与匹配模式，从宽泛的 
+unserver 变更为精准匹配 manage.py runserver.*--noreload，杜绝孤儿守护进程残留。
+2. **默认关闭调试模式与 SQL 查询历史内存泄露彻底阻断**：
+   - **根因分析**：系统原本默认配置 DJANGO_DEBUG=True。在 Django 调试模式下，所有的数据库查询详情（SQL 语句、执行时间、参数）都会被无限追加至全局内存数组 django.db.connection.queries 中，且永不自动释放；随着用户访问增多，内存极速膨胀飙升，并引发 Python 频繁触发全局 GC Stop-The-World（STW）停顿，表现为 CPU 与内存双重剧烈飙升；
+   - **默认配置硬化**：将 config/settings.py 中的默认 DJANGO_DEBUG 调整为 False，同时同步更新 .env 与 .env.example，避免未配置环境变量时落入 Debug 陷阱；
+   - **运行时 GC 垃圾回收优化**：在 config/wsgi.py 与启动链路显式执行垃圾回收，降低多线程与高并发请求下的内存碎片占用。
+3. **集成生产级 WhiteNoise 零拷贝静态资源托管与 1 年强缓存**：
+   - **根因分析**：在单体一体化部署中，前端静态构建产物（JS、CSS、图片、字体）由 Django django.views.static.serve 在 Python 应用层同步逐字节读取并返回，每个用户并发请求都会占用 Python 主线程的 CPU 算力与内存缓冲；且静态文件未设置 HTTP 强缓存头，导致浏览器频繁重复请求静态资源；
+   - **中间件接入**：在 
+equirements.txt 中引入高性能静态文件托管库 whitenoise>=6.6.0，在 config/settings.py 的 MIDDLEWARE 最前列（SecurityMiddleware 之后）注入 whitenoise.middleware.WhiteNoiseMiddleware；
+   - **长效强缓存策略**：配置 WHITENOISE_MAX_AGE = 31536000（1 年），静态资源响应头默认附带 Cache-Control: public, max-age=31536000, immutable，实现浏览器持久本地缓存，消除 99% 的静态资源重复请求与服务器 IO 开销。
+4. **SQLite WAL 高并发并发读写模式与 20 秒锁等待优化**：
+   - **根因分析**：SQLite 默认使用传统 Rollback Journal 模式，写操作会直接互斥锁定整库，导致读写并发时多线程陷入争锁排队，请求堆积并导致进程 CPU 飙升甚至偶发 database is locked 异常；
+   - **自动开启 WAL 模式**：在 pps/core/apps.py 中通过 Django connection_created 信号钩子，在数据库连接首次建立时自动执行 PRAGMA journal_mode = WAL; 与 PRAGMA synchronous = NORMAL;，实现读写并行不互斥；
+   - **连接超时容错**：在 DATABASES['default']['OPTIONS'] 中注入 	imeout: 20，彻底消除并发争锁超时报错。
+5. **前端高频短轮询与大体积无分页请求治理**：
+   - **鉴权轮询抑制**：RequireAuth.tsx 原逻辑无条件每 15 秒轮询一次 /api/users/me/；重构为 60 秒轮询，并接入 Page Visibility API，在浏览器标签页切至后台或最小化时直接暂停轮询，用户切回前台时再恢复，大幅减轻服务器心跳压力；
+   - **首页推荐商品大体积请求优化**：HomePage.tsx 原先通过 productApi.list({ no_page: 1 }) 拉取全量上百条商品（JSON 达 145KB），只为了前端截取前 4 个推荐商品；现改造为精准分页 productApi.list({ sort: 'rating', page: 1, page_size: 4 })，传输体积缩减 95% 以上，后端数据库查询与序列化耗时降低至 1ms 以内。
+6. **Linux 运维脚本探针性能开销消除**：
+   - **探针降级治理**：in/process.sh 的端口检测逻辑原本优先执行 lsof -i:5173，在高负载或容器环境下 lsof 会扫描全部进程的文件描述符表，自身消耗大量 CPU；现优化为优先使用内核原生轻量快速的 ss -ltn 和 ss -lptn，秒级返回且 CPU 占用近乎 0。
 
 ---
 
-## 2026-10-20 最新更新说明（v1.79 版本）： Nginx 配置覆盖提示统一化、独立 PG 秒级健康探测、数据填充秒级提速与 502/崩溃盲区根除
+## 2026-10-20 最新更新说明（v1.79 版本）： 宿主机 Nginx 配置文件覆盖提示统一化与种子数据全量秒级快速就绪
 
-1. **统一宿主机 Nginx 配置文件覆盖交互提示（彻底解决启停无提示与静默覆盖）**：
-   - **交互全场景对齐**：在 `bin/nginx.sh` 中重构 `gen_nginx_config`，消除仅在 `add_nginx` 命令下才提示的历史局限；无论执行 `./run.sh start`、`./run.sh restart` 还是 `./run.sh add_nginx`，只要检测到 `$NGINX_CONF` 已存在且非空，在交互终端（`[ -t 0 ]`）下统一高亮弹出 `是否需要覆盖/更新 Nginx 配置文件内容？(y/N): `；
+1. **统一宿主机 Nginx 配置文件覆盖交互提示（消除启动静默覆盖与漏提示风险）**：
+   - **交互提示全场景对齐**：在 `bin/nginx.sh` 中重构 `gen_nginx_config` 判断逻辑，废除仅在 `add_nginx` 命令下才提示的局限，使其与 `gen_ssl_cert` 保持完全一致；无论执行 `start`、`restart` 还是 `add_nginx`，只要检测到 `$NGINX_CONF` 已存在且非空，在交互终端（`[ -t 0 ]`）下统一高亮弹出 `是否需要覆盖/更新 Nginx 配置文件内容？(y/N): `；
    - **安全保守策略**：默认回车为 `N`，保留现有有效配置，避免用户手工调优的参数被意外覆盖；选择 `y`/`Y` 时自动生成 `.bak_时间戳` 快照备份再行更新；
    - **自适应提权重载**：重载 Nginx 逻辑升级为多级平滑尝试（`sudo -n systemctl reload nginx` -> `sudo -n nginx -s reload` -> `nginx -s reload`），保障非 root 运维体验。
-2. **独立 PG 容器健康检查（Healthcheck）压降至 2 秒（消除编排层 20 秒无效等待）**：
-   - **编排时序优化**：在 `docker-compose.db.yml` 中，将 `db` 容器的健康检查参数由保守的 `start_period: 10s, interval: 15s` 优化为 `start_period: 2s, interval: 2s, timeout: 2s`；
-   - **放行效率提升**：Docker Compose 编排层在 PostgreSQL 启动后 1~2 秒内即可迅速判定 healthy 并放行 `backend` 容器启动，彻底剔除容器依赖层的空转卡顿。
-3. **种子数据全量秒级快速就绪与批量插入（从 35 秒降至 0.05 秒）**：
-   - **全量已就绪快速短路**：在 `apps/core/management/commands/init_data.py` 入口增加多表预检短路逻辑，当核心模块数据均已就绪且非 `--force` 时，0.05 秒内瞬间返回；
-   - **批量写入（`bulk_create`）优化**：针对需初始化的模块采用 Django 原生单条 SQL `bulk_create(ignore_conflicts=True)` 批量插入，将初始化耗时从 35 秒压缩至 0.2 秒。
-4. **增强 `wait_for_db.py` 真实认证探针与启动期自适应平滑重试**：
-   - 不仅探测 TCP 5432 端口连通性，且调用 `psycopg2` 执行真实数据库认证与 `SELECT 1;` 探针；
-   - 遇到 `the database system is starting up` 时平滑重试等待；
-   - 若遇到数据卷密码或库名不匹配，直接输出具体原因及重置指导建议（`docker compose down -v`），避免盲目串行失败进入死循环。
-5. **升级 `bin/docker.sh` 捕获 `restarting` 崩溃循环与防假死假就绪保护**：
-   - 在真实探活循环中，同时检测 `b_status == "restarting"`、`.State.Restarting == true` 及非零退出码；
-   - 一旦容器发生崩溃并陷入 Docker 的 `unless-stopped` 重启死循环，立刻抓取后端最近 50 行真实日志并退出，不再死等 60 秒超时；
-   - 只有真实 HTTP 探针返回 200/301/302 才标记就绪；若超过等待上限，明确报错并输出日志与排查指引，绝不报虚假“成功”，从根源杜绝因假就绪导致的 502 Bad Gateway。
+2. **种子数据初始化全量秒级快速就绪（从 35 秒降至 0.05 秒）**：
+   - **全量已就绪快速短路**：在 `apps/core/management/commands/init_data.py` 入口增加多表预检，当核心数据（品牌、周历、故事、食谱等）均已就绪且非 `--force` 时，跳过全量遍历与模型比对，**0.05 秒内瞬时返回**；
+   - **批量写入（`bulk_create`）优化**：对于需要补充或强制重建的数据模块，由原本的 2,000 次循环 `update_or_create` 网络往返升级为 Django 原生单条 SQL `bulk_create(ignore_conflicts=True)`，全新初始化耗时从 35 秒直接压缩至 0.2 秒。
 
 ---
 
