@@ -14,9 +14,14 @@ DEFAULT_USER_PERMISSIONS = {
     "menu_fetal_stories": True,     # 胎教故事
     "menu_recipes": True,           # 孕期食谱
     "menu_encyclopedia": True,      # 幼儿百科
-    "menu_favorites": True,         # 我的收藏
+    "menu_favorites": True,         # 我的收藏（菜单入口）
     "menu_notifications": True,     # 消息通知
     "menu_weather": True,           # 天气预报 / 万年历
+
+    # v1.88.1 我的收藏中心功能（CRUD）：从商品组独立，统一管控全部类型收藏
+    "favorite_view": True,          # 查：查看收藏中心（分类/搜索/分页）
+    "favorite_create": True,        # 增：添加收藏（商品/知识内容/清单）
+    "favorite_delete": True,        # 删：取消收藏与批量取消
 
     # 业务功能操作权限（CRUD 细粒度）
     # 待产包模块 (Shopping List)
@@ -37,10 +42,8 @@ DEFAULT_USER_PERMISSIONS = {
     "baby_update": True,            # 改：修改宝宝资料
     "baby_delete": True,            # 删：删除宝宝档案
 
-    # 商品库中心模块 (Products & Favorites)
+    # 商品库中心模块 (Products；收藏功能已独立到「我的收藏中心」组)
     "product_view": True,           # 查：浏览商品及对比
-    "product_favorite": True,       # 增：收藏商品
-    "product_unfavorite": True,     # 删：取消收藏商品
     "product_ai_evaluate": True,    # 用：AI 一键评测商品
 
     # AI 助手模块 (AI Assistant)
@@ -63,6 +66,27 @@ DEFAULT_USER_PERMISSIONS = {
     "menu_admin_daily_tips": False,         # 关怀贴士管理菜单
     "daily_tips_view": False,               # 查看贴士库与展示规则
     "daily_tips_manage": False,             # 增删改贴士与重置内置题库
+
+    # v1.88 知识库管理中心权限（细粒度分模块控制，普通用户默认全部关闭）
+    "menu_admin_kb_timeline": False,        # 孕期周历/时间轴管理菜单
+    "kb_timeline_view": False,              # 查看时间轴/孕期周历/本周重点题库
+    "kb_timeline_manage": False,            # 增删改/批量/恢复出厂时间轴事件
+
+    "menu_admin_kb_stories": False,         # 胎教故事管理菜单
+    "kb_stories_view": False,               # 查看胎教故事题库
+    "kb_stories_manage": False,             # 增删改/批量/恢复出厂胎教故事
+
+    "menu_admin_kb_recipes": False,         # 孕期食谱管理菜单
+    "kb_recipes_view": False,               # 查看孕期食谱题库
+    "kb_recipes_manage": False,             # 增删改/批量/恢复出厂孕期食谱
+
+    "menu_admin_kb_encyclopedia": False,     # 幼儿百科管理菜单
+    "kb_encyclopedia_view": False,           # 查看幼儿百科题库
+    "kb_encyclopedia_manage": False,         # 增删改/批量/恢复出厂幼儿百科
+
+    "menu_admin_kb_shopping": False,        # 待产包预置库管理菜单
+    "kb_shopping_view": False,              # 查看待产包预置物品库
+    "kb_shopping_manage": False,            # 增删改/批量/恢复出厂待产包预置物品
 
     "menu_admin_registration": False,       # 注册管理菜单
     "registration_manage": False,           # 切换注册模式与生成邀请链接
@@ -102,11 +126,14 @@ PERMISSION_PARENT_MAP = {
     "baby_update": "baby_view",
     "baby_delete": "baby_view",
 
-    # 商品库中心模块：menu_products -> product_view -> [product_favorite, unfavorite, ai_evaluate]
+    # 商品库中心模块：menu_products -> product_view -> ai_evaluate（收藏已独立到 menu_favorites 组）
     "product_view": "menu_products",
-    "product_favorite": "product_view",
-    "product_unfavorite": "product_view",
     "product_ai_evaluate": "product_view",
+
+    # v1.88.1 我的收藏中心：menu_favorites -> favorite_view -> [favorite_create, favorite_delete]
+    "favorite_view": "menu_favorites",
+    "favorite_create": "favorite_view",
+    "favorite_delete": "favorite_view",
 
     # AI 助手模块：menu_ai_assistant -> [ai_chat, ai_session_create, rename, delete]
     "ai_chat": "menu_ai_assistant",
@@ -178,7 +205,6 @@ PERMISSION_DEFINITIONS = [
             {"key": "menu_fetal_stories", "name": "胎教故事", "desc": "每日温馨胎教故事阅读", "parent_key": None},
             {"key": "menu_recipes", "name": "孕期食谱", "desc": "各阶段专属孕期餐与营养谱", "parent_key": None},
             {"key": "menu_encyclopedia", "name": "幼儿百科", "desc": "幼儿身体与认知趣味科普", "parent_key": None},
-            {"key": "menu_favorites", "name": "我的收藏", "desc": "商品、时相、清单等个人收藏夹", "parent_key": None},
             {"key": "menu_notifications", "name": "消息通知", "desc": "系统提醒与关怀通知中心", "parent_key": None},
             {"key": "menu_weather", "name": "天气预报/万年历", "desc": "实时天气、15天预报、空气质量与黄历班休", "parent_key": None},
         ],
@@ -216,15 +242,26 @@ PERMISSION_DEFINITIONS = [
             {"key": "baby_delete", "name": "删除宝宝档案 (删)", "desc": "注销或移除已录入的宝宝档案", "parent_key": "baby_view"},
         ],
     },
+    # 商品库中心模块（浏览与 AI 评测；收藏功能已独立至「我的收藏中心」组）
     {
         "group_key": "product",
-        "group_name": "商品库与收藏功能（CRUD）",
-        "description": "控制普通用户对商品的收藏、取消收藏及 AI 评测权限",
+        "group_key": "product",
+        "group_name": "商品库中心功能（浏览/AI）",
+        "description": "控制普通用户对商品的浏览与 AI 评测权限（收藏权限已独立到「我的收藏中心」组）",
         "permissions": [
             {"key": "product_view", "name": "浏览商品 (查)", "desc": "查看商品库列表、多维度详情与推荐链接", "parent_key": "menu_products"},
-            {"key": "product_favorite", "name": "添加收藏 (增)", "desc": "在首页或商品详情中添加至个人收藏夹", "parent_key": "product_view"},
-            {"key": "product_unfavorite", "name": "取消收藏 (删)", "desc": "在商品卡片或收藏夹中取消商品收藏", "parent_key": "product_view"},
             {"key": "product_ai_evaluate", "name": "AI一键评测 (用)", "desc": "在商品详情页调用 AI 获取深度客观评测", "parent_key": "product_view"},
+        ],
+    },
+    {
+        "group_key": "favorites",
+        "group_name": "我的收藏中心功能（CRUD）",
+        "description": "控制普通用户对商品、孕育知识、胎教故事、孕期食谱、幼儿百科、清单等全部类型收藏的添加、查看与取消权限",
+        "permissions": [
+            {"key": "menu_favorites", "name": "我的收藏菜单", "desc": "访问我的收藏中心页面（分类浏览/搜索/分页/批量管理）", "parent_key": None},
+            {"key": "favorite_view", "name": "查看收藏中心 (查)", "desc": "按分类查看收藏列表、搜索筛选与有效性状态", "parent_key": "menu_favorites"},
+            {"key": "favorite_create", "name": "添加收藏 (增)", "desc": "在商品/知识内容页发起收藏（含胎教故事/孕期食谱/幼儿百科/时间轴）", "parent_key": "favorite_view"},
+            {"key": "favorite_delete", "name": "取消收藏 (删)", "desc": "取消单条收藏或勾选批量取消收藏", "parent_key": "favorite_view"},
         ],
     },
     {
@@ -239,39 +276,102 @@ PERMISSION_DEFINITIONS = [
             {"key": "ai_fetch_models", "name": "拉取模型列表 (查)", "desc": "在 AI 配置中通过 Base URL 自动拉取可用模型列表", "parent_key": "menu_ai_assistant"},
         ],
     },
+    # v1.88.1 管理后台拆分为 8 个独立展示组（权限键不变，仅分组展示，权限树更清晰）
     {
-        "group_key": "admin_operations",
-        "group_name": "管理后台与系统运维权限",
-        "description": "控制平台容灾备份、外部接口、关怀贴士、用户权限、注册策略、商品运营与审计日志等高级管理权限（新注册用户默认全部关闭）",
+        "group_key": "admin_backups",
+        "group_name": "云端容灾备份管理",
+        "description": "WebDAV 云端备份、全量快照、系统还原与定时备份任务（默认仅管理员）",
         "permissions": [
             {"key": "menu_admin_backups", "name": "云端容灾备份菜单", "desc": "进入 WebDAV 云端备份与系统容灾管理页面", "parent_key": None},
             {"key": "backup_config_manage", "name": "WebDAV配置 (改)", "desc": "配置 WebDAV 服务器、账号授权码及加密策略", "parent_key": "menu_admin_backups"},
             {"key": "backup_trigger", "name": "生成备份 (增)", "desc": "手动创建系统快照并上传或离线导出", "parent_key": "menu_admin_backups"},
             {"key": "backup_restore", "name": "系统还原 (高危)", "desc": "从云端或本地快照执行灾难恢复覆盖", "parent_key": "menu_admin_backups"},
             {"key": "backup_task_manage", "name": "定时任务管理 (改)", "desc": "创建、启停、编辑自动定时备份任务", "parent_key": "menu_admin_backups"},
-
+        ],
+    },
+    {
+        "group_key": "admin_service_config",
+        "group_name": "外部接口配置管理",
+        "description": "天气、法定节假日与 AI 公网搜索引擎管线配置（默认仅管理员）",
+        "permissions": [
             {"key": "menu_admin_service_config", "name": "外部接口配置菜单", "desc": "进入天气、节假日及 AI 公网搜索管线配置页面", "parent_key": None},
             {"key": "service_config_view", "name": "查看接口配置 (查)", "desc": "查阅各外部服务状态及单项连通测试", "parent_key": "menu_admin_service_config"},
             {"key": "service_config_update", "name": "修改接口配置 (改)", "desc": "调整天气、历法与搜索引擎权重与密钥", "parent_key": "menu_admin_service_config"},
-
+        ],
+    },
+    {
+        "group_key": "admin_daily_tips",
+        "group_name": "关怀贴士管理",
+        "description": "今日小锦囊贴士题库维护与一键重置（默认仅管理员）",
+        "permissions": [
             {"key": "menu_admin_daily_tips", "name": "关怀贴士管理菜单", "desc": "进入今日小锦囊贴士题库管理页面", "parent_key": None},
             {"key": "daily_tips_view", "name": "查看贴士库 (查)", "desc": "查阅贴士库列表与展示数量规则", "parent_key": "menu_admin_daily_tips"},
             {"key": "daily_tips_manage", "name": "编辑贴士题库 (改/删)", "desc": "新增自定义贴士、修改、删除及一键重置内置题库", "parent_key": "menu_admin_daily_tips"},
+        ],
+    },
+    {
+        "group_key": "admin_knowledge",
+        "group_name": "知识库管理中心",
+        "description": "孕期周历/时间轴、胎教故事、孕期食谱、幼儿百科、待产包预置库五大题库的增删改查/批量/CSV导入导出/恢复出厂（默认仅管理员）",
+        "permissions": [
+            {"key": "menu_admin_kb_timeline", "name": "知识库-孕期周历管理菜单", "desc": "管理孕期周历/时间轴/本周重点题库（含恢复出厂）", "parent_key": None},
+            {"key": "kb_timeline_view", "name": "查看周历题库 (查)", "desc": "查阅孕期周历/时间轴事件列表与筛选", "parent_key": "menu_admin_kb_timeline"},
+            {"key": "kb_timeline_manage", "name": "编辑周历题库 (改/删)", "desc": "新增/修改/删除/批量操作/恢复出厂时间轴事件", "parent_key": "menu_admin_kb_timeline"},
 
+            {"key": "menu_admin_kb_stories", "name": "知识库-胎教故事管理菜单", "desc": "管理胎教故事题库（含恢复出厂与CSV导入导出）", "parent_key": None},
+            {"key": "kb_stories_view", "name": "查看故事题库 (查)", "desc": "查阅胎教故事列表与筛选", "parent_key": "menu_admin_kb_stories"},
+            {"key": "kb_stories_manage", "name": "编辑故事题库 (改/删)", "desc": "新增/修改/删除/批量操作/恢复出厂/CSV导入导出胎教故事", "parent_key": "menu_admin_kb_stories"},
+
+            {"key": "menu_admin_kb_recipes", "name": "知识库-孕期食谱管理菜单", "desc": "管理孕期食谱题库（含恢复出厂与CSV导入导出）", "parent_key": None},
+            {"key": "kb_recipes_view", "name": "查看食谱题库 (查)", "desc": "查阅孕期食谱列表与筛选", "parent_key": "menu_admin_kb_recipes"},
+            {"key": "kb_recipes_manage", "name": "编辑食谱题库 (改/删)", "desc": "新增/修改/删除/批量操作/恢复出厂/CSV导入导出孕期食谱", "parent_key": "menu_admin_kb_recipes"},
+
+            {"key": "menu_admin_kb_encyclopedia", "name": "知识库-幼儿百科管理菜单", "desc": "管理幼儿百科问答题库（含恢复出厂与CSV导入导出）", "parent_key": None},
+            {"key": "kb_encyclopedia_view", "name": "查看百科题库 (查)", "desc": "查阅幼儿百科问答列表与筛选", "parent_key": "menu_admin_kb_encyclopedia"},
+            {"key": "kb_encyclopedia_manage", "name": "编辑百科题库 (改/删)", "desc": "新增/修改/删除/批量操作/恢复出厂/CSV导入导出幼儿百科", "parent_key": "menu_admin_kb_encyclopedia"},
+
+            {"key": "menu_admin_kb_shopping", "name": "知识库-待产包预置库菜单", "desc": "管理待产包预置参考物品库（含恢复出厂）", "parent_key": None},
+            {"key": "kb_shopping_view", "name": "查看待产包预置库 (查)", "desc": "查阅待产包预置参考物品列表与统计", "parent_key": "menu_admin_kb_shopping"},
+            {"key": "kb_shopping_manage", "name": "编辑待产包预置库 (改/删)", "desc": "新增/修改/删除/批量操作/恢复出厂待产包预置物品", "parent_key": "menu_admin_kb_shopping"},
+        ],
+    },
+    {
+        "group_key": "admin_registration",
+        "group_name": "注册管理",
+        "description": "注册模式切换与邀请链接管理（默认仅管理员）",
+        "permissions": [
             {"key": "menu_admin_registration", "name": "注册管理菜单", "desc": "进入注册策略与邀请链接管理页面", "parent_key": None},
             {"key": "registration_manage", "name": "注册策略调控 (改)", "desc": "切换开放/邀请码/关闭注册模式及生成邀请链接", "parent_key": "menu_admin_registration"},
-
+        ],
+    },
+    {
+        "group_key": "admin_products",
+        "group_name": "商品发布管理",
+        "description": "母婴选品库商品发布/编辑/下架与品牌库维护（默认仅管理员）",
+        "permissions": [
             {"key": "menu_admin_products_manage", "name": "商品发布管理菜单", "desc": "进入母婴选品库后台管理页面", "parent_key": None},
             {"key": "product_manage_create", "name": "发布商品 (增)", "desc": "在商品选品库中录入全新商品及规格", "parent_key": "menu_admin_products_manage"},
             {"key": "product_manage_edit", "name": "编辑商品 (改)", "desc": "修改已有商品基本信息、标签、图片与购买链接", "parent_key": "menu_admin_products_manage"},
             {"key": "product_manage_delete", "name": "下架删除商品 (删)", "desc": "从选品库中下架或彻底删除商品", "parent_key": "menu_admin_products_manage"},
-
+        ],
+    },
+    {
+        "group_key": "admin_users",
+        "group_name": "用户与权限管控",
+        "description": "用户列表、资料编辑、账号冻结与权限模板定制（默认仅管理员）",
+        "permissions": [
             {"key": "menu_admin_users", "name": "用户管理菜单", "desc": "进入用户列表与权限管控中心", "parent_key": None},
             {"key": "user_manage_view", "name": "查看用户列表 (查)", "desc": "查阅全站用户手机、角色、注册信息与状态", "parent_key": "menu_admin_users"},
             {"key": "user_manage_edit", "name": "编辑用户资料 (改)", "desc": "修改用户昵称、角色及密码重置", "parent_key": "menu_admin_users"},
             {"key": "user_manage_freeze", "name": "冻结/解冻账号 (改)", "desc": "冻结违规账号或解冻受限用户", "parent_key": "menu_admin_users"},
             {"key": "permission_manage", "name": "权限管控与风控 (高危)", "desc": "定制单用户权限、保存全局权限模板与调整风控熔断阈值", "parent_key": "menu_admin_users"},
-
+        ],
+    },
+    {
+        "group_key": "admin_audit",
+        "group_name": "审计日志",
+        "description": "全平台安全审计流水查阅与清理（默认仅管理员）",
+        "permissions": [
             {"key": "menu_admin_audit_logs", "name": "审计日志菜单", "desc": "进入系统安全审计流水查看页面", "parent_key": None},
             {"key": "audit_log_view", "name": "查看审计日志 (查)", "desc": "查阅登录、操作、数据修改等全量审计流水", "parent_key": "menu_admin_audit_logs"},
             {"key": "audit_log_clean", "name": "清理审计日志 (删)", "desc": "按保留天数清理过期历史审计日志", "parent_key": "menu_admin_audit_logs"},
@@ -389,13 +489,13 @@ def has_permission(user, perm_key: str) -> bool:
     return bool(perms.get(perm_key, False))
 
 
-def check_permission_or_403(user, perm_key: str, message: str = "管理员已关闭该项功能权限"):
+def check_permission_or_403(user, perm_key: str, message: str = "管理员已关闭该功能，如有需要请联系管理员开启"):
     """若无权限则抛出 PermissionDenied 异常。管理员永远通行。"""
     if not user:
-        raise PermissionDenied(detail={"code": 4030, "message": "请先登录", "permission": perm_key})
+        raise PermissionDenied(detail={"code": 4030, "message": "请先登录后再操作", "permission": perm_key})
     if getattr(user, "is_staff", False) or getattr(user, "is_superuser", False):
         return
     if not getattr(user, "is_authenticated", False):
-        raise PermissionDenied(detail={"code": 4030, "message": "请先登录", "permission": perm_key})
+        raise PermissionDenied(detail={"code": 4030, "message": "请先登录后再操作", "permission": perm_key})
     if not has_permission(user, perm_key):
         raise PermissionDenied(detail={"code": 4030, "message": message, "permission": perm_key})

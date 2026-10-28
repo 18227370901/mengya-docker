@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import {
   BookOpen,
   CalendarHeart,
@@ -16,6 +16,10 @@ import { fetalStoryApi } from "@/api/catalog";
 import { useAuthStore } from "@/store/authStore";
 import type { FetalStory } from "@/types";
 import CopyButton from "@/components/CopyButton";
+import FavoriteButton from "@/components/FavoriteButton";
+import LightPagination from "@/components/ui/LightPagination";
+import TopProgressBar from "@/components/ui/TopProgressBar";
+import PermissionDeniedCard from "@/components/PermissionDeniedCard";
 
 const NARRATOR_META: Record<string, { label: string; color: string; icon: typeof Heart }> = {
   mom: { label: "妈妈讲", color: "bg-pink-100 text-pink-600", icon: Heart },
@@ -47,10 +51,35 @@ const MONTHS = [
   { month: 10, weeks: [37, 38, 39, 40], label: "孕10月", desc: "欢迎到来" },
 ];
 
+const FETAL_PAGE_SIZE_KEY = "mengya_fetal_page_size";
+const FETAL_SIZE_OPTIONS = [
+  { value: 24, label: "24 个/页" },
+  { value: 48, label: "48 个/页" },
+  { value: 96, label: "96 个/页" },
+  { value: -1, label: "全部" },
+];
+
 export default function FetalStoryPage() {
   const { stage } = useAuthStore();
   const [stories, setStories] = useState<FetalStory[]>([]);
   const [availableWeeks, setAvailableWeeks] = useState<number[]>([]);
+  /** v1.88.4 “全部列表”模式服务端分页状态（按周视图不分页，数量少） */
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSizeState] = useState<number>(() => {
+    try {
+      const saved = Number(localStorage.getItem(FETAL_PAGE_SIZE_KEY));
+      return FETAL_SIZE_OPTIONS.some((o) => o.value === saved) ? saved : 24;
+    } catch {
+      return 24;
+    }
+  });
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  /** v1.88.4 二次加载：保留旧内容 + 顶部进度条 */
+  const [refreshing, setRefreshing] = useState(false);
+  /** v1.88.5 页面访问被拒（菜单权限，code=4030）：整页提示卡 */
+  const [permDenied, setPermDenied] = useState<string | null>(null);
+  const hasLoadedRef = useRef(false);
 
   // 计算孕周定位：胎教故事范围为 17~40 周
   const getTargetWeek = useCallback((weeksList?: number[]) => {
@@ -102,17 +131,51 @@ export default function FetalStoryPage() {
     }).catch(() => {});
   }, [stage]);
 
-  // 加载故事列表
+  // 加载故事列表：按周视图全量（周内数量少）；全部列表视图服务端分页（v1.88.4，默认 24/页）
   const loadStories = useCallback(() => {
-    setLoading(true);
-    const params: { week?: number; narrator?: string } = {};
-    if (viewMode === "week") params.week = selectedWeek;
-    if (narratorFilter) params.narrator = narratorFilter;
-    fetalStoryApi.list(params).then((data) => {
-      setStories(data);
-      setLoading(false);
-    }).catch(() => setLoading(false));
-  }, [selectedWeek, narratorFilter, viewMode]);
+    if (hasLoadedRef.current) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
+    if (viewMode === "list") {
+      fetalStoryApi
+        .listPaged({ narrator: narratorFilter || undefined, page, page_size: pageSize })
+        .then((res) => {
+          setStories(res.items);
+          setTotal(res.total);
+          setTotalPages(res.total_pages);
+          hasLoadedRef.current = true;
+        })
+        .catch((err: any) => {
+          // v1.88.5 菜单权限被拒：展示整页提示卡，不再静默空态
+          if (err?.code === 4030) {
+            setPermDenied(err?.message || "管理员已关闭本页面访问，如有需要请联系管理员开启。");
+          }
+        })
+        .finally(() => {
+          setLoading(false);
+          setRefreshing(false);
+        });
+    } else {
+      fetalStoryApi
+        .list({ week: selectedWeek, narrator: narratorFilter || undefined })
+        .then((data) => {
+          setStories(data);
+          hasLoadedRef.current = true;
+        })
+        .catch((err: any) => {
+          // v1.88.5 菜单权限被拒：展示整页提示卡，不再静默空态
+          if (err?.code === 4030) {
+            setPermDenied(err?.message || "管理员已关闭本页面访问，如有需要请联系管理员开启。");
+          }
+        })
+        .finally(() => {
+          setLoading(false);
+          setRefreshing(false);
+        });
+    }
+  }, [selectedWeek, narratorFilter, viewMode, page, pageSize]);
 
   useEffect(() => {
     loadStories();
@@ -143,8 +206,16 @@ export default function FetalStoryPage() {
     }
   };
 
+  const handlePageSizeChange = (s: number) => {
+    setPageSizeState(s);
+    try { localStorage.setItem(FETAL_PAGE_SIZE_KEY, String(s)); } catch { /* ignore */ }
+    setPage(1);
+  };
+
   return (
     <div className="space-y-4">
+      {/* v1.88.4 二次加载顶部细进度条（切周/切视图/筛选时保留旧内容） */}
+      {refreshing && <TopProgressBar />}
       {/* 标题区 */}
       <div className="rounded-2xl bg-gradient-to-br from-pink-50 via-orange-50 to-amber-50 p-6">
         <div className="flex items-center gap-3">
@@ -174,7 +245,7 @@ export default function FetalStoryPage() {
             className={`flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm transition ${
               viewMode === "list" ? "bg-white font-medium text-brand-600 shadow-sm" : "text-gray-500"
             }`}
-            onClick={() => setViewMode("list")}
+            onClick={() => { setViewMode("list"); setPage(1); }}
           >
             <List className="h-4 w-4" />
             全部列表
@@ -184,7 +255,7 @@ export default function FetalStoryPage() {
         <select
           className="rounded-xl border border-gray-200 px-3 py-1.5 text-sm text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200"
           value={narratorFilter}
-          onChange={(e) => setNarratorFilter(e.target.value)}
+          onChange={(e) => { setNarratorFilter(e.target.value); setPage(1); }}
         >
           <option value="">全部讲述者</option>
           <option value="mom">妈妈讲</option>
@@ -297,16 +368,19 @@ export default function FetalStoryPage() {
         </div>
       )}
 
+      {/* v1.88.5 菜单权限被拒：整页提示卡 */}
+      {permDenied && <PermissionDeniedCard message={permDenied} />}
+
       {/* 加载中 */}
-      {loading && (
+      {!permDenied && loading && (
         <div className="flex items-center justify-center py-20">
           <div className="h-8 w-8 animate-spin rounded-full border-2 border-brand-200 border-t-brand-500" />
         </div>
       )}
 
-      {/* 故事列表 */}
-      {!loading && viewMode === "week" && (
-        <div className="space-y-4">
+      {/* 按周视图：v1.88.5 统一单列竖排 —— 每天 N 篇即 N 张等宽全宽卡，任意数量规整，双端一致 */}
+      {!permDenied && !loading && viewMode === "week" && (
+        <div className={`space-y-4 ${refreshing ? "opacity-60" : ""}`}>
           {groupedByDay.length === 0 && (
             <div className="py-20 text-center text-gray-400">
               <BookOpen className="mx-auto mb-3 h-12 w-12 opacity-30" />
@@ -323,7 +397,7 @@ export default function FetalStoryPage() {
                   </span>
                   <span className="text-sm text-gray-400">第 {dayNum} 天</span>
                 </div>
-                <div className="grid gap-3 sm:grid-cols-2">
+                <div className="space-y-3">
                   {dayStories.map((story) => (
                     <StoryCard key={story.id} story={story} onClick={() => handleStoryClick(story)} />
                   ))}
@@ -334,11 +408,30 @@ export default function FetalStoryPage() {
         </div>
       )}
 
-      {!loading && viewMode === "list" && (
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {stories.map((story) => (
-            <StoryCard key={story.id} story={story} onClick={() => handleStoryClick(story)} compact />
-          ))}
+      {/* 全部列表视图：服务端分页（v1.88.4，默认 24/页可选 12/24/48/全部） */}
+      {!permDenied && !loading && viewMode === "list" && (
+        <div className={`space-y-3 ${refreshing ? "opacity-60" : ""}`}>
+          <div className="grid gap-3 grid-cols-1 sm:grid-cols-2 xl:grid-cols-3">
+            {stories.map((story) => (
+              <StoryCard key={story.id} story={story} onClick={() => handleStoryClick(story)} compact />
+            ))}
+          </div>
+          {stories.length === 0 && (
+            <div className="py-20 text-center text-gray-400">
+              <BookOpen className="mx-auto mb-3 h-12 w-12 opacity-30" />
+              <p>暂无故事</p>
+            </div>
+          )}
+          <LightPagination
+            page={page}
+            totalPages={totalPages}
+            total={total}
+            pageSize={pageSize}
+            sizeOptions={FETAL_SIZE_OPTIONS}
+            onPageChange={setPage}
+            onPageSizeChange={handlePageSizeChange}
+            unitLabel="个"
+          />
         </div>
       )}
 
@@ -360,10 +453,20 @@ function StoryCard({ story, onClick, compact }: { story: FetalStory; onClick: ()
   const narrator = NARRATOR_META[story.narrator] || NARRATOR_META.either;
   const Icon = narrator.icon;
 
+  // v1.88.2 外层改为 div+role=button：卡片右上角需内嵌收藏按钮（button 不能嵌套 button），
+  // 收藏按钮自带 stopPropagation，不会误触打开故事
   return (
-    <button
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
-      className="group flex gap-3 overflow-hidden rounded-2xl border border-gray-100 bg-white p-3 text-left transition hover:border-brand-200 hover:shadow-md"
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick();
+        }
+      }}
+      className="group flex cursor-pointer gap-3 overflow-hidden rounded-2xl border border-gray-100 bg-white p-3 text-left transition hover:border-brand-200 hover:shadow-md"
     >
       {story.cover_image && !compact && (
         <img
@@ -385,6 +488,13 @@ function StoryCard({ story, onClick, compact }: { story: FetalStory; onClick: ()
           {story.day_index > 1 && (
             <span className="text-xs text-gray-400">#{story.day_index}</span>
           )}
+          {/* v1.88.2 列表卡片直接提供收藏按钮，无需点进故事详情 */}
+          <FavoriteButton
+            objectId={story.id}
+            favoriteType="fetal_story"
+            note={story.title}
+            className="ml-auto"
+          />
         </div>
         <h3 className="truncate font-medium text-gray-800 group-hover:text-brand-600">
           {story.title}
@@ -408,7 +518,7 @@ function StoryCard({ story, onClick, compact }: { story: FetalStory; onClick: ()
           )}
         </div>
       </div>
-    </button>
+    </div>
   );
 }
 
@@ -461,6 +571,14 @@ function StoryDetail({
             </span>
           </div>
           <div className="flex items-center gap-2">
+            {/* v1.88.1 收藏本故事（阅读弹窗头部） */}
+            <FavoriteButton
+              objectId={story.id}
+              favoriteType="fetal_story"
+              note={story.title}
+              variant="icon"
+              size="sm"
+            />
             {(story.content_en || story.title_en) && (
               <button
                 onClick={onToggleLang}

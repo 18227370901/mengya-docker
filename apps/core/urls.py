@@ -1,7 +1,7 @@
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
-from . import views, views_searxng, views_daily_tips, views_service_config, views_backup
+from . import views, views_searxng, views_daily_tips, views_service_config, views_backup, views_knowledge_admin
 
 router = DefaultRouter()
 router.register(r"mothers", views.MotherViewSet, basename="mother")
@@ -89,5 +89,7 @@ urlpatterns = [
     path("admin/daily-tips/batch-delete/", views_daily_tips.admin_daily_tips_batch_delete_view, name="admin-daily-tips-batch-delete"),
     path("admin/daily-tips/config/", views_daily_tips.admin_daily_tips_config_view, name="admin-daily-tips-config"),
     path("admin/daily-tips/reset-builtin/", views_daily_tips.admin_daily_tips_reset_builtin_view, name="admin-daily-tips-reset-builtin"),
+    # v1.88 知识库管理中心：各模块一键恢复出厂内置数据
+    path("admin/knowledge/reset/", views_knowledge_admin.AdminKnowledgeResetView.as_view(), name="admin-knowledge-reset"),
     path("", include(router.urls)),
 ]

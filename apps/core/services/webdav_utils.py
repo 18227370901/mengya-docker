@@ -11,7 +11,8 @@ import shutil
 import tempfile
 import urllib.parse
 import xml.etree.ElementTree as ET
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 import requests
 from requests.auth import HTTPBasicAuth
 import urllib3
@@ -19,6 +20,25 @@ import pyzipper
 
 # 禁用 self-signed SSL 证书警告
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+# 北京时间（UTC+8，无夏令时），用于把 WebDAV 返回的 GMT 时间转为本地展示
+_BEIJING_TZ = timezone(timedelta(hours=8))
+
+
+def _format_modified_time(raw: str) -> str:
+    """WebDAV 返回的 RFC2822 GMT 时间 → 中文年月日格式（北京时间）
+
+    例：'Wed, 26 Oct 2026 08:13:45 GMT' → '2026年10月26日 16:13:45'
+    解析失败时原样返回，避免影响备份列表展示。
+    """
+    try:
+        dt = parsedate_to_datetime(raw)
+    except (TypeError, ValueError, OverflowError):
+        return raw
+    if dt.tzinfo is None:
+        # 无时区信息时按 GMT 处理（WebDAV 规范要求 getlastmodified 为 GMT）
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(_BEIJING_TZ).strftime("%Y年%m月%d日 %H:%M:%S")
 
 
 def _normalize_url(url: str) -> str:
@@ -289,7 +309,7 @@ def list_backups(webdav_url_or_config, username=None, password=None, backup_path
                         size = 0
                 modified_el = prop.find("D:getlastmodified", namespaces)
                 if modified_el is not None and modified_el.text:
-                    last_modified = modified_el.text
+                    last_modified = _format_modified_time(modified_el.text)
 
             is_encrypted = filename.lower().endswith(".zip")
             is_full = "full" in filename.lower()

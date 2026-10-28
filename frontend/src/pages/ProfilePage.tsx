@@ -1,7 +1,7 @@
 import SetStageModal from "@/components/SetStageModal";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Bot, Baby, Bell, Edit3, Eye, EyeOff, Heart, HeartOff, HeartPulse, KeyRound, LogOut, Moon, Network, Package, Plus, Settings, ShieldCheck, Sun, Trash2, UserCheck, Users, ClipboardList, X, Loader2, Sparkles, CloudUpload } from "lucide-react";
+import { Bot, Baby, Bell, BookOpen, Edit3, Eye, EyeOff, Heart, HeartOff, HeartPulse, KeyRound, LogOut, Moon, Network, Package, Plus, Settings, ShieldCheck, Sun, Trash2, UserCheck, Users, ClipboardList, X, Loader2, Sparkles, CloudUpload } from "lucide-react";
 import { useThemeStore } from "@/store/themeStore";
 import { authApi } from "@/api/auth";
 import { useAuthStore } from "@/store/authStore";
@@ -797,7 +797,12 @@ export default function ProfilePage() {
         hasPermission("menu_admin_registration") ||
         hasPermission("menu_admin_daily_tips") ||
         hasPermission("menu_admin_service_config") ||
-        hasPermission("menu_admin_backups")) && (
+        hasPermission("menu_admin_backups") ||
+        hasPermission("menu_admin_kb_timeline") ||
+        hasPermission("menu_admin_kb_stories") ||
+        hasPermission("menu_admin_kb_recipes") ||
+        hasPermission("menu_admin_kb_encyclopedia") ||
+        hasPermission("menu_admin_kb_shopping")) && (
         <section className="card">
           <div className="mb-3 flex items-center gap-2">
             <Settings className="h-5 w-5 text-brand-500" />
@@ -862,6 +867,21 @@ export default function ProfilePage() {
                 <Network className="h-5 w-5 text-sky-500" />
                 <span className="text-xs font-medium text-gray-600">外部接口配置</span>
                 <span className="text-[10px] text-gray-400">天气/节假日/搜索管线</span>
+              </button>
+            )}
+            {(user?.is_staff ||
+              hasPermission("menu_admin_kb_timeline") ||
+              hasPermission("menu_admin_kb_stories") ||
+              hasPermission("menu_admin_kb_recipes") ||
+              hasPermission("menu_admin_kb_encyclopedia") ||
+              hasPermission("menu_admin_kb_shopping")) && (
+              <button
+                className="flex flex-col items-center gap-1.5 rounded-xl border border-gray-100 py-4 transition hover:border-brand-200 hover:bg-brand-50/50"
+                onClick={() => navigate("/admin/knowledge-base")}
+              >
+                <BookOpen className="h-5 w-5 text-emerald-500" />
+                <span className="text-xs font-medium text-gray-600">知识库管理</span>
+                <span className="text-[10px] text-gray-400">周历/故事/食谱/百科/待产包</span>
               </button>
             )}
             {(user?.is_staff || hasPermission("menu_admin_backups")) && (

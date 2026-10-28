@@ -33,6 +33,8 @@ class TimelineEvent(models.Model):
     tips = models.TextField(blank=True, verbose_name="注意事项/小贴士")
     cover_image = models.URLField(blank=True, null=True, verbose_name="封面图")
     is_essential = models.BooleanField(default=False, verbose_name="是否必读/重点")
+    # v1.88.1 知识库管理：启用状态（停用后前台对所有人不可见，仅知识库管理中心可见）
+    is_active = models.BooleanField(default=True, verbose_name="是否启用")
     sort_order = models.IntegerField(default=0, verbose_name="排序权重")
     view_count = models.IntegerField(default=0, verbose_name="浏览次数")
     products = models.ManyToManyField("Product", blank=True, related_name="timeline_events", verbose_name="关联商品")

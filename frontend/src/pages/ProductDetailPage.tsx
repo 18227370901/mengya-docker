@@ -1,4 +1,5 @@
 import { useAuthStore } from "@/store/authStore";
+import { useFavoriteStore } from "@/store/favoriteStore";
 ﻿import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
@@ -14,7 +15,7 @@ import {
   ShoppingBag,
 } from "lucide-react";
 import CopyButton from "@/components/CopyButton";
-import { productApi, favoriteApi } from "@/api/catalog";
+import { productApi } from "@/api/catalog";
 import type { Product } from "@/types";
 
 interface AIEvalResult {
@@ -31,9 +32,9 @@ export default function ProductDetailPage() {
   const [product, setProduct] = useState<Product | null>(null);
   const [loadState, setLoadState] = useState<"loading" | "error" | "notfound" | "ok">("loading");
 
-  // 收藏状态
-  const [isFavorited, setIsFavorited] = useState(false);
-  const [favId, setFavId] = useState<number | null>(null);
+  // v1.88.4 收藏状态改由全局 favoriteStore 管理（与商品列表/首页/收藏中心同步）
+  const isFavorited = useFavoriteStore((s) => s.maps["product"]?.has(Number(id)) === true);
+  const ensureProductFavorites = useFavoriteStore((s) => s.ensureType);
   const [favLoading, setFavLoading] = useState(false);
 
   // AI 评测状态
@@ -53,11 +54,11 @@ export default function ProductDetailPage() {
   useEffect(() => {
     setLoadState("loading");
     setProduct(null);
-        setIsFavorited(false);
-    setFavId(null);
+    // v1.88.4 收藏状态未就绪由 store 兜底，无需单独重置
 
     if (id) {
       const prodId = Number(id);
+      ensureProductFavorites("product");
       try {
         const cached = sessionStorage.getItem(`ai_product_eval_${prodId}`);
         if (cached) {
@@ -75,34 +76,19 @@ export default function ProductDetailPage() {
           setLoadState("ok");
         })
         .catch(() => setLoadState("error"));
-
-      // 检查是否已收藏
-      favoriteApi
-        .list({ favorite_type: "product", object_id: prodId })
-        .then((items) => {
-          if (items && items.length > 0) {
-            setIsFavorited(true);
-            setFavId(items[0].id);
-          }
-        })
-        .catch(() => {});
     } else {
       setLoadState("notfound");
     }
-  }, [id]);
+  }, [id, ensureProductFavorites]);
 
   const toggleFavorite = async () => {
     if (!product || favLoading) return;
     setFavLoading(true);
     try {
-      const res = await favoriteApi.toggle(product.id, "product", `${product.brand} ${product.name}`);
-      const nextFav = res.data ? res.data.favorited : !isFavorited;
-      setIsFavorited(nextFav);
-      if (res.data?.id) {
-        setFavId(res.data.id);
-      } else if (!nextFav) {
-        setFavId(null);
-      }
+      // v1.88.4 走全局 store：乐观更新 + 与商品列表/首页/收藏中心实时同步
+      const nextFav = await useFavoriteStore
+        .getState()
+        .toggle(product.id, "product", `${product.brand} ${product.name}`);
       setProduct((prev) =>
         prev
           ? {
@@ -112,8 +98,8 @@ export default function ProductDetailPage() {
           : null
       );
       showToast(nextFav ? "已添加到收藏夹" : "已取消收藏");
-    } catch {
-      showToast("操作失败，请重试");
+    } catch (err: any) {
+      showToast(err?.message || "操作失败，请重试");
     } finally {
       setFavLoading(false);
     }

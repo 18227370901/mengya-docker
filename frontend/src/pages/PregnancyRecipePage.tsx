@@ -4,6 +4,9 @@ import { recipeApi } from "@/api/catalog";
 import { useAuthStore } from "@/store/authStore";
 import type { Recipe } from "@/types";
 import CopyButton from "@/components/CopyButton";
+import FavoriteButton from "@/components/FavoriteButton";
+import TopProgressBar from "@/components/ui/TopProgressBar";
+import PermissionDeniedCard from "@/components/PermissionDeniedCard";
 
 const PERIOD_TABS = [
   { key: "month_1_2", label: "孕1-2月", desc: "孕早期", short: "1-2月", weeks: "1-8周" },
@@ -47,6 +50,11 @@ export default function PregnancyRecipePage() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** v1.88.4 切Tab/筛选二次加载：保留旧内容 + 顶部进度条 */
+  const [refreshing, setRefreshing] = useState(false);
+  /** v1.88.5 页面访问被拒（菜单权限，code=4030）：整页提示卡 */
+  const [permDenied, setPermDenied] = useState<string | null>(null);
+  const hasLoadedRef = useRef(false);
 
   // 搜索防抖 300ms
   useEffect(() => {
@@ -80,7 +88,11 @@ export default function PregnancyRecipePage() {
 
   // 获取食谱列表
   useEffect(() => {
-    setLoading(true);
+    if (hasLoadedRef.current) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
     const params: { period_month: string; nutrient?: string; search?: string } = {
       period_month: activeTab,
     };
@@ -88,9 +100,22 @@ export default function PregnancyRecipePage() {
     if (debouncedSearch) params.search = debouncedSearch;
     recipeApi
       .list(params)
-      .then(setRecipes)
-      .catch(() => setRecipes([]))
-      .finally(() => setLoading(false));
+      .then((data) => {
+        setRecipes(data);
+        hasLoadedRef.current = true;
+      })
+      .catch((err: any) => {
+        // v1.88.5 菜单权限被拒：展示整页提示卡，不再静默空态
+        if (err?.code === 4030) {
+          setPermDenied(err?.message || "管理员已关闭本页面访问，如有需要请联系管理员开启。");
+        } else {
+          setRecipes([]);
+        }
+      })
+      .finally(() => {
+        setLoading(false);
+        setRefreshing(false);
+      });
   }, [activeTab, nutrientFilter, debouncedSearch]);
 
   const currentTabInfo = PERIOD_TABS.find((t) => t.key === activeTab);
@@ -109,6 +134,8 @@ export default function PregnancyRecipePage() {
 
   return (
     <div className="space-y-6">
+      {/* v1.88.4 切Tab/筛选二次加载顶部细进度条（保留旧内容不闪白） */}
+      {refreshing && <TopProgressBar />}
       {/* 标题 */}
       <div className="flex items-center justify-between">
         <div>
@@ -233,7 +260,10 @@ export default function PregnancyRecipePage() {
       )}
 
       {/* 食谱列表 */}
-      {loading ? (
+      {/* v1.88.5 菜单权限被拒：整页提示卡 */}
+      {permDenied ? (
+        <PermissionDeniedCard message={permDenied} />
+      ) : loading ? (
         <div className="py-20 text-center text-gray-400">加载中...</div>
       ) : recipes.length === 0 ? (
         <div className="card py-12 text-center text-sm text-gray-400">
@@ -262,11 +292,21 @@ export default function PregnancyRecipePage() {
                     </span>
                   )}
                 </div>
-                <ChevronDown
-                  className={`h-5 w-5 flex-shrink-0 text-gray-400 transition ${
-                    expandedId === recipe.id ? "rotate-180" : ""
-                  }`}
-                />
+                <div className="flex flex-shrink-0 items-center gap-1">
+                  {/* v1.88.1 收藏本菜品 */}
+                  <FavoriteButton
+                    objectId={recipe.id}
+                    favoriteType="recipe"
+                    note={recipe.title}
+                    variant="icon"
+                    size="sm"
+                  />
+                  <ChevronDown
+                    className={`h-5 w-5 flex-shrink-0 text-gray-400 transition ${
+                      expandedId === recipe.id ? "rotate-180" : ""
+                    }`}
+                  />
+                </div>
               </div>
 
               {/* 展开内容 */}

@@ -47,6 +47,8 @@ export interface PermissionItemMeta {
   key: string;
   name: string;
   desc: string;
+  /** v1.88.1 父权限键（组内层级缩进展示用；后端 PERMISSION_DEFINITIONS 提供） */
+  parent_key?: string | null;
 }
 
 export interface PermissionGroupMeta {

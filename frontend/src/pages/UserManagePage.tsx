@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft,
@@ -26,6 +26,7 @@ import {
 } from "lucide-react";
 import { authApi, type UserManageItem, type UserManageData, type PermissionGroupMeta } from "@/api/auth";
 import { useAuthStore } from "@/store/authStore";
+import PermissionTreeCard from "@/components/PermissionTreeCard";
 
 // 与后端 User.ROLE_CHOICES 对齐：mother/father/grandma/caregiver + admin(管理员)
 const ROLE_LABELS = [
@@ -64,11 +65,14 @@ const PERMISSION_PARENT_MAP: Record<string, string> = {
   baby_update: "baby_view",
   baby_delete: "baby_view",
 
-  // 商品库中心
+  // 商品库中心（v1.88.1 收藏已独立到「我的收藏中心」组）
   product_view: "menu_products",
-  product_favorite: "product_view",
-  product_unfavorite: "product_view",
   product_ai_evaluate: "product_view",
+
+  // v1.88.1 我的收藏中心：menu_favorites -> favorite_view -> [favorite_create, favorite_delete]
+  favorite_view: "menu_favorites",
+  favorite_create: "favorite_view",
+  favorite_delete: "favorite_view",
 
   // AI 助手
   ai_chat: "menu_ai_assistant",
@@ -115,6 +119,9 @@ const PERMISSION_KEY_NAMES: Record<string, string> = {
   ai_fetch_models: "拉取模型列表",
   menu_weather: "天气预报菜单",
   baby_view: "查看宝宝档案",
+  // v1.88.1 收藏中心（优先级低于运行时从 definitions 构建的名称表）
+  menu_favorites: "我的收藏菜单",
+  favorite_view: "查看收藏中心",
 };
 
 function applyPermissionChange(
@@ -185,6 +192,28 @@ export default function UserManagePage() {
   const [permissionsState, setPermissionsState] = useState<Record<string, boolean>>({});
   const [permsLoading, setPermsLoading] = useState(false);
   const [permsSaving, setPermsSaving] = useState(false);
+  // v1.88.2 分组独立保存：已保存到服务器的基线（其他分组未保存的草稿不随组提交）
+  const [savedPermissionsState, setSavedPermissionsState] = useState<Record<string, boolean>>({});
+  const [savedTargetUserPerms, setSavedTargetUserPerms] = useState<Record<string, boolean>>({});
+  const [savingGroupKey, setSavingGroupKey] = useState<string | null>(null);
+
+  /** v1.88.1 权限键 → 展示名（优先从 definitions 构建，兜底静态表）：权限树依赖徽标用 */
+  const permNameMap = useMemo(() => {
+    const m: Record<string, string> = { ...PERMISSION_KEY_NAMES };
+    for (const g of permDefinitions) {
+      for (const p of g.permissions) m[p.key] = p.name;
+    }
+    for (const g of targetUserDefs) {
+      for (const p of g.permissions) m[p.key] = p.name;
+    }
+    return m;
+  }, [permDefinitions, targetUserDefs]);
+
+  /** v1.88.1 系统全量权限项总数（管理员概览与用户弹窗计数用，替代旧硬编码 31） */
+  const permTotalCount = useMemo(
+    () => (permDefinitions.length ? permDefinitions : targetUserDefs).reduce((n, g) => n + g.permissions.length, 0),
+    [permDefinitions, targetUserDefs]
+  );
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(""), 2500); };
 
@@ -247,6 +276,8 @@ export default function UserManagePage() {
       const data = await authApi.adminPermissions();
       setPermDefinitions(data.definitions || []);
       setPermissionsState(data.default_permissions || {});
+      // v1.88.2 同步刷新已保存基线，供分组独立保存拼装 payload
+      setSavedPermissionsState(data.default_permissions || {});
     } catch {
       showToast("加载权限配置失败");
     } finally {
@@ -401,6 +432,8 @@ export default function UserManagePage() {
       const data = await authApi.getUserPermissions(u.id);
       setTargetUserDefs(data.definitions && data.definitions.length ? data.definitions : permDefinitions);
       setTargetUserPerms(data.effective_permissions || {});
+      // v1.88.2 同步记录已保存基线，供分组独立保存拼装 payload
+      setSavedTargetUserPerms(data.effective_permissions || {});
       setTargetUserHasCustom(data.has_custom || false);
     } catch {
       showToast("拉取该用户权限失败，使用默认定义");
@@ -417,6 +450,8 @@ export default function UserManagePage() {
     setTargetUserSaving(true);
     try {
       const res = await authApi.updateUserPermissions(targetUserModal.id, targetUserPerms);
+      // v1.88.2 全量保存成功后同步基线
+      setSavedTargetUserPerms(targetUserPerms);
       showToast(res.message || `已保存用户 ${targetUserModal.nickname || targetUserModal.username} 的权限配置`);
       setUsers((prev) =>
         prev.map((item) =>
@@ -431,6 +466,33 @@ export default function UserManagePage() {
       showToast(err.message || "保存用户权限失败，请重试");
     } finally {
       setTargetUserSaving(false);
+    }
+  };
+
+  // v1.88.2 指定用户分组独立保存：仅提交该用户本分组改动
+  const handleSaveTargetUserGroup = async (group: PermissionGroupMeta) => {
+    if (!targetUserModal || targetUserModal.is_staff) return;
+    setSavingGroupKey(group.group_key);
+    try {
+      let payload = { ...savedTargetUserPerms };
+      group.permissions.forEach((p) => {
+        payload = applyPermissionChange(payload, p.key, targetUserPerms[p.key] !== false);
+      });
+      const res = await authApi.updateUserPermissions(targetUserModal.id, payload);
+      setSavedTargetUserPerms(payload);
+      setUsers((prev) =>
+        prev.map((item) =>
+          item.id === targetUserModal.id
+            ? { ...item, custom_permissions: res.data?.custom_permissions || payload }
+            : item
+        )
+      );
+      setTargetUserHasCustom(true);
+      showToast(`已保存「${group.group_name}」分组，其他分组改动未提交`);
+    } catch (err: any) {
+      showToast(err.message || "保存分组权限失败，请重试");
+    } finally {
+      setSavingGroupKey(null);
     }
   };
 
@@ -551,11 +613,33 @@ export default function UserManagePage() {
     setPermsSaving(true);
     try {
       await authApi.updateAdminPermissions(permissionsState);
+      // v1.88.2 全量保存成功后同步基线，后续分组保存以此为底色
+      setSavedPermissionsState(permissionsState);
       showToast("普通用户功能与菜单权限配置已保存并全平台生效！");
     } catch {
       showToast("保存权限配置失败，请重试");
     } finally {
       setPermsSaving(false);
+    }
+  };
+
+  // v1.88.2 权限操作：分组独立保存 —— 仅提交本分组改动，其他分组未保存草稿不随组提交
+  const handleSavePermissionGroup = async (group: PermissionGroupMeta) => {
+    setSavingGroupKey(group.group_key);
+    try {
+      // 从已保存基线出发，逐项套用本组当前值（沿用递归联动，跨组依赖同步生效）
+      let payload = { ...savedPermissionsState };
+      group.permissions.forEach((p) => {
+        payload = applyPermissionChange(payload, p.key, permissionsState[p.key] !== false);
+      });
+      await authApi.updateAdminPermissions(payload);
+      // 仅更新基线，不动 UI 草稿：其他分组改动仍保留待单独保存
+      setSavedPermissionsState(payload);
+      showToast(`「${group.group_name}」分组权限已保存，其他分组改动未提交`);
+    } catch {
+      showToast("保存分组权限失败，请重试");
+    } finally {
+      setSavingGroupKey(null);
     }
   };
 
@@ -614,7 +698,7 @@ export default function UserManagePage() {
             onClick={() => setActiveTab("permissions")}
           >
             <Sliders className="h-4 w-4 text-brand-500" />
-            <span>全局默认权限模板 (31项)</span>
+            <span>全局默认权限模板 ({permTotalCount || Object.keys(permissionsState).length}项)</span>
           </button>
         </div>
       </div>
@@ -1198,103 +1282,21 @@ export default function UserManagePage() {
             </div>
           </div>
 
-          {/* 权限分组渲染 */}
+          {/* 权限分组渲染（v1.88.1 抽公共组件：支持搜索/折叠/层级缩进） */}
           {permsLoading ? (
             <div className="py-12 text-center text-gray-400">正在拉取权限定义与当前配置...</div>
           ) : (
-            <div className="space-y-4">
-              {permDefinitions.map((group) => {
-                const groupEnabledCount = group.permissions.filter((p) => permissionsState[p.key] !== false).length;
-                const isAllGroupEnabled = groupEnabledCount === group.permissions.length;
-
-                return (
-                  <div key={group.group_key} className="card space-y-3 p-4 border border-gray-100 shadow-2xs">
-                    {/* 分组标题与批量开关 */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-gray-100 pb-2.5">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-sm font-bold text-gray-800">{group.group_name}</h3>
-                          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-600">
-                            已启用 {groupEnabledCount} / {group.permissions.length}
-                          </span>
-                        </div>
-                        <p className="mt-0.5 text-xs text-gray-400">{group.description}</p>
-                      </div>
-
-                      <div className="flex items-center gap-2 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => handleToggleGroup(group, true)}
-                          className="rounded-md bg-gray-50 px-2 py-1 text-[11px] text-gray-600 hover:bg-brand-50 hover:text-brand-600 transition"
-                        >
-                          该组全开
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleToggleGroup(group, false)}
-                          className="rounded-md bg-gray-50 px-2 py-1 text-[11px] text-gray-600 hover:bg-red-50 hover:text-red-600 transition"
-                        >
-                          该组全关
-                        </button>
-                      </div>
-                    </div>
-
-                    {/* 分组内各项权限 */}
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
-                      {group.permissions.map((perm) => {
-                        const isEnabled = permissionsState[perm.key] !== false;
-                        return (
-                          <div
-                            key={perm.key}
-                            onClick={() => handleTogglePerm(perm.key)}
-                            className={`flex items-start justify-between gap-3 p-2.5 rounded-xl border transition cursor-pointer select-none ${
-                              isEnabled
-                                ? "bg-white border-orange-200/80 shadow-2xs hover:border-brand-300"
-                                : "bg-gray-50/80 border-gray-100 opacity-65 hover:opacity-100"
-                            }`}
-                          >
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="font-semibold text-xs text-gray-800">{perm.name}</span>
-                                <span className="font-mono text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">
-                                  {perm.key}
-                                </span>
-                                {PERMISSION_PARENT_MAP[perm.key] && (
-                                  <span className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded font-medium">
-                                    ↳ 依赖: {PERMISSION_KEY_NAMES[PERMISSION_PARENT_MAP[perm.key]] || PERMISSION_PARENT_MAP[perm.key]}
-                                  </span>
-                                )}
-                                {PERMISSION_CHILDREN_MAP[perm.key] && (
-                                  <span className="text-[10px] text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded font-medium">
-                                    含 {PERMISSION_CHILDREN_MAP[perm.key].length} 项子权限
-                                  </span>
-                                )}
-                              </div>
-                              <p className="mt-1 text-[11px] text-gray-400 line-clamp-2">{perm.desc}</p>
-                            </div>
-
-                            {/* 开关 UI */}
-                            <div className="relative inline-flex items-center shrink-0 mt-0.5">
-                              <div
-                                className={`w-9 h-5 rounded-full transition-colors duration-200 ease-in-out ${
-                                  isEnabled ? "bg-brand-500" : "bg-gray-300"
-                                }`}
-                              >
-                                <div
-                                  className={`w-4 h-4 bg-white rounded-full shadow-md transform transition-transform duration-200 ease-in-out mt-0.5 ml-0.5 ${
-                                    isEnabled ? "translate-x-4" : "translate-x-0"
-                                  }`}
-                                />
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+            <PermissionTreeCard
+              defs={permDefinitions}
+              state={permissionsState}
+              onTogglePerm={handleTogglePerm}
+              onToggleGroup={handleToggleGroup}
+              nameMap={permNameMap}
+              parentMap={PERMISSION_PARENT_MAP}
+              childrenMap={PERMISSION_CHILDREN_MAP}
+              onGroupSave={handleSavePermissionGroup}
+              savingGroupKey={savingGroupKey}
+            />
           )}
         </div>
       )}
@@ -1363,7 +1365,9 @@ export default function UserManagePage() {
                   </div>
 
                   <div className="space-y-3">
-                    <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">系统全量 31 项权限状态（全部有效）</h3>
+                    <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+                      系统全量 {permTotalCount} 项权限状态（全部有效）
+                    </h3>
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       {(targetUserDefs.length ? targetUserDefs : permDefinitions).flatMap((g) => g.permissions).map((p) => (
                         <div key={p.key} className="flex items-center justify-between p-2.5 rounded-lg border border-purple-100 bg-purple-50/30 text-xs">
@@ -1432,105 +1436,26 @@ export default function UserManagePage() {
                       <strong className="text-brand-600 ml-1">
                         {Object.values(targetUserPerms).filter(Boolean).length}
                       </strong>
-                      / {Object.keys(targetUserPerms).length || 31} 项
+                      / {Object.keys(targetUserPerms).length || permTotalCount} 项
                     </div>
                   </div>
 
-                  {/* 分组列表 */}
+                  {/* 分组列表（v1.88.1 抽公共组件：搜索/折叠/层级缩进） */}
                   {targetUserLoading ? (
                     <div className="py-8 text-center text-gray-400 text-xs">正在拉取该用户最新权限...</div>
                   ) : (
-                    <div className="space-y-4">
-                      {(targetUserDefs.length ? targetUserDefs : permDefinitions).map((group) => {
-                        const groupEnabledCount = group.permissions.filter((p) => targetUserPerms[p.key] !== false).length;
-                        return (
-                          <div key={group.group_key} className="rounded-xl border border-gray-100 bg-gray-50/40 p-3.5 space-y-2.5">
-                            {/* 分组头部 */}
-                            <div className="flex items-center justify-between border-b border-gray-100 pb-2">
-                              <div>
-                                <div className="flex items-center gap-2">
-                                  <h4 className="text-xs font-bold text-gray-800">{group.group_name}</h4>
-                                  <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-medium text-gray-500 border border-gray-200">
-                                    已开 {groupEnabledCount} / {group.permissions.length}
-                                  </span>
-                                </div>
-                                <p className="text-[11px] text-gray-400 mt-0.5">{group.description}</p>
-                              </div>
-
-                              <div className="flex items-center gap-1.5 shrink-0 text-xs">
-                                <button
-                                  type="button"
-                                  onClick={() => handleToggleTargetUserGroup(group, true)}
-                                  className="rounded px-2 py-0.5 text-[11px] text-gray-600 hover:bg-brand-50 hover:text-brand-600 transition"
-                                >
-                                  全开
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleToggleTargetUserGroup(group, false)}
-                                  className="rounded px-2 py-0.5 text-[11px] text-gray-600 hover:bg-red-50 hover:text-red-600 transition"
-                                >
-                                  全关
-                                </button>
-                              </div>
-                            </div>
-
-                            {/* 权限项 */}
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                              {group.permissions.map((perm) => {
-                                const isEnabled = targetUserPerms[perm.key] !== false;
-                                return (
-                                  <div
-                                    key={perm.key}
-                                    onClick={() => handleToggleTargetUserPerm(perm.key)}
-                                    className={`flex items-start justify-between gap-2.5 p-2 rounded-lg border transition cursor-pointer select-none ${
-                                      isEnabled
-                                        ? "bg-white border-orange-200/90 shadow-2xs hover:border-brand-300"
-                                        : "bg-white/60 border-gray-200 opacity-60 hover:opacity-100"
-                                    }`}
-                                  >
-                                    <div className="flex-1 min-w-0">
-                                      <div className="flex items-center gap-1.5 flex-wrap">
-                                        <span className="font-semibold text-xs text-gray-800">{perm.name}</span>
-                                        <span className="font-mono text-[9px] text-gray-400 bg-gray-100 px-1 py-0.2 rounded">
-                                          {perm.key}
-                                        </span>
-                                        {PERMISSION_PARENT_MAP[perm.key] && (
-                                          <span className="text-[9px] text-amber-700 bg-amber-50 border border-amber-200 px-1 py-0.2 rounded font-medium">
-                                            ↳ 依赖: {PERMISSION_KEY_NAMES[PERMISSION_PARENT_MAP[perm.key]] || PERMISSION_PARENT_MAP[perm.key]}
-                                          </span>
-                                        )}
-                                        {PERMISSION_CHILDREN_MAP[perm.key] && (
-                                          <span className="text-[9px] text-blue-700 bg-blue-50 border border-blue-200 px-1 py-0.2 rounded font-medium">
-                                            含 {PERMISSION_CHILDREN_MAP[perm.key].length} 项子权限
-                                          </span>
-                                        )}
-                                      </div>
-                                      <p className="mt-0.5 text-[10px] text-gray-400 line-clamp-1">{perm.desc}</p>
-                                    </div>
-
-                                    {/* 模拟开关 */}
-                                    <div className="relative inline-flex items-center shrink-0 mt-0.5">
-                                      <div
-                                        className={`w-8 h-4.5 rounded-full transition-colors duration-200 ease-in-out ${
-                                          isEnabled ? "bg-brand-500" : "bg-gray-300"
-                                        }`}
-                                      >
-                                        <div
-                                          className={`w-3.5 h-3.5 bg-white rounded-full shadow-sm transform transition-transform duration-200 ease-in-out mt-0.5 ml-0.5 ${
-                                            isEnabled ? "translate-x-3.5" : "translate-x-0"
-                                          }`}
-                                        />
-                                      </div>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
+                    <PermissionTreeCard
+                      defs={targetUserDefs.length ? targetUserDefs : permDefinitions}
+                      state={targetUserPerms}
+                      onTogglePerm={handleToggleTargetUserPerm}
+                      onToggleGroup={handleToggleTargetUserGroup}
+                      nameMap={permNameMap}
+                      parentMap={PERMISSION_PARENT_MAP}
+                      childrenMap={PERMISSION_CHILDREN_MAP}
+                      onGroupSave={handleSaveTargetUserGroup}
+                      savingGroupKey={savingGroupKey}
+                      compact
+                    />
                   )}
                 </div>
               )}

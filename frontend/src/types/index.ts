@@ -85,6 +85,8 @@ export interface BrandProfile {
   official_url?: string;
   founded_year?: number;
   parent_company?: string;
+  is_active?: boolean;
+  view_count?: number;
 }
 
 export interface Product {
@@ -149,6 +151,7 @@ export interface TimelineItem {
   tips?: string;
   cover_image?: string;
   is_essential: boolean;
+  sort_order?: number;
   view_count?: number;
   products: Product[];
 }
@@ -368,6 +371,7 @@ export interface Recipe {
   nutrition_tip: string;
   cover_image?: string;
   sort_order: number;
+  is_active?: boolean;
   view_count: number;
   created_at: string;
 }
@@ -390,6 +394,7 @@ export interface FetalStory {
   source?: string;
   source_en?: string;
   sort_order: number;
+  is_active?: boolean;
   view_count: number;
   created_at: string;
 }
@@ -407,15 +412,41 @@ export interface KidsEncyclopedia {
   comic_dialogue: string;
   cover_image?: string;
   sort_order: number;
+  is_active?: boolean;
   view_count: number;
   created_at: string;
 }
+
+export interface KnowledgeResetStats {
+  module: string;
+  label: string;
+  current: number;
+  builtin: number;
+}
+
+export interface KnowledgePagedResponse<T> {
+  items: T[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+  stats?: Record<string, number>;
+}
+
 export interface FavoriteItem {
   id: number;
   favorite_type: string;
+  /** v1.88.1 收藏类型中文名（后端序列化：商品/孕育知识/胎教故事/孕期食谱/幼儿百科/清单/对比） */
+  type_label?: string;
   object_id: number;
   note: string;
   created_at: string;
+  /** v1.88.1 收藏对象真实标题（后端按类型反查，非商品类型也显示标题） */
+  title?: string;
+  /** v1.88.1 收藏对象封面图（存在时） */
+  cover_image?: string;
+  /** v1.88 收藏有效性：管理员删除/恢复出厂后对象可能失效，前端提示用户自行处理 */
+  valid?: boolean;
   product?: {
     id: number;
     name: string;

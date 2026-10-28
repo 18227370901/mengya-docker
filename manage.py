@@ -1,7 +1,20 @@
 #!/usr/bin/env python
-"""Django 管理脚本入口"""
+"""Django 管理脚本入口（支持 .venv 自动探测与无缝委托）"""
 import os
 import sys
+from pathlib import Path
+
+# 自动自愈：若当前 Python 解释器非本工程 .venv，且工程内存在 .venv，自动透明委托执行
+_base_dir = Path(__file__).resolve().parent
+_venv_python = (
+    _base_dir / ".venv" / "Scripts" / "python.exe"
+    if os.name == "nt"
+    else _base_dir / ".venv" / "bin" / "python"
+)
+if _venv_python.is_file() and Path(sys.executable).resolve() != _venv_python.resolve():
+    import subprocess
+    _res = subprocess.run([str(_venv_python), str(Path(__file__).resolve())] + sys.argv[1:])
+    sys.exit(_res.returncode)
 
 try:
     import certifi

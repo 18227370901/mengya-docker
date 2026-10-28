@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ArrowLeft, Edit3 } from "lucide-react";
 import CopyButton from "@/components/CopyButton";
+import FavoriteButton from "@/components/FavoriteButton";
 import { timelineApi } from "@/api/catalog";
 import { useAuthStore } from "@/store/authStore";
 import type { TimelineItem } from "@/types";
@@ -64,14 +65,23 @@ export default function TimelineDetailPage() {
         <Link to="/timeline" className="flex items-center text-sm text-brand-500 hover:underline">
           <ArrowLeft className="mr-1 h-4 w-4" /> 返回时间轴
         </Link>
-        {user?.is_staff && item && (
-          <button
-            className="flex items-center gap-1 rounded-xl bg-brand-50 px-3 py-1.5 text-sm text-brand-600 hover:bg-brand-100"
-            onClick={() => navigate(`/timeline?edit=${item.id}`)}
-          >
-            <Edit3 className="h-4 w-4" /> 编辑此事件
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {/* v1.88.1 收藏本文（时间轴详情页） */}
+          <FavoriteButton
+            objectId={item.id}
+            favoriteType="timeline"
+            note={item.title}
+            variant="pill"
+          />
+          {user?.is_staff && (
+            <button
+              className="flex items-center gap-1 rounded-xl bg-brand-50 px-3 py-1.5 text-sm text-brand-600 hover:bg-brand-100"
+              onClick={() => navigate(`/timeline?edit=${item.id}`)}
+            >
+              <Edit3 className="h-4 w-4" /> 编辑此事件
+            </button>
+          )}
+        </div>
       </div>
 
       <article className="card">

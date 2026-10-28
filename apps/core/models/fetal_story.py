@@ -43,6 +43,8 @@ class FetalStory(models.Model):
 
     sort_order = models.IntegerField(default=0, verbose_name="排序权重")
     view_count = models.IntegerField(default=0, verbose_name="阅读次数")
+    # v1.88 知识库管理：启用状态（管理员可临时停用某个故事，普通用户不可见）
+    is_active = models.BooleanField(default=True, verbose_name="是否启用")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
 
     class Meta:

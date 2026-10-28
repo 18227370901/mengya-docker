@@ -3,6 +3,12 @@ import { Link, useSearchParams } from "react-router-dom";
 import { Download, Edit3, Plus, Trash2, Upload, X } from "lucide-react";
 import { timelineApi } from "@/api/catalog";
 import { useAuthStore } from "@/store/authStore";
+import CsvImportResultModal from "@/components/CsvImportResultModal";
+import FavoriteButton from "@/components/FavoriteButton";
+import PermissionDeniedCard from "@/components/PermissionDeniedCard";
+import LightPagination from "@/components/ui/LightPagination";
+import TopProgressBar from "@/components/ui/TopProgressBar";
+import { downloadBlob } from "@/utils/download";
 import type { TimelineItem } from "@/types";
 
 const STAGE_TABS = [
@@ -74,15 +80,48 @@ const EMPTY_FORM: EditForm = {
   sort_order: 0,
 };
 
+const PAGE_SIZE_STORAGE_KEY = "mengya_timeline_page_size";
+const TIMELINE_SIZE_OPTIONS = [
+  { value: 12, label: "12 条/页" },
+  { value: 24, label: "24 条/页" },
+  { value: 48, label: "48 条/页" },
+  { value: -1, label: "全部" },
+];
+
 export default function TimelinePage() {
   const { user } = useAuthStore();
   const [items, setItems] = useState<TimelineItem[]>([]);
   const [stage, setStage] = useState("");
   const [category, setCategory] = useState("");
   const [loading, setLoading] = useState(true);
+  /** v1.88.4 二次加载（筛选/翻页）：保留旧内容 + 顶部进度条，不整页闪白 */
+  const [refreshing, setRefreshing] = useState(false);
+  const hasLoadedRef = useRef(false);
+  /** v1.88.4 分页：默认 12 条/页（3列×0行），支持 12/24/48/全部，记忆用户选择 */
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSizeState] = useState<number>(() => {
+    try {
+      const saved = Number(localStorage.getItem(PAGE_SIZE_STORAGE_KEY));
+      return TIMELINE_SIZE_OPTIONS.some((o) => o.value === saved) ? saved : 12;
+    } catch {
+      return 12;
+    }
+  });
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
   const [toast, setToast] = useState("");
+  /** v1.88.5 页面访问被拒（菜单权限，code=4030）：显示无权限提示卡而非误导性空态 */
+  const [permDenied, setPermDenied] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
+  /** v1.88.2 导入结果明细弹窗（v1.88.3 接口级错误也常驻弹窗） */
+  const [importResult, setImportResult] = useState<{
+    kind: "result" | "error";
+    title?: string;
+    created?: number;
+    errors?: string[];
+    message?: string;
+  } | null>(null);
 
   // 编辑弹窗状态
   const [searchParams] = useSearchParams();
@@ -92,16 +131,49 @@ export default function TimelinePage() {
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(""), 2500); };
 
-  const fetchItems = () => {
-    setLoading(true);
+  /**
+   * v1.88.4 服务端分页拉取：首次加载整页 loading，此后一切刷新保留旧内容 + 顶部进度条；
+   * pageSize=-1 为后端约定的“全部”语义（不分页返回全量，响应结构一致）。
+   */
+  const fetchItems = useCallback(() => {
+    if (hasLoadedRef.current) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
     timelineApi
-      .list({ stage: stage || undefined, category: category || undefined })
-      .then(setItems)
-      .catch(() => setItems([]))
-      .finally(() => setLoading(false));
-  };
+      .listPaged({
+        stage: stage || undefined,
+        category: category || undefined,
+        page,
+        page_size: pageSize,
+      })
+      .then((res) => {
+        setItems(res.items);
+        setTotal(res.total);
+        setTotalPages(res.total_pages);
+        hasLoadedRef.current = true;
+      })
+      .catch((err: any) => {
+        // v1.88.5 菜单权限被拒：展示整页提示卡，不再静默空态
+        if (err?.code === 4030) {
+          setPermDenied(err?.message || "管理员已关闭本页面访问，如有需要请联系管理员开启。"
+          );
+        }
+      })
+      .finally(() => {
+        setLoading(false);
+        setRefreshing(false);
+      });
+  }, [stage, category, page, pageSize]);
 
-  useEffect(() => { fetchItems(); }, [stage, category]);
+  useEffect(() => { fetchItems(); }, [fetchItems]);
+
+  const handlePageSizeChange = (s: number) => {
+    setPageSizeState(s);
+    try { localStorage.setItem(PAGE_SIZE_STORAGE_KEY, String(s)); } catch { /* ignore */ }
+    setPage(1);
+  };
 
   // 从详情页跳转过来时自动打开编辑弹窗
   useEffect(() => {
@@ -115,13 +187,9 @@ export default function TimelinePage() {
 
   const handleExport = async () => {
     try {
-      const blob = await timelineApi.exportCsv();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "timeline_export.csv";
-      a.click();
-      URL.revokeObjectURL(url);
+      // v1.88.1 导出接口改 POST + scope：快捷入口导出当前筛选结果全部（含管理员停用数据）
+      const blob = await timelineApi.exportCsv({ scope: "filtered", with_inactive: 1 });
+      downloadBlob(blob, "timeline_export.csv");
       showToast("导出成功");
     } catch { showToast("导出失败"); }
   };
@@ -130,10 +198,18 @@ export default function TimelinePage() {
     setImporting(true);
     try {
       const res = await timelineApi.importCsv(file);
-      showToast(res.message || `导入完成：成功 ${res.data.created} 条`);
+      // v1.88.2：有失败行时弹窗展示逐行原因（含真实文件行号），便于修正后重导
+      const errs = res?.data?.errors || [];
+      if (errs.length > 0) {
+        setImportResult({ kind: "result", created: res?.data?.created ?? 0, errors: errs });
+      } else {
+        showToast(res?.message || `导入成功：${res?.data?.created ?? 0} 条`);
+      }
       fetchItems();
     } catch (err) {
-      showToast(err instanceof Error ? err.message : "导入失败");
+      // v1.88.3：接口级错误同样常驻弹窗，等待用户手动点击「知道了」关闭
+      const msg = err instanceof Error ? err.message : "导入失败，请重试";
+      setImportResult({ kind: "error", title: "导入失败", message: msg });
     } finally {
       setImporting(false);
       if (importInputRef.current) importInputRef.current.value = "";
@@ -142,13 +218,8 @@ export default function TimelinePage() {
 
   const handleDownloadTemplate = async () => {
     try {
-      const blob = await timelineApi.importTemplate();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "timeline_import_template.csv";
-      a.click();
-      URL.revokeObjectURL(url);
+      const blob = await timelineApi.importTemplate("cn");
+      downloadBlob(blob, "timeline_import_template_cn.csv");
       showToast("模板已下载");
     } catch { showToast("下载失败"); }
   };
@@ -203,12 +274,15 @@ export default function TimelinePage() {
       if (editForm.id) {
         await timelineApi.update(editForm.id, payload);
         showToast("更新成功");
+        // v1.88.4 乐观更新：编辑可能改变筛选归属字段，静默刷新当前页（保留旧内容不闪白）
+        fetchItems();
       } else {
         await timelineApi.create(payload);
         showToast("创建成功");
+        // 新条目排序位置不定：静默刷新当前页（保留旧内容）
+        fetchItems();
       }
       setEditing(false);
-      fetchItems();
     } catch {
       showToast("保存失败");
     } finally {
@@ -221,7 +295,20 @@ export default function TimelinePage() {
     try {
       await timelineApi.remove(item.id);
       showToast("删除成功");
-      fetchItems();
+      // v1.88.4 乐观更新：本地移除，不重拉全量
+      const remaining = items.filter((i) => i.id !== item.id);
+      const newTotal = Math.max(0, total - 1);
+      if (remaining.length === 0 && page > 1) {
+        // 当前页被删空：回退上一页拉取（保留旧内容中最后一屏前的进度条体验）
+        setPage(page - 1);
+        setTotal(newTotal);
+        return;
+      }
+      setItems(remaining);
+      setTotal(newTotal);
+      if (pageSize > 0) {
+        setTotalPages(Math.max(1, Math.ceil(newTotal / pageSize)));
+      }
     } catch {
       showToast("删除失败");
     }
@@ -229,6 +316,8 @@ export default function TimelinePage() {
 
   return (
     <div className="space-y-5">
+      {/* v1.88.4 二次加载顶部细进度条（保留旧内容不闪白） */}
+      {refreshing && <TopProgressBar />}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">时间轴知识库</h1>
@@ -279,7 +368,7 @@ export default function TimelinePage() {
       <div className="card flex flex-wrap items-center gap-3 p-4">
         <div className="flex flex-1 items-center gap-2">
           <label className="label mb-0 whitespace-nowrap">阶段</label>
-          <select className="input flex-1" value={stage} onChange={(e) => setStage(e.target.value)}>
+          <select className="input flex-1" value={stage} onChange={(e) => { setStage(e.target.value); setPage(1); }}>
             {STAGE_TABS.map((t) => (
               <option key={t.key} value={t.key}>{t.label}</option>
             ))}
@@ -287,7 +376,7 @@ export default function TimelinePage() {
         </div>
         <div className="flex flex-1 items-center gap-2">
           <label className="label mb-0 whitespace-nowrap">分类</label>
-          <select className="input flex-1" value={category} onChange={(e) => setCategory(e.target.value)}>
+          <select className="input flex-1" value={category} onChange={(e) => { setCategory(e.target.value); setPage(1); }}>
             {CATEGORIES.map((c) => (
               <option key={c.key} value={c.key}>{c.label}</option>
             ))}
@@ -295,13 +384,21 @@ export default function TimelinePage() {
         </div>
       </div>
 
-      {/* 卡片列表 */}
-      {loading ? (
+      {/* v1.88.5 菜单权限被拒：整页提示卡 */}
+      {permDenied && <PermissionDeniedCard message={permDenied} />}
+
+      {/* 卡片列表：首次整页 loading；此后筛选/翻页保留旧内容（顶部进度条提示） */}
+      {!permDenied && (loading ? (
         <p className="py-10 text-center text-gray-400">加载中…</p>
       ) : (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {items.map((item) => (
-            <div key={item.id} className="card hover:shadow-md transition">
+        <div className="space-y-3">
+          <div className={`grid gap-4 md:grid-cols-2 lg:grid-cols-3 ${refreshing ? "opacity-60" : ""}`}>
+            {items.map((item) => (
+            <div key={item.id} className="card relative hover:shadow-md transition">
+              {/* v1.88.2 列表卡片直接提供收藏按钮，无需点进详情 */}
+              <div className="absolute right-3 top-3 z-10">
+                <FavoriteButton objectId={item.id} favoriteType="timeline" note={item.title} />
+              </div>
               <Link to={`/timeline/${item.id}`}>
                 <div className="mb-2 flex items-center gap-2">
                   <span className="tag">{item.stage_label} {item.stage_value}</span>
@@ -335,8 +432,20 @@ export default function TimelinePage() {
           {!loading && items.length === 0 && (
             <p className="col-span-full py-10 text-center text-gray-400">该阶段暂无内容</p>
           )}
+          </div>
+          {/* v1.88.4 分页条：页码 + 每页条数（12/24/48/全部，选择记忆在 localStorage） */}
+          <LightPagination
+            page={page}
+            totalPages={totalPages}
+            total={total}
+            pageSize={pageSize}
+            sizeOptions={TIMELINE_SIZE_OPTIONS}
+            onPageChange={setPage}
+            onPageSizeChange={handlePageSizeChange}
+            unitLabel="条"
+          />
         </div>
-      )}
+      ))}
 
       {/* 编辑弹窗 */}
       {editing && (
@@ -457,6 +566,19 @@ export default function TimelinePage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* v1.88.2 导入结果明细弹窗（v1.88.3 支持接口错误常驻模式） */}
+      {importResult && (
+        <CsvImportResultModal
+          open={!!importResult}
+          kind={importResult.kind}
+          title={importResult.title}
+          created={importResult.created}
+          errors={importResult.errors}
+          message={importResult.message}
+          onClose={() => setImportResult(null)}
+        />
       )}
 
       {toast && (

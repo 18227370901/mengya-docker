@@ -2,7 +2,7 @@ import { useAuthStore } from "./store/authStore";
 import { ShieldAlert, Home } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
-function PermissionGuard({ perm, children }: { perm: string; children: React.ReactNode }) {
+function PermissionGuard({ perm, label, children }: { perm: string; label?: string; children: React.ReactNode }) {
   const { user, loading, hasPermission } = useAuthStore();
   const navigate = useNavigate();
 
@@ -21,14 +21,18 @@ function PermissionGuard({ perm, children }: { perm: string; children: React.Rea
 
   if (!hasPermission(perm)) {
     const canGoHome = hasPermission("menu_home");
+    // v1.88.5 提示词统一：与后端 4030 文案同句式，带具体页名（无 label 时用通用文案）
+    const tip = label
+      ? `管理员已关闭「${label}」页面访问，如有需要请联系管理员开启。`
+      : "管理员已关闭您的该页面菜单或功能访问权限，如需使用请联系管理员开通。";
     return (
       <div className="card my-12 mx-auto max-w-md space-y-4 py-12 text-center">
         <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-amber-50 text-amber-500">
           <ShieldAlert className="h-7 w-7" />
         </div>
         <div>
-          <h2 className="text-lg font-bold text-gray-800">暂无该功能访问权限</h2>
-          <p className="mt-1 text-xs text-gray-400">管理员已关闭您的该页面菜单或功能访问权限，如需使用请联系管理员开通。</p>
+          <h2 className="text-lg font-bold text-gray-800">无法访问本页面</h2>
+          <p className="mt-1 text-xs text-gray-400">{tip}</p>
         </div>
         <button
           className="btn-primary inline-flex items-center gap-1.5"
@@ -42,7 +46,7 @@ function PermissionGuard({ perm, children }: { perm: string; children: React.Rea
   return <>{children}</>;
 }
 
-function AdminGuard({ perm, children }: { perm?: string; children: React.ReactNode }) {
+function AdminGuard({ perm, perms, children }: { perm?: string; perms?: string[]; children: React.ReactNode }) {
   const { user, loading, hasPermission } = useAuthStore();
   const navigate = useNavigate();
 
@@ -59,8 +63,12 @@ function AdminGuard({ perm, children }: { perm?: string; children: React.ReactNo
     return null;
   }
 
-  // 管理员或拥有指定管理菜单权限的用户放行
-  if (user.is_staff || (perm && hasPermission(perm))) {
+  // 管理员或拥有任一指定管理菜单权限的用户放行（v1.88 支持 perms 多权限任一命中）
+  const allowed =
+    user.is_staff ||
+    (perm && hasPermission(perm)) ||
+    (perms && perms.length > 0 && perms.some((p) => hasPermission(p)));
+  if (allowed) {
     return <>{children}</>;
   }
 
@@ -110,6 +118,7 @@ import AuditLogPage from "./pages/AuditLogPage";
 import DailyTipsManagePage from "./pages/DailyTipsManagePage";
 import AdminServiceConfigPage from "./pages/AdminServiceConfigPage";
 import AdminBackupPage from "./pages/AdminBackupPage";
+import KnowledgeAdminPage from "./pages/KnowledgeAdminPage";
 import BrandListPage from "./pages/BrandListPage";
 import BrandDetailPage from "./pages/BrandDetailPage";
 import PregnancyWeeklyPage from "./pages/PregnancyWeeklyPage";
@@ -132,22 +141,22 @@ export default function App() {
           </RequireAuth>
         }
       >
-        <Route path="/" element={<PermissionGuard perm="menu_home"><HomePage /></PermissionGuard>} />
-        <Route path="/timeline" element={<PermissionGuard perm="menu_timeline"><TimelinePage /></PermissionGuard>} />
-        <Route path="/weekly" element={<PermissionGuard perm="menu_timeline"><PregnancyWeeklyPage /></PermissionGuard>} />
-        <Route path="/recipes" element={<PermissionGuard perm="menu_recipes"><PregnancyRecipePage /></PermissionGuard>} />
-        <Route path="/kids-encyclopedia" element={<PermissionGuard perm="menu_encyclopedia"><KidsEncyclopediaPage /></PermissionGuard>} />
-        <Route path="/timeline/:id" element={<PermissionGuard perm="menu_timeline"><TimelineDetailPage /></PermissionGuard>} />
-        <Route path="/products" element={<PermissionGuard perm="menu_products"><ProductListPage /></PermissionGuard>} />
-        <Route path="/products/:id" element={<PermissionGuard perm="menu_products"><ProductDetailPage /></PermissionGuard>} />
-        <Route path="/compare" element={<PermissionGuard perm="menu_products"><ComparePage /></PermissionGuard>} />
-        <Route path="/shopping-list" element={<PermissionGuard perm="menu_shopping_list"><ShoppingListPage /></PermissionGuard>} />
-        <Route path="/shopping-list/generate" element={<PermissionGuard perm="shopping_list_create"><GenerateShoppingListPage /></PermissionGuard>} />
-        <Route path="/shopping-list/ref/:id" element={<PermissionGuard perm="menu_shopping_list"><BabyShoppingDetailPage /></PermissionGuard>} />
-        <Route path="/shopping-list/:id" element={<PermissionGuard perm="menu_shopping_list"><ShoppingListDetailPage /></PermissionGuard>} />
-        <Route path="/health" element={<PermissionGuard perm="menu_health"><HealthPage /></PermissionGuard>} />
-        <Route path="/ai-assistant" element={<PermissionGuard perm="menu_ai_assistant"><AIAssistantPage /></PermissionGuard>} />
-        <Route path="/weather" element={<PermissionGuard perm="menu_weather"><WeatherPage /></PermissionGuard>} />
+        <Route path="/" element={<PermissionGuard perm="menu_home" label="首页"><HomePage /></PermissionGuard>} />
+        <Route path="/timeline" element={<PermissionGuard perm="menu_timeline" label="时间轴"><TimelinePage /></PermissionGuard>} />
+        <Route path="/weekly" element={<PermissionGuard perm="menu_timeline" label="孕期周历"><PregnancyWeeklyPage /></PermissionGuard>} />
+        <Route path="/recipes" element={<PermissionGuard perm="menu_recipes" label="孕期食谱"><PregnancyRecipePage /></PermissionGuard>} />
+        <Route path="/kids-encyclopedia" element={<PermissionGuard perm="menu_encyclopedia" label="幼儿百科"><KidsEncyclopediaPage /></PermissionGuard>} />
+        <Route path="/timeline/:id" element={<PermissionGuard perm="menu_timeline" label="时间轴"><TimelineDetailPage /></PermissionGuard>} />
+        <Route path="/products" element={<PermissionGuard perm="menu_products" label="商品库"><ProductListPage /></PermissionGuard>} />
+        <Route path="/products/:id" element={<PermissionGuard perm="menu_products" label="商品详情"><ProductDetailPage /></PermissionGuard>} />
+        <Route path="/compare" element={<PermissionGuard perm="menu_products" label="商品对比"><ComparePage /></PermissionGuard>} />
+        <Route path="/shopping-list" element={<PermissionGuard perm="menu_shopping_list" label="待产包清单"><ShoppingListPage /></PermissionGuard>} />
+        <Route path="/shopping-list/generate" element={<PermissionGuard perm="shopping_list_create" label="智能待产包"><GenerateShoppingListPage /></PermissionGuard>} />
+        <Route path="/shopping-list/ref/:id" element={<PermissionGuard perm="menu_shopping_list" label="待产包预置"><BabyShoppingDetailPage /></PermissionGuard>} />
+        <Route path="/shopping-list/:id" element={<PermissionGuard perm="menu_shopping_list" label="待产包清单"><ShoppingListDetailPage /></PermissionGuard>} />
+        <Route path="/health" element={<PermissionGuard perm="menu_health" label="健康中心"><HealthPage /></PermissionGuard>} />
+        <Route path="/ai-assistant" element={<PermissionGuard perm="menu_ai_assistant" label="AI 助手"><AIAssistantPage /></PermissionGuard>} />
+        <Route path="/weather" element={<PermissionGuard perm="menu_weather" label="天气"><WeatherPage /></PermissionGuard>} />
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/settings/ai" element={<AIConfigPage />} />
         <Route path="/admin/registration" element={<AdminGuard perm="menu_admin_registration"><RegistrationManagePage /></AdminGuard>} />
@@ -155,13 +164,29 @@ export default function App() {
         <Route path="/admin/users" element={<AdminGuard perm="menu_admin_users"><UserManagePage /></AdminGuard>} />
         <Route path="/admin/audit-logs" element={<AdminGuard perm="menu_admin_audit_logs"><AuditLogPage /></AdminGuard>} />
         <Route path="/admin/daily-tips" element={<AdminGuard perm="menu_admin_daily_tips"><DailyTipsManagePage /></AdminGuard>} />
+        <Route
+          path="/admin/knowledge-base"
+          element={
+            <AdminGuard
+              perms={[
+                "menu_admin_kb_timeline",
+                "menu_admin_kb_stories",
+                "menu_admin_kb_recipes",
+                "menu_admin_kb_encyclopedia",
+                "menu_admin_kb_shopping",
+              ]}
+            >
+              <KnowledgeAdminPage />
+            </AdminGuard>
+          }
+        />
         <Route path="/admin/service-config" element={<AdminGuard perm="menu_admin_service_config"><AdminServiceConfigPage /></AdminGuard>} />
         <Route path="/admin/backups" element={<AdminGuard perm="menu_admin_backups"><AdminBackupPage /></AdminGuard>} />
         <Route path="/brands" element={<BrandListPage />} />
         <Route path="/brands/:id" element={<BrandDetailPage />} />
-        <Route path="/fetal-stories" element={<PermissionGuard perm="menu_fetal_stories"><FetalStoryPage /></PermissionGuard>} />
-        <Route path="/notifications" element={<PermissionGuard perm="menu_notifications"><NotificationPage /></PermissionGuard>} />
-        <Route path="/favorites" element={<PermissionGuard perm="menu_favorites"><FavoritePage /></PermissionGuard>} />
+        <Route path="/fetal-stories" element={<PermissionGuard perm="menu_fetal_stories" label="胎教故事"><FetalStoryPage /></PermissionGuard>} />
+        <Route path="/notifications" element={<PermissionGuard perm="menu_notifications" label="消息通知"><NotificationPage /></PermissionGuard>} />
+        <Route path="/favorites" element={<PermissionGuard perm="menu_favorites" label="我的收藏"><FavoritePage /></PermissionGuard>} />
       </Route>
       <Route path="*" element={<NotFoundPage />} />
     </Routes>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   ChevronLeft,
@@ -15,6 +15,9 @@ import { timelineApi } from "@/api/catalog";
 import { useAuthStore } from "@/store/authStore";
 import type { TimelineItem } from "@/types";
 import CopyButton from "@/components/CopyButton";
+import FavoriteButton from "@/components/FavoriteButton";
+import TopProgressBar from "@/components/ui/TopProgressBar";
+import PermissionDeniedCard from "@/components/PermissionDeniedCard";
 
 const TOTAL_WEEKS = 40;
 
@@ -67,6 +70,11 @@ export default function PregnancyWeeklyPage() {
   const [selectedWeek, setSelectedWeek] = useState<number>(1);
   const [items, setItems] = useState<TimelineItem[]>([]);
   const [loading, setLoading] = useState(true);
+  /** v1.88.4 切周二次加载：保留旧内容 + 顶部进度条 */
+  const [refreshing, setRefreshing] = useState(false);
+  /** v1.88.5 页面访问被拒（菜单权限，code=4030）：整页提示卡 */
+  const [permDenied, setPermDenied] = useState<string | null>(null);
+  const hasLoadedRef = useRef(false);
 
   // 根据用户孕周自动定位
   useEffect(() => {
@@ -78,7 +86,11 @@ export default function PregnancyWeeklyPage() {
 
   // 获取选中周的数据
   useEffect(() => {
-    setLoading(true);
+    if (hasLoadedRef.current) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
     timelineApi
       .list({ stage: `pregnancy_${selectedWeek}w` })
       .then((data) => {
@@ -90,9 +102,20 @@ export default function PregnancyWeeklyPage() {
           return 0;
         });
         setItems(sorted);
+        hasLoadedRef.current = true;
       })
-      .catch(() => setItems([]))
-      .finally(() => setLoading(false));
+      .catch((err: any) => {
+        // v1.88.5 菜单权限被拒：展示整页提示卡，不再静默空态
+        if (err?.code === 4030) {
+          setPermDenied(err?.message || "管理员已关闭本页面访问，如有需要请联系管理员开启。");
+        } else {
+          setItems([]);
+        }
+      })
+      .finally(() => {
+        setLoading(false);
+        setRefreshing(false);
+      });
   }, [selectedWeek]);
 
   // 分组
@@ -114,6 +137,8 @@ export default function PregnancyWeeklyPage() {
 
   return (
     <div className="space-y-6">
+      {/* v1.88.4 切周二次加载顶部细进度条（保留旧内容不闪白） */}
+      {refreshing && <TopProgressBar />}
       {/* 标题 */}
       <div className="flex items-center justify-between">
         <div>
@@ -207,7 +232,10 @@ export default function PregnancyWeeklyPage() {
       </div>
 
       {/* 内容区 */}
-      {loading ? (
+      {/* v1.88.5 菜单权限被拒：整页提示卡 */}
+      {permDenied ? (
+        <PermissionDeniedCard message={permDenied} />
+      ) : loading ? (
         <div className="py-20 text-center text-gray-400">加载中...</div>
       ) : items.length === 0 ? (
         <div className="card py-12 text-center text-sm text-gray-400">
@@ -229,6 +257,13 @@ export default function PregnancyWeeklyPage() {
                       {item.is_essential && (
                         <span className="rounded-full bg-red-50 px-2 py-0.5 text-xs text-red-500">必读</span>
                       )}
+                      {/* v1.88.2 周历页新增收藏按钮：与时间轴同一对象类型，收藏中心统一展示 */}
+                      <FavoriteButton
+                        objectId={item.id}
+                        favoriteType="timeline"
+                        note={item.title}
+                        className="ml-auto"
+                      />
                     </div>
                     <h3 className="font-semibold text-gray-800">{item.title}</h3>
                     {item.subtitle && (

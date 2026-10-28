@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { Heart, Star } from "lucide-react";
-import { favoriteApi } from "@/api/catalog";
+import { useFavoriteStore } from "@/store/favoriteStore";
 import type { Product } from "@/types";
 
 export default function ProductCard({
@@ -10,15 +10,19 @@ export default function ProductCard({
   onToggleFav,
 }: {
   product: Product;
+  /** v1.88.4 起弃用（保留兼容）：收藏状态改由全局 favoriteStore 管理 */
   initialFavorited?: boolean;
+  /** 点击切换后的通知回调（父组件用于 toast 提示） */
   onToggleFav?: (favorited: boolean, product: Product) => void;
 }) {
-  const [favorited, setFavorited] = useState(initialFavorited);
+  // v1.88.4 改用全局收藏 store：商品列表/首页/详情页状态天然同步
+  const favorited = useFavoriteStore((s) => s.maps["product"]?.has(product.id) === true);
+  const ensureType = useFavoriteStore((s) => s.ensureType);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    setFavorited(initialFavorited);
-  }, [initialFavorited]);
+    ensureType("product");
+  }, [ensureType]);
 
   const handleFav = async (e: React.MouseEvent) => {
     e.preventDefault();
@@ -26,27 +30,13 @@ export default function ProductCard({
     if (loading) return;
     setLoading(true);
     try {
-      const res = await favoriteApi.toggle(product.id, "product", `${product.brand} ${product.name}`);
-      const nextFav = res.data ? res.data.favorited : !favorited;
-      setFavorited(nextFav);
-      onToggleFav?.(nextFav, product);
+      // store.toggle：乐观更新 + 失败回滚，全部商品页状态即时同步
+      const next = await useFavoriteStore
+        .getState()
+        .toggle(product.id, "product", `${product.brand} ${product.name}`);
+      onToggleFav?.(next, product);
     } catch {
-      try {
-        if (favorited) {
-          const items = await favoriteApi.list({ favorite_type: "product", object_id: product.id });
-          if (items && items.length > 0) {
-            await favoriteApi.remove(items[0].id);
-          }
-          setFavorited(false);
-          onToggleFav?.(false, product);
-        } else {
-          await favoriteApi.add(product.id, "product", `${product.brand} ${product.name}`);
-          setFavorited(true);
-          onToggleFav?.(true, product);
-        }
-      } catch {
-        // ignore
-      }
+      // 权限被禁或网络异常：store 已回滚，此处静默（提示由父组件/详情页负责）
     } finally {
       setLoading(false);
     }

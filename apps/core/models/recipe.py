@@ -28,6 +28,8 @@ class Recipe(models.Model):
     cover_image = models.URLField(blank=True, null=True, verbose_name="封面图")
     sort_order = models.IntegerField(default=0, verbose_name="排序权重")
     view_count = models.IntegerField(default=0, verbose_name="浏览次数")
+    # v1.88 知识库管理：启用状态（管理员可临时停用某条食谱，普通用户不可见）
+    is_active = models.BooleanField(default=True, verbose_name="是否启用")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="创建时间")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="更新时间")
 

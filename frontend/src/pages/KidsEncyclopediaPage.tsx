@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { BookOpen, ChevronDown, Lightbulb, MessageCircle, Search, Sparkles, X } from "lucide-react";
 import CopyButton from "@/components/CopyButton";
+import FavoriteButton from "@/components/FavoriteButton";
+import TopProgressBar from "@/components/ui/TopProgressBar";
+import PermissionDeniedCard from "@/components/PermissionDeniedCard";
 import { kidsEncyclopediaApi } from "@/api/catalog";
 import type { KidsEncyclopedia } from "@/types";
 
@@ -27,6 +30,11 @@ export default function KidsEncyclopediaPage() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** v1.88.4 切章节/搜索二次加载：保留旧内容 + 顶部进度条 */
+  const [refreshing, setRefreshing] = useState(false);
+  /** v1.88.5 页面访问被拒（菜单权限，code=4030）：整页提示卡 */
+  const [permDenied, setPermDenied] = useState<string | null>(null);
+  const hasLoadedRef = useRef(false);
 
   // 搜索防抖 300ms
   useEffect(() => {
@@ -41,15 +49,32 @@ export default function KidsEncyclopediaPage() {
   }, [activeChapter]);
 
   useEffect(() => {
-    setLoading(true);
+    if (hasLoadedRef.current) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
     const params: { chapter?: string; search?: string } = {};
     if (activeChapter) params.chapter = activeChapter;
     if (debouncedSearch) params.search = debouncedSearch;
     kidsEncyclopediaApi
       .list(params)
-      .then(setQuestions)
-      .catch(() => setQuestions([]))
-      .finally(() => setLoading(false));
+      .then((data) => {
+        setQuestions(data);
+        hasLoadedRef.current = true;
+      })
+      .catch((err: any) => {
+        // v1.88.5 菜单权限被拒：展示整页提示卡，不再静默空态
+        if (err?.code === 4030) {
+          setPermDenied(err?.message || "管理员已关闭本页面访问，如有需要请联系管理员开启。");
+        } else {
+          setQuestions([]);
+        }
+      })
+      .finally(() => {
+        setLoading(false);
+        setRefreshing(false);
+      });
   }, [activeChapter, debouncedSearch]);
 
   const groupedQuestions = useMemo(() => {
@@ -69,6 +94,8 @@ export default function KidsEncyclopediaPage() {
 
   return (
     <div className="space-y-6">
+      {/* v1.88.4 切章节/搜索二次加载顶部细进度条（保留旧内容不闪白） */}
+      {refreshing && <TopProgressBar />}
       {/* 顶部标题卡 */}
       <section className="rounded-3xl bg-gradient-to-r from-purple-500 via-pink-500 to-orange-400 p-6 text-white shadow-lg">
         <div className="flex items-center justify-between">
@@ -130,7 +157,10 @@ export default function KidsEncyclopediaPage() {
       </p>
 
       {/* 问题列表 */}
-      {loading ? (
+      {/* v1.88.5 菜单权限被拒：整页提示卡 */}
+      {permDenied ? (
+        <PermissionDeniedCard message={permDenied} />
+      ) : loading ? (
         <div className="py-20 text-center text-gray-400">加载中…</div>
       ) : totalQuestions === 0 ? (
         <div className="card py-12 text-center text-sm text-gray-400">
@@ -160,26 +190,43 @@ export default function KidsEncyclopediaPage() {
                     key={q.id}
                     className="card overflow-hidden transition hover:shadow-md"
                   >
-                    {/* 问题头部 */}
-                    <button
-                      onClick={() => setExpandedId(expandedId === q.id ? null : q.id)}
-                      className="flex w-full items-start justify-between p-4 text-left"
-                    >
-                      <div className="flex-1">
-                        <div className="mb-1 flex items-center gap-2">
-                          <span className="flex h-6 w-6 items-center justify-center rounded-full bg-brand-50 text-xs font-bold text-brand-600">
-                            {q.question_number}
-                          </span>
-                          <span className="text-xs text-gray-400">{CHAPTER_LABELS[q.chapter]}</span>
+                    {/* 问题头部：标题区可点击展开，右侧收藏按钮独立 */}
+                    <div className="flex items-start">
+                      <div
+                        role="button"
+                        tabIndex={0}
+                        className="flex flex-1 cursor-pointer items-start justify-between p-4 text-left"
+                        onClick={() => setExpandedId(expandedId === q.id ? null : q.id)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") setExpandedId(expandedId === q.id ? null : q.id);
+                        }}
+                      >
+                        <div className="flex-1">
+                          <div className="mb-1 flex items-center gap-2">
+                            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-brand-50 text-xs font-bold text-brand-600">
+                              {q.question_number}
+                            </span>
+                            <span className="text-xs text-gray-400">{CHAPTER_LABELS[q.chapter]}</span>
+                          </div>
+                          <h3 className="font-medium text-gray-800">{q.question}</h3>
                         </div>
-                        <h3 className="font-medium text-gray-800">{q.question}</h3>
+                        <ChevronDown
+                          className={`mt-1 h-5 w-5 flex-shrink-0 text-gray-400 transition ${
+                            expandedId === q.id ? "rotate-180" : ""
+                          }`}
+                        />
                       </div>
-                      <ChevronDown
-                        className={`h-5 w-5 flex-shrink-0 text-gray-400 transition ${
-                          expandedId === q.id ? "rotate-180" : ""
-                        }`}
-                      />
-                    </button>
+                      {/* v1.88.1 收藏本问答（独立于展开点击区） */}
+                      <div className="pt-3 pr-3">
+                        <FavoriteButton
+                          objectId={q.id}
+                          favoriteType="encyclopedia"
+                          note={q.question}
+                          variant="icon"
+                          size="sm"
+                        />
+                      </div>
+                    </div>
 
                     {/* 展开内容 */}
                     {expandedId === q.id && (

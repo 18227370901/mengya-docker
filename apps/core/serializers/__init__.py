@@ -256,7 +256,10 @@ class BrandProfileSerializer(serializers.ModelSerializer):
             "official_url",
             "founded_year",
             "parent_company",
+            "is_active",
+            "view_count",
         ]
+        read_only_fields = ["id", "view_count"]
 
 
 class ProductSerializer(serializers.ModelSerializer):
@@ -324,6 +327,7 @@ class TimelineSerializer(serializers.ModelSerializer):
             "tips",
             "cover_image",
             "is_essential",
+            "is_active",
             "sort_order",
             "view_count",
             "products",
@@ -347,6 +351,7 @@ class RecipeSerializer(serializers.ModelSerializer):
             "nutrition_tip",
             "cover_image",
             "sort_order",
+            "is_active",
             "view_count",
             "created_at",
         ]
@@ -371,6 +376,7 @@ class KidsEncyclopediaSerializer(serializers.ModelSerializer):
             "comic_dialogue",
             "cover_image",
             "sort_order",
+            "is_active",
             "view_count",
             "created_at",
         ]
@@ -522,10 +528,88 @@ class NotificationSerializer(serializers.ModelSerializer):
 
 class FavoriteSerializer(serializers.ModelSerializer):
     product = serializers.SerializerMethodField()
+    valid = serializers.SerializerMethodField()
+    title = serializers.SerializerMethodField()
+    cover_image = serializers.SerializerMethodField()
+    type_label = serializers.SerializerMethodField()
 
     class Meta:
         model = UserFavorite
-        fields = ["id", "favorite_type", "object_id", "note", "created_at", "product"]
+        fields = ["id", "favorite_type", "type_label", "object_id", "note", "created_at", "product", "valid", "title", "cover_image"]
+
+    def get_type_label(self, obj):
+        """v1.88.1 收藏类型中文名（收藏中心分类 Tab 用）"""
+        labels = {
+            "product": "商品", "timeline": "孕育知识", "shopping_list": "清单",
+            "comparison": "对比", "fetal_story": "胎教故事", "recipe": "孕期食谱", "encyclopedia": "幼儿百科",
+        }
+        return labels.get(obj.favorite_type, obj.favorite_type)
+
+    def get_title(self, obj):
+        """v1.88.1 收藏对象真实标题（非商品类型也显示标题而非 ID）"""
+        try:
+            if obj.favorite_type == "product":
+                p = Product.objects.filter(id=obj.object_id).first()
+                return f"{p.brand} {p.name}" if p else ""
+            if obj.favorite_type == "timeline":
+                t = TimelineEvent.objects.filter(id=obj.object_id).first()
+                return t.title if t else ""
+            if obj.favorite_type == "fetal_story":
+                s = FetalStory.objects.filter(id=obj.object_id).first()
+                return s.title if s else ""
+            if obj.favorite_type == "recipe":
+                r = Recipe.objects.filter(id=obj.object_id).first()
+                return r.title if r else ""
+            if obj.favorite_type == "encyclopedia":
+                e = KidsEncyclopedia.objects.filter(id=obj.object_id).first()
+                return e.question if e else ""
+            if obj.favorite_type == "shopping_list":
+                from apps.core.models.shopping import ShoppingList
+                sl = ShoppingList.objects.filter(id=obj.object_id).first()
+                return sl.name if sl else ""
+        except Exception:
+            pass
+        return ""
+
+    def get_cover_image(self, obj):
+        """v1.88.1 收藏对象封面图（存在时）"""
+        try:
+            if obj.favorite_type == "product":
+                p = Product.objects.filter(id=obj.object_id).first()
+                return (p.image_url if p else "") or ""
+            if obj.favorite_type == "timeline":
+                t = TimelineEvent.objects.filter(id=obj.object_id).first()
+                return (t.cover_image if t else "") or ""
+            if obj.favorite_type == "fetal_story":
+                s = FetalStory.objects.filter(id=obj.object_id).first()
+                return (s.cover_image if s else "") or ""
+            if obj.favorite_type == "recipe":
+                r = Recipe.objects.filter(id=obj.object_id).first()
+                return (r.cover_image if r else "") or ""
+            if obj.favorite_type == "encyclopedia":
+                e = KidsEncyclopedia.objects.filter(id=obj.object_id).first()
+                return (e.cover_image if e else "") or ""
+        except Exception:
+            pass
+        return ""
+
+    def get_valid(self, obj):
+        """v1.88 收藏有效性校验：管理员删除/恢复出厂后收藏对象可能失效，保留记录并提示用户自行处理"""
+        if obj.favorite_type == "product":
+            return Product.objects.filter(id=obj.object_id).exists()
+        if obj.favorite_type == "timeline":
+            return TimelineEvent.objects.filter(id=obj.object_id).exists()
+        if obj.favorite_type == "fetal_story":
+            return FetalStory.objects.filter(id=obj.object_id).exists()
+        if obj.favorite_type == "recipe":
+            return Recipe.objects.filter(id=obj.object_id).exists()
+        if obj.favorite_type == "encyclopedia":
+            return KidsEncyclopedia.objects.filter(id=obj.object_id).exists()
+        if obj.favorite_type == "shopping_list":
+            from apps.core.models.shopping import ShoppingList
+            return ShoppingList.objects.filter(id=obj.object_id).exists()
+        # comparison 对比类无固定对象，默认有效
+        return True
 
     def get_product(self, obj):
         if obj.favorite_type == "product":
@@ -592,6 +676,7 @@ class FetalStorySerializer(serializers.ModelSerializer):
             "source",
             "source_en",
             "sort_order",
+            "is_active",
             "view_count",
             "created_at",
         ]

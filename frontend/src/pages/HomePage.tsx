@@ -2,7 +2,7 @@ import SetStageModal from "@/components/SetStageModal";
 import HomeWeatherBanner from "@/components/HomeWeatherBanner";
 import { CloudSun } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link } from "react-router-dom";
 import {
   Activity,
   ArrowRight,
@@ -18,7 +18,7 @@ import {
   Edit3,
   CheckCircle2,
 } from "lucide-react";
-import { productApi, timelineApi, favoriteApi } from "@/api/catalog";
+import { productApi, timelineApi } from "@/api/catalog";
 import { useAuthStore } from "@/store/authStore";
 import type { Product, TimelineItem } from "@/types";
 import ProductCard from "@/components/ProductCard";
@@ -45,11 +45,8 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [showStageModal, setShowStageModal] = useState(false);
-  const [favoritedIds, setFavoritedIds] = useState<Set<number>>(new Set());
   const [toast, setToast] = useState("");
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const location = useLocation();
 
   const showToast = (msg: string) => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -57,25 +54,8 @@ export default function HomePage() {
     toastTimerRef.current = setTimeout(() => setToast(""), 2500);
   };
 
-  const reloadFavorites = () => {
-    favoriteApi.list({ favorite_type: "product" }).then((items) => {
-      if (items) {
-        setFavoritedIds(new Set(items.map((it) => it.object_id)));
-      }
-    }).catch(() => {});
-  };
-
-  useEffect(() => {
-    reloadFavorites();
-  }, [location.key]);
-
-  const handleToggleFav = (fav: boolean, prod: Product) => {
-    setFavoritedIds((prev) => {
-      const next = new Set(prev);
-      if (fav) next.add(prod.id);
-      else next.delete(prod.id);
-      return next;
-    });
+  const handleToggleFav = (fav: boolean) => {
+    // v1.88.4 收藏状态由全局 favoriteStore 管理（ProductCard 内部切换），此处仅 toast
     showToast(fav ? "已添加到收藏夹" : "已取消收藏");
   };
 
@@ -287,12 +267,7 @@ export default function HomePage() {
         ) : (
           <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
             {recommend.map((product) => (
-              <ProductCard
-                key={product.id}
-                product={product}
-                initialFavorited={favoritedIds.has(product.id)}
-                onToggleFav={handleToggleFav}
-              />
+              <ProductCard key={product.id} product={product} onToggleFav={handleToggleFav} />
             ))}
           </div>
         )}

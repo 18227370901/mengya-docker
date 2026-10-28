@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { CheckCircle2 } from "lucide-react";
-import { productApi, favoriteApi } from "@/api/catalog";
-import type { Product } from "@/types";
 import ProductCard from "@/components/ProductCard";
+import { productApi } from "@/api/catalog";
+import type { Product } from "@/types";
 
 const CATEGORIES = [
   { key: "", label: "全部" },
@@ -37,7 +37,6 @@ export default function ProductListPage() {
   const [debouncedQ, setDebouncedQ] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [favoritedIds, setFavoritedIds] = useState<Set<number>>(new Set());
   const [toast, setToast] = useState("");
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -47,15 +46,6 @@ export default function ProductListPage() {
     setToast(msg);
     toastTimerRef.current = setTimeout(() => setToast(""), 2500);
   };
-
-  // 获取用户收藏列表
-  useEffect(() => {
-    favoriteApi.list({ favorite_type: "product" }).then((items) => {
-      if (items) {
-        setFavoritedIds(new Set(items.map((it) => it.object_id)));
-      }
-    }).catch(() => {});
-  }, []);
 
   // 搜索防抖 300ms
   useEffect(() => {
@@ -123,16 +113,8 @@ export default function ProductListPage() {
             <ProductCard
               key={p.id}
               product={p}
-              initialFavorited={favoritedIds.has(p.id)}
-              onToggleFav={(fav, prod) => {
-                setFavoritedIds((prev) => {
-                  const next = new Set(prev);
-                  if (fav) next.add(prod.id);
-                  else next.delete(prod.id);
-                  return next;
-                });
-                showToast(fav ? "已添加到收藏夹" : "已取消收藏");
-              }}
+              // v1.88.4 收藏状态由全局 favoriteStore 管理，此处仅保留 toast 通知
+              onToggleFav={(fav) => showToast(fav ? "已添加到收藏夹" : "已取消收藏")}
             />
           ))}
           {!loading && products.length === 0 && !error && (

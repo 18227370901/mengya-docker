@@ -11,6 +11,7 @@ from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from rest_framework import status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -912,7 +913,7 @@ class MotherViewSet(viewsets.ModelViewSet):
         return qs
 
     def perform_create(self, serializer):
-        check_permission_or_403(self.request.user, "health_record_create", "您没有添加妈妈档案的权限")
+        check_permission_or_403(self.request.user, "health_record_create", "您暂无「添加妈妈档案」的权限，请联系管理员开启")
         user = self.request.user
         raw_name = (self.request.data.get("name") or "").strip()
         if not raw_name:
@@ -933,7 +934,7 @@ class MotherViewSet(viewsets.ModelViewSet):
         audit(self.request, "mother_create", "添加妈妈档案", "mother", mom.id, mom.name, f"添加妈妈档案 {mom.name}")
 
     def perform_update(self, serializer):
-        check_permission_or_403(self.request.user, "health_record_update", "您没有修改妈妈档案的权限")
+        check_permission_or_403(self.request.user, "health_record_update", "您暂无「修改妈妈档案」的权限，请联系管理员开启")
         raw_name = (self.request.data.get("name") or "").strip()
         if not raw_name:
             primary_baby = BabyProfile.objects.filter(user=self.request.user, is_primary=True).first() or BabyProfile.objects.filter(user=self.request.user).first()
@@ -945,7 +946,7 @@ class MotherViewSet(viewsets.ModelViewSet):
         audit(self.request, "mother_update", "修改妈妈档案", "mother", mom.id, mom.name, f"更新妈妈档案 {mom.name}")
 
     def perform_destroy(self, instance):
-        check_permission_or_403(self.request.user, "health_record_delete", "您没有删除妈妈档案的权限")
+        check_permission_or_403(self.request.user, "health_record_delete", "您暂无「删除妈妈档案」的权限，请联系管理员开启")
         user = self.request.user
         was_primary = instance.is_primary
         m_name = instance.name or f"妈妈#{instance.id}"
@@ -1013,7 +1014,7 @@ class BabyViewSet(viewsets.ModelViewSet):
             )
 
     def perform_create(self, serializer):
-        check_permission_or_403(self.request.user, "baby_create", "您没有添加宝宝档案的权限")
+        check_permission_or_403(self.request.user, "baby_create", "您暂无「添加宝宝档案」的权限，请联系管理员开启")
         user = self.request.user
         raw_name = (self.request.data.get("name") or "").strip()
         if not raw_name:
@@ -1033,7 +1034,7 @@ class BabyViewSet(viewsets.ModelViewSet):
         audit(self.request, "baby_create", "添加宝宝档案", "baby", baby.id, b_name, f"添加宝宝 {b_name}")
 
     def perform_update(self, serializer):
-        check_permission_or_403(self.request.user, "baby_update", "您没有修改宝宝档案的权限")
+        check_permission_or_403(self.request.user, "baby_update", "您暂无「修改宝宝档案」的权限，请联系管理员开启")
         baby = serializer.save()
         if baby.is_primary or BabyProfile.objects.filter(user=self.request.user).count() == 1:
             self._sync_user_stage(self.request.user, baby)
@@ -1041,7 +1042,7 @@ class BabyViewSet(viewsets.ModelViewSet):
         audit(self.request, "baby_update", "修改宝宝档案", "baby", baby.id, b_name, f"更新宝宝档案 {b_name}")
 
     def perform_destroy(self, instance):
-        check_permission_or_403(self.request.user, "baby_delete", "您没有删除宝宝档案的权限")
+        check_permission_or_403(self.request.user, "baby_delete", "您暂无「删除宝宝档案」的权限，请联系管理员开启")
         user = self.request.user
         was_primary = instance.is_primary
         b_name = getattr(instance, "name", "") or f"宝宝#{instance.id}"
@@ -1071,19 +1072,252 @@ class BabyViewSet(viewsets.ModelViewSet):
         return self.set_primary(request, pk=pk)
 
 
+# ============ v1.88 知识库管理通用辅助 ============
+
+class KbWritePermission(IsAuthenticated):
+    """知识库写操作权限：管理员直通；普通用户需被显式授予对应模块管理权限（kb_*_manage）"""
+
+    def has_permission(self, request, view):
+        if not super().has_permission(request, view):
+            return False
+        if _is_admin(request.user):
+            return True
+        perm_key = getattr(view, "kb_manage_perm", None)
+        if not perm_key or not has_permission(request.user, perm_key):
+            # v1.88.5 拒绝时显式抛出中文提示（此前返回 False 走 DRF 默认英文文案）
+            raise PermissionDenied(detail={
+                "code": 4030,
+                "message": "该操作需要「知识库管理」权限，请联系管理员处理",
+                "permission": perm_key or "kb_manage",
+            })
+        return True
+
+
+def _kb_menu_allowed(user, menu_key, kb_view_key):
+    """知识库读取权限：模块菜单权限或知识库查看权限任一即可（管理员恒通过）"""
+    return has_permission(user, menu_key) or has_permission(user, kb_view_key)
+
+
+def _kb_paged_response(qs, request, serializer_class, extra_stats=None):
+    """知识库列表通用分页响应：带 page 参数时服务端分页，否则全量（兼容现有展示页调用）
+    v1.88.4 新增 page_size=-1 语义：展示页"全部"选项，返回全量但保持分页响应结构。
+    """
+    total = qs.count()
+    page_param = request.query_params.get("page")
+    if not page_param:
+        data = serializer_class(qs, many=True).data
+        return Response({"code": 0, "message": "success", "data": data})
+    try:
+        page = max(1, int(page_param))
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        page_size = int(request.query_params.get("page_size", 10))
+    except (TypeError, ValueError):
+        page_size = 10
+    if page_size == -1:
+        # v1.88.4 展示页"全部"：不分页返回全量（响应结构与分页保持一致）
+        items = qs
+        data = {
+            "items": serializer_class(items, many=True).data,
+            "total": total,
+            "page": 1,
+            "page_size": total if total > 0 else 1,
+            "total_pages": 1,
+        }
+        if extra_stats is not None:
+            data["stats"] = extra_stats
+        return Response({"code": 0, "message": "success", "data": data})
+    page_size = max(1, min(100, page_size))
+    start = (page - 1) * page_size
+    items = qs[start:start + page_size]
+    data = {
+        "items": serializer_class(items, many=True).data,
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": (total + page_size - 1) // page_size if total > 0 else 1,
+    }
+    if extra_stats is not None:
+        data["stats"] = extra_stats
+    return Response({"code": 0, "message": "success", "data": data})
+
+
+def _kb_batch_action(request, qs, module_label, target_type, get_name=None):
+    """知识库通用批量操作：delete / active / inactive / essential / unessential（含审计）"""
+    data = request.data or {}
+    ids = data.get("ids", [])
+    act = str(data.get("action") or "").strip()
+    if not isinstance(ids, list) or len(ids) == 0:
+        return Response({"code": 2001, "message": "请选择要操作的数据项"}, status=status.HTTP_400_BAD_REQUEST)
+    valid_actions = ("delete", "active", "inactive", "essential", "unessential")
+    if act not in valid_actions:
+        return Response({"code": 2001, "message": "无效的操作类型"}, status=status.HTTP_400_BAD_REQUEST)
+    if get_name is None:
+        get_name = lambda x: getattr(x, "title", None) or getattr(x, "name", "") or f"#{x.id}"  # noqa: E731
+    targets = list(qs.filter(id__in=ids))
+    ids_text = ",".join(str(i) for i in ids[:50])
+    if act == "delete":
+        names = "、".join([str(get_name(t)) for t in targets[:5]])
+        suffix = "…" if len(targets) > 5 else ""
+        count, _ = qs.filter(id__in=ids).delete()
+        audit(request, "knowledge_batch_delete", f"批量删除{module_label}", target_type, ids_text,
+              f"{len(targets)}条", f"批量删除{module_label} {len(targets)} 条：{names}{suffix}")
+        return Response({"code": 0, "message": f"成功删除 {count} 条数据", "data": {"count": count, "action": act}})
+    updates = {}
+    if act == "active":
+        updates = {"is_active": True}
+    elif act == "inactive":
+        updates = {"is_active": False}
+    elif act == "essential":
+        updates = {"is_essential": True}
+    elif act == "unessential":
+        updates = {"is_essential": False}
+    count = qs.filter(id__in=ids).update(**updates)
+    audit(request, "knowledge_batch_status", f"批量修改{module_label}状态", target_type, ids_text,
+          f"{len(targets)}条", f"对{module_label}执行批量操作「{act}」，共 {count} 条")
+    return Response({"code": 0, "message": f"成功更新 {count} 条数据", "data": {"count": count, "action": act}})
+
+
+def _kb_write_audit(request, action_kind, module_label, target_type, obj, detail):
+    """知识库单条写操作审计（action_kind: create/update/delete）"""
+    name = getattr(obj, "title", None) or getattr(obj, "name", "") or f"#{getattr(obj, 'id', 0)}"
+    audit(request, f"knowledge_{action_kind}", f"{'新增' if action_kind == 'create' else '编辑' if action_kind == 'update' else '删除'}{module_label}",
+          target_type, getattr(obj, "id", 0), str(name), detail)
+
+
+def _kb_params(view):
+    """v1.88.1 统一取请求参数：GET 用 query_params，POST（导出）用 body，便于导出复用列表筛选"""
+    req = view.request
+    if req.method == "POST" and isinstance(getattr(req, "data", None), dict):
+        return req.data
+    return req.query_params
+
+
+def _kb_can_see_inactive(view):
+    """v1.88.1 判断当前请求是否可查看停用数据：管理接口带 with_inactive=1 且管理员/被授权用户"""
+    user = view.request.user
+    if not (_is_admin(user) or has_permission(user, getattr(view, "kb_manage_perm", "") or "___")
+            or has_permission(user, getattr(view, "kb_view_perm", "") or "___")):
+        return False
+    return _kb_params(view).get("with_inactive") == "1"
+
+
+def _kb_export_response(qs, request, filename, header, rows_fn):
+    """v1.88.1 知识库通用 CSV 导出：UTF-8 with BOM，防乱码"""
+    response = HttpResponse(content_type="text/csv; charset=utf-8")
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response.write("\ufeff")  # BOM 确保 Excel/WPS 以 UTF-8 打开不乱码
+    writer = csv.writer(response)
+    writer.writerow(header)
+    for obj in qs:
+        writer.writerow(rows_fn(obj))
+    audit(request, "knowledge_export", "导出知识库数据", filename.split("_")[0], "all",
+          f"{qs.count()}条", f"导出 {filename}，共 {qs.count()} 条")
+    return response
+
+
+def _kb_apply_export_scope(qs, request_data):
+    """v1.88.1 应用导出范围：page=当前页 / filtered=筛选结果全部 / selected=仅选中"""
+    scope = str(request_data.get("scope") or "page").strip()
+    if scope == "selected":
+        ids = request_data.get("ids") or []
+        if not isinstance(ids, list) or len(ids) == 0:
+            return qs.none()
+        return qs.filter(id__in=ids)
+    if scope == "filtered":
+        return qs
+    # page：当前页切片
+    try:
+        page = max(1, int(request_data.get("page", 1)))
+    except (TypeError, ValueError):
+        page = 1
+    try:
+        page_size = max(1, min(200, int(request_data.get("page_size", 10))))
+    except (TypeError, ValueError):
+        page_size = 10
+    start = (page - 1) * page_size
+    return qs[start:start + page_size]
+
+
+def _kb_read_csv_rows(text):
+    """v1.88.2 解析 CSV 文本：剥离 BOM，自动跳过 # 开头的说明行，返回 (原始表头, 数据行字典列表)
+
+    行字典的键为原始表头（中文或英文，未归一化），另附带 __line__ 键 = 该条记录在
+    原始文件中的起始物理行号（表头为第 1 行），供导入报错精确定位到真实行。
+    """
+    # v1.88.2 剥离 UTF-8 BOM：Excel/WPS 另存 CSV 可能带 BOM；GBK 解码分支也可能残留 BOM 字符
+    text = (text or "").lstrip("\ufeff")
+    reader = csv.reader(io.StringIO(text))
+    header = None
+    data = []
+    prev_end = 0  # 上一条记录结束时的物理行号
+    for r in reader:
+        start_line = prev_end + 1  # 本条记录的起始物理行号（多行字段从首行起算）
+        prev_end = reader.line_num
+        if not r or str(r[0]).lstrip().startswith("#"):
+            continue
+        if header is None:
+            header = [h.strip() for h in r]
+            continue
+        item = {"__line__": start_line}
+        for i, key in enumerate(header):
+            item[key] = r[i] if i < len(r) else ""
+        data.append(item)
+    if header is None:
+        return [], []
+    return header, data
+
+
+def _kb_import_result(request, module_label, target_type, created, errors):
+    """v1.88.2 知识库导入统一响应：汇总文案附首条失败原因，明细见 data.errors，并落审计"""
+    audit(request, "knowledge_import", f"批量导入{module_label}", target_type, 0, f"{created}条",
+          f"CSV 导入{module_label}：成功 {created} 条，失败 {len(errors)} 条")
+    msg = f"导入完成：成功 {created} 条" + (f"，{len(errors)} 条失败" if errors else "")
+    if errors:
+        msg += f"（首因：{errors[0]}）"
+    return Response({"code": 0, "message": msg, "data": {"created": created, "errors": errors}})
+
+
+def _kb_normalize_header(header, cn_map):
+    """v1.88.1 表头归一化：中文表头映射为英文字段名（兼容旧纯英文模板）"""
+    return [cn_map.get(h, h) for h in header]
+
+
 # ============ 时间轴 ============
 
 class TimelineViewSet(viewsets.ModelViewSet):
     serializer_class = TimelineSerializer
     permission_classes = [IsAuthenticated]
+    kb_manage_perm = "kb_timeline_manage"
+    kb_view_perm = "kb_timeline_view"
+
+    # v1.88.1 导入模板：中文表头 → 英文字段名映射（双语兼容）
+    CN_HEADER_MAP = {
+        "阶段类型*": "stage_type", "阶段值*": "stage_value", "分类*": "category",
+        "标题*": "title", "副标题": "subtitle", "详细内容*": "content", "小贴士": "tips",
+        "封面图URL": "cover_image", "必读（是/否）": "is_essential", "排序权重": "sort_order",
+        "是否启用（是/否）": "is_active",
+    }
 
     def list(self, request, *args, **kwargs):
+        # v1.88 兼容知识库管理页：模块菜单权限或知识库查看权限任一即可；带 page 参数时服务端分页
+        # 保留原有语义：带 essential 参数的首页「本周重点」调用不做菜单强制校验
         if not request.query_params.get("essential"):
-            check_permission_or_403(request.user, "menu_timeline", "管理员已关闭您的时间轴与孕期周历访问权限")
-        return super().list(request, *args, **kwargs)
+            if not _kb_menu_allowed(request.user, "menu_timeline", "kb_timeline_view"):
+                raise PermissionDenied(detail={"code": 4030, "message": "管理员已关闭「时间轴/孕期周历」页面访问，如有需要请联系管理员开启", "permission": "menu_timeline"})
+        qs = self.filter_queryset(self.get_queryset())
+        stats = {
+            "total": qs.count(),
+            "essential_count": qs.filter(is_essential=True).count(),
+            "pregnancy_count": qs.filter(stage_type="pregnancy_week").count(),
+            "baby_count": qs.exclude(stage_type__startswith="pregnancy").count(),
+        }
+        return _kb_paged_response(qs, request, TimelineSerializer, extra_stats=stats)
 
     def retrieve(self, request, *args, **kwargs):
-        check_permission_or_403(request.user, "menu_timeline", "管理员已关闭您的时间轴与孕期周历访问权限")
+        if not _kb_menu_allowed(request.user, "menu_timeline", "kb_timeline_view"):
+            raise PermissionDenied(detail={"code": 4030, "message": "管理员已关闭「时间轴/孕期周历」页面访问，如有需要请联系管理员开启", "permission": "menu_timeline"})
         return super().retrieve(request, *args, **kwargs)
 
     def get_queryset(self):
@@ -1129,55 +1363,100 @@ class TimelineViewSet(viewsets.ModelViewSet):
             qs = qs.filter(category=category)
         if essential:
             qs = qs.filter(is_essential=True)
+        # v1.88.1 前台一律只显示启用数据（含管理员）；仅知识库管理中心（with_inactive=1 且有权限）可见全部
+        # v1.88.1 前台展示（list/retrieve）只显示启用数据；写操作放行（否则停用条目无法编辑/删除/重新启用）
+        if self.action in ("list", "retrieve") and not _kb_can_see_inactive(self):
+            qs = qs.filter(is_active=True)
+        # 知识库管理：启用状态筛选（active/inactive，仅管理接口有效）
+        status_filter = _kb_params(self).get("status")
+        if status_filter in ("active", "inactive") and _kb_can_see_inactive(self):
+            qs = qs.filter(is_active=(status_filter == "active"))
+        # v1.88 知识库管理：关键字搜索
+        search = _kb_params(self).get("search")
+        if search:
+            qs = qs.filter(
+                models.Q(title__icontains=search)
+                | models.Q(subtitle__icontains=search)
+                | models.Q(content__icontains=search)
+            )
+        # v1.88 知识库管理：必读状态筛选（all/essential/normal）
+        essential_filter = _kb_params(self).get("essential_filter")
+        if essential_filter == "essential":
+            qs = qs.filter(is_essential=True)
+        elif essential_filter == "normal":
+            qs = qs.filter(is_essential=False)
         return qs
 
     def get_permissions(self):
-        """知识库写操作仅管理员"""
-        if self.action in ("create", "update", "partial_update", "destroy", "export_csv", "import_csv", "import_template"):
-            return [IsAuthenticated(), IsAdminUser()]
+        """知识库写操作仅管理员或被授权用户（kb_timeline_manage）"""
+        if self.action in ("create", "update", "partial_update", "destroy", "import_csv", "batch"):
+            return [KbWritePermission()]
         return super().get_permissions()
 
-    @action(detail=False, methods=["get"])
+    def perform_create(self, serializer):
+        obj = serializer.save()
+        _kb_write_audit(self.request, "create", "时间轴事件", "timeline", obj, f"新增时间轴事件【{obj.title}】(阶段 {obj.stage_type} {obj.stage_value})")
+
+    def perform_update(self, serializer):
+        obj = serializer.save()
+        _kb_write_audit(self.request, "update", "时间轴事件", "timeline", obj, f"修改时间轴事件【{obj.title}】(#{obj.id})")
+
+    def perform_destroy(self, instance):
+        _kb_write_audit(self.request, "delete", "时间轴事件", "timeline", instance, f"删除时间轴事件【{instance.title}】(#{instance.id})")
+        instance.delete()
+
+    @action(detail=False, methods=["post"])
+    def batch(self, request):
+        """v1.88 批量操作：delete / essential / unessential"""
+        return _kb_batch_action(request, TimelineEvent.objects.all(), "时间轴事件", "timeline",
+                                get_name=lambda x: x.title)
+
+    @action(detail=False, methods=["post"])
     def export_csv(self, request):
-        """导出知识库 CSV（仅管理员）"""
-        qs = TimelineEvent.objects.all().order_by("stage_type", "stage_value", "sort_order")
-        response = HttpResponse(content_type="text/csv; charset=utf-8")
-        response["Content-Disposition"] = 'attachment; filename="timeline_export.csv"'
-        response.write("\ufeff")
-        writer = csv.writer(response)
-        writer.writerow([
-            "id", "stage_type", "stage_value", "category", "title", "subtitle",
-            "content", "tips", "cover_image", "is_essential", "sort_order",
-        ])
-        for e in qs:
-            writer.writerow([
-                e.id, e.stage_type, e.stage_value, e.category, e.title,
-                e.subtitle or "", e.content or "", e.tips or "", e.cover_image or "",
-                "是" if e.is_essential else "否", e.sort_order,
-            ])
-        return response
+        """v1.88.1 导出时间轴 CSV：scope=page(当前页)/filtered(筛选结果)/selected(选中项)"""
+        data = request.data or {}
+        qs = self.get_queryset().order_by("stage_type", "stage_value", "sort_order")
+        qs = _kb_apply_export_scope(qs, data)
+        scope_suffix = {"selected": "选中", "filtered": "筛选", "page": f"第{data.get('page', 1)}页"}.get(str(data.get("scope") or "page"), "")
+        return _kb_export_response(
+            qs, request, f"timeline_export_{scope_suffix}.csv",
+            ["ID", "阶段类型", "阶段值", "分类", "标题", "副标题", "详细内容", "小贴士", "封面图URL", "必读", "是否启用", "排序权重"],
+            lambda e: [e.id, e.stage_type, e.stage_value, e.category, e.title, e.subtitle or "",
+                       e.content or "", e.tips or "", e.cover_image or "",
+                       "是" if e.is_essential else "否", "是" if e.is_active else "否", e.sort_order],
+        )
 
     @action(detail=False, methods=["get"])
     def import_template(self, request):
-        """下载知识库导入模板 CSV（仅管理员）"""
+        """v1.88.1 下载时间轴导入模板（?lang=cn|en，三段式：表头+说明行+示例行）"""
+        lang = (request.query_params.get("lang") or "cn").strip().lower()
         response = HttpResponse(content_type="text/csv; charset=utf-8")
-        response["Content-Disposition"] = 'attachment; filename="timeline_import_template.csv"'
+        response["Content-Disposition"] = f'attachment; filename="timeline_import_template_{lang}.csv"'
         response.write("\ufeff")
         writer = csv.writer(response)
-        writer.writerow([
-            "stage_type", "stage_value", "category", "title", "subtitle",
-            "content", "tips", "cover_image", "is_essential", "sort_order",
-        ])
-        writer.writerow([
-            "pregnancy_week", 10, "health", "孕10周：胎儿发育关键期",
-            "神经系统快速发育", "本周宝宝……", "补充叶酸、均衡饮食",
-            "", "是", 0,
-        ])
+        if lang == "en":
+            writer.writerow(["stage_type*", "stage_value*", "category*", "title*", "subtitle",
+                             "content*", "tips", "cover_image", "is_essential(是/否)", "sort_order", "is_active(是/否)"])
+            writer.writerow(["# Required: stage_type, stage_value, category, title, content. "
+                             "stage_type: pregnancy_week/baby_age_day/baby_age_month/pregnancy_trimester. "
+                             "category: food/clothing/housing/travel/health/shopping/milestone/emotion/exercise/checkup/education. "
+                             "is_essential & is_active: 是/否, blank=否/是. Lines starting with # are ignored on import."])
+            writer.writerow(["pregnancy_week", 10, "health", "孕10周：胎儿发育关键期",
+                             "神经系统快速发育", "本周宝宝神经系统快速发育……", "补充叶酸、均衡饮食", "", "是", 0, "是"])
+        else:
+            writer.writerow(["阶段类型*", "阶段值*", "分类*", "标题*", "副标题", "详细内容*",
+                             "小贴士", "封面图URL", "必读（是/否）", "排序权重", "是否启用（是/否）"])
+            writer.writerow(["# 必填列：阶段类型/阶段值/分类/标题/详细内容。阶段类型：pregnancy_week(孕周)/baby_age_day(宝宝天数)/"
+                             "baby_age_month(宝宝月龄)/pregnancy_trimester(孕早中晚期)；分类：food(饮食)/clothing(穿衣)/housing(居家)/"
+                             "travel(出行)/health(健康)/shopping(购物)/milestone(里程碑)/emotion(心理情绪)/exercise(运动)/"
+                             "checkup(产检)/education(胎教)；必读、是否启用填 是/否，留空默认为 否、是；# 开头的说明行导入时自动忽略"])
+            writer.writerow(["pregnancy_week", 10, "health", "孕10周：胎儿发育关键期",
+                             "神经系统快速发育", "本周宝宝神经系统快速发育……", "补充叶酸、均衡饮食", "", "是", 0, "是"])
         return response
 
     @action(detail=False, methods=["post"])
     def import_csv(self, request):
-        """导入知识库 CSV（仅管理员）"""
+        """导入时间轴 CSV（支持中英文表头，自动跳过 # 说明行）"""
         file = request.FILES.get("file")
         if not file:
             return Response(
@@ -1185,16 +1464,20 @@ class TimelineViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         try:
-            text = file.read().decode("utf-8-sig")
+            # v1.88.2 修复：字节流只读一次——此前 UTF-8 解码失败后第二次 read() 返回空流，
+            # 导致 GBK/ANSI 编码文件（Excel 中文环境另存）静默导入 0 条
+            raw = file.read()
+            text = raw.decode("utf-8-sig")
         except Exception:
             try:
-                text = file.read().decode("gbk")
+                text = raw.decode("gbk")
             except Exception:
                 return Response(
                     {"code": 2001, "message": "文件编码无法识别，请使用 UTF-8 或 GBK", "data": None},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-        reader = csv.DictReader(io.StringIO(text))
+        raw_header, rows = _kb_read_csv_rows(text)
+        header = _kb_normalize_header(raw_header, self.CN_HEADER_MAP)
         valid_stage_types = {c[0] for c in TimelineEvent.STAGE_TYPES}
         valid_categories = {c[0] for c in TimelineEvent.CATEGORY_CHOICES}
         created = 0
@@ -1206,26 +1489,31 @@ class TimelineViewSet(viewsets.ModelViewSet):
                 return default
             return s.lower() in ("是", "true", "1", "yes", "y", "on")
 
-        for idx, row in enumerate(reader, start=2):
-            title = (row.get("title") or "").strip()
-            stage_type = (row.get("stage_type") or "").strip()
+        for row in rows:
+            # v1.88.2 真实文件行号（含表头/说明行计数），报错可精确定位
+            idx = row.get("__line__") or 0
+            # v1.88.2 修复：行字典键为原始表头（中文），须按位置从原始键取值；
+            # 此前用归一化后的英文键查询导致全部取空 → 每行报"缺少必填"，导入 0 条
+            mapped = {header[i]: row.get(raw_header[i], "") for i in range(len(header))}
+            title = (mapped.get("title") or "").strip()
+            stage_type = (mapped.get("stage_type") or "").strip()
             if not title or not stage_type:
-                errors.append(f"第{idx}行：缺少 title 或 stage_type")
+                errors.append(f"第{idx}行：缺少 标题 或 阶段类型")
                 continue
             if stage_type not in valid_stage_types:
                 errors.append(f"第{idx}行：无效的阶段类型「{stage_type}」")
                 continue
             try:
-                stage_value = int(row.get("stage_value") or 0)
+                stage_value = int(mapped.get("stage_value") or 0)
             except ValueError:
-                errors.append(f"第{idx}行：stage_value 不是数字")
+                errors.append(f"第{idx}行：阶段值不是数字")
                 continue
-            category = (row.get("category") or "health").strip()
+            category = (mapped.get("category") or "health").strip()
             if category not in valid_categories:
                 errors.append(f"第{idx}行：无效的分类「{category}」")
                 continue
             try:
-                sort_order = int(row.get("sort_order") or 0)
+                sort_order = int(mapped.get("sort_order") or 0)
             except ValueError:
                 sort_order = 0
             TimelineEvent.objects.create(
@@ -1233,19 +1521,17 @@ class TimelineViewSet(viewsets.ModelViewSet):
                 stage_value=stage_value,
                 category=category,
                 title=title,
-                subtitle=(row.get("subtitle") or "").strip(),
-                content=(row.get("content") or "").strip() or title,
-                tips=(row.get("tips") or "").strip(),
-                cover_image=(row.get("cover_image") or "").strip() or None,
-                is_essential=_yn(row.get("is_essential")),
+                subtitle=(mapped.get("subtitle") or "").strip(),
+                content=(mapped.get("content") or "").strip() or title,
+                tips=(mapped.get("tips") or "").strip(),
+                cover_image=(mapped.get("cover_image") or "").strip() or None,
+                is_essential=_yn(mapped.get("is_essential")),
+                is_active=_yn(mapped.get("is_active"), default=True),
                 sort_order=sort_order,
             )
             created += 1
-        return Response({
-            "code": 0,
-            "message": f"导入完成：成功 {created} 条" + (f"，{len(errors)} 条失败" if errors else ""),
-            "data": {"created": created, "errors": errors},
-        })
+        # v1.88.2 统一导入响应：汇总文案附首条失败原因，并落审计
+        return _kb_import_result(request, "时间轴事件", "timeline", created, errors)
 
 
 # ============ 孕期食谱 ============
@@ -1253,18 +1539,38 @@ class TimelineViewSet(viewsets.ModelViewSet):
 class RecipeViewSet(viewsets.ModelViewSet):
     serializer_class = RecipeSerializer
     permission_classes = [IsAuthenticated]
+    kb_manage_perm = "kb_recipes_manage"
+    kb_view_perm = "kb_recipes_view"
+
+    # v1.88.1 导入模板：中文表头 → 英文字段名映射
+    CN_HEADER_MAP = {
+        "标题*": "title", "营养标签": "nutrient_tag", "孕期阶段*": "period",
+        "月份分组": "period_month", "材料*": "ingredients", "做法步骤*": "steps",
+        "营养小叮咛": "nutrition_tip", "封面图URL": "cover_image", "排序权重": "sort_order",
+        "是否启用（是/否）": "is_active",
+    }
 
     def initial(self, request, *args, **kwargs):
         super().initial(request, *args, **kwargs)
         if request.method not in ("OPTIONS",):
-            check_permission_or_403(request.user, "menu_recipes", "管理员已关闭您的孕期食谱访问权限")
+            # v1.88 兼容知识库管理页：菜单权限 / 知识库查看 / 知识库管理权限任一即可
+            if not (
+                _kb_menu_allowed(request.user, "menu_recipes", "kb_recipes_view")
+                or has_permission(request.user, "kb_recipes_manage")
+            ):
+                raise PermissionDenied(detail={"code": 4030, "message": "管理员已关闭「孕期食谱」页面访问，如有需要请联系管理员开启", "permission": "menu_recipes"})
 
     def get_queryset(self):
         qs = Recipe.objects.all()
-        period = self.request.query_params.get("period")
-        period_month = self.request.query_params.get("period_month")
-        nutrient = self.request.query_params.get("nutrient")
-        search = self.request.query_params.get("search")
+        # v1.88.1 前台一律只显示启用条目（含管理员）；仅知识库管理中心（with_inactive=1）可见全部
+        # v1.88.1 前台展示（list/retrieve）只显示启用数据；写操作放行（否则停用条目无法编辑/删除/重新启用）
+        if self.action in ("list", "retrieve") and not _kb_can_see_inactive(self):
+            qs = qs.filter(is_active=True)
+        params = _kb_params(self)
+        period = params.get("period")
+        period_month = params.get("period_month")
+        nutrient = params.get("nutrient")
+        search = params.get("search")
         if period:
             qs = qs.filter(period=period)
         if period_month:
@@ -1272,13 +1578,48 @@ class RecipeViewSet(viewsets.ModelViewSet):
         if nutrient:
             qs = qs.filter(nutrient_tag__icontains=nutrient)
         if search:
-            qs = qs.filter(title__icontains=search)
+            qs = qs.filter(
+                models.Q(title__icontains=search)
+                | models.Q(nutrient_tag__icontains=search)
+                | models.Q(ingredients__icontains=search)
+            )
+        # v1.88 知识库管理：启用状态筛选（active/inactive，仅管理接口有效）
+        status_filter = params.get("status")
+        if status_filter in ("active", "inactive") and _kb_can_see_inactive(self):
+            qs = qs.filter(is_active=(status_filter == "active"))
         return qs
 
+    def list(self, request, *args, **kwargs):
+        qs = self.filter_queryset(self.get_queryset())
+        stats = {
+            "total": qs.count(),
+            "active_count": qs.filter(is_active=True).count(),
+            "inactive_count": qs.filter(is_active=False).count(),
+        }
+        return _kb_paged_response(qs, request, RecipeSerializer, extra_stats=stats)
+
     def get_permissions(self):
-        if self.action in ("create", "update", "partial_update", "destroy"):
-            return [IsAuthenticated(), IsAdminUser()]
+        """知识库写操作仅管理员或被授权用户（kb_recipes_manage）"""
+        if self.action in ("create", "update", "partial_update", "destroy", "import_csv", "batch"):
+            return [KbWritePermission()]
         return super().get_permissions()
+
+    def perform_create(self, serializer):
+        obj = serializer.save()
+        _kb_write_audit(self.request, "create", "孕期食谱", "recipe", obj, f"新增食谱【{obj.title}】")
+
+    def perform_update(self, serializer):
+        obj = serializer.save()
+        _kb_write_audit(self.request, "update", "孕期食谱", "recipe", obj, f"修改食谱【{obj.title}】(#{obj.id})")
+
+    def perform_destroy(self, instance):
+        _kb_write_audit(self.request, "delete", "孕期食谱", "recipe", instance, f"删除食谱【{instance.title}】(#{instance.id})")
+        instance.delete()
+
+    @action(detail=False, methods=["post"])
+    def batch(self, request):
+        """v1.88 批量操作：delete / active / inactive"""
+        return _kb_batch_action(request, Recipe.objects.all(), "孕期食谱", "recipe", get_name=lambda x: x.title)
 
     @action(detail=True, methods=["post"])
     def increment_view(self, request, pk=None):
@@ -1295,32 +1636,188 @@ class RecipeViewSet(viewsets.ModelViewSet):
         qs = Recipe.objects.exclude(nutrient_tag="").values("nutrient_tag").annotate(count=Count("id")).order_by("-count")
         return Response({"code": 0, "message": "ok", "data": list(qs)})
 
+    @action(detail=False, methods=["post"])
+    def export_csv(self, request):
+        """v1.88.1 导出孕期食谱 CSV：scope=page/filtered/selected"""
+        data = request.data or {}
+        qs = self.get_queryset().order_by("period_month", "sort_order")
+        qs = _kb_apply_export_scope(qs, data)
+        scope_suffix = {"selected": "选中", "filtered": "筛选", "page": f"第{data.get('page', 1)}页"}.get(str(data.get("scope") or "page"), "")
+        return _kb_export_response(
+            qs, request, f"recipes_export_{scope_suffix}.csv",
+            ["ID", "标题", "营养标签", "孕期阶段", "月份分组", "材料", "做法步骤", "营养小叮咛", "封面图URL", "排序权重", "是否启用"],
+            lambda r: [r.id, r.title, r.nutrient_tag, r.period, r.period_month, r.ingredients, r.steps,
+                       r.nutrition_tip, r.cover_image or "", r.sort_order, "是" if r.is_active else "否"],
+        )
+
+    @action(detail=False, methods=["get"])
+    def import_template(self, request):
+        """v1.88.1 下载食谱导入模板（?lang=cn|en）"""
+        lang = (request.query_params.get("lang") or "cn").strip().lower()
+        response = HttpResponse(content_type="text/csv; charset=utf-8")
+        response["Content-Disposition"] = f'attachment; filename="recipes_import_template_{lang}.csv"'
+        response.write("\ufeff")
+        writer = csv.writer(response)
+        if lang == "en":
+            writer.writerow(["title*", "nutrient_tag", "period*", "period_month", "ingredients*",
+                             "steps*", "nutrition_tip", "cover_image", "sort_order", "is_active(是/否)"])
+            writer.writerow(["# Required: title, period, ingredients, steps. period: early(1-12w)/mid(13-27w)/late(28-40w). "
+                             "period_month like month_5_6, optional. is_active: 是/否, blank=是. # lines are ignored."])
+            writer.writerow(["清蒸鲈鱼", "高蛋白·DHA", "mid", "month_5_6",
+                             "鲈鱼一条约500g\n姜丝适量", "1. 鲈鱼洗净划刀\n2. 大火蒸8分钟", "孕中期优质蛋白助力大脑发育", "", 0, "是"])
+        else:
+            writer.writerow(["标题*", "营养标签", "孕期阶段*", "月份分组", "材料*",
+                             "做法步骤*", "营养小叮咛", "封面图URL", "排序权重", "是否启用（是/否）"])
+            writer.writerow(["# 必填列：标题/孕期阶段/材料/做法步骤。孕期阶段：early(孕早期1-12周)/mid(孕中期13-27周)/late(孕晚期28-40周)；"
+                             "月份分组如 month_5_6 可留空；营养标签如“高蛋白·DHA”；是否启用填 是/否，留空默认为是；# 开头说明行导入时自动忽略"])
+            writer.writerow(["清蒸鲈鱼", "高蛋白·DHA", "mid", "month_5_6",
+                             "鲈鱼一条约500g\n姜丝适量", "1. 鲈鱼洗净划刀\n2. 大火蒸8分钟", "孕中期优质蛋白助力大脑发育", "", 0, "是"])
+        return response
+
+    @action(detail=False, methods=["post"])
+    def import_csv(self, request):
+        """导入食谱 CSV（管理员/授权用户）"""
+        file = request.FILES.get("file")
+        if not file:
+            return Response({"code": 2001, "message": "请上传 CSV 文件", "data": None}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            # v1.88.2 修复：字节流只读一次——此前 UTF-8 解码失败后第二次 read() 返回空流，
+            # 导致 GBK/ANSI 编码文件（Excel 中文环境另存）静默导入 0 条
+            raw = file.read()
+            text = raw.decode("utf-8-sig")
+        except Exception:
+            try:
+                text = raw.decode("gbk")
+            except Exception:
+                return Response({"code": 2001, "message": "文件编码无法识别，请使用 UTF-8 或 GBK", "data": None}, status=status.HTTP_400_BAD_REQUEST)
+        raw_header, rows = _kb_read_csv_rows(text)
+        header = _kb_normalize_header(raw_header, self.CN_HEADER_MAP)
+        valid_periods = {c[0] for c in Recipe.PERIOD_CHOICES}
+        created = 0
+        errors = []
+
+        def _yn(v, default=True):
+            s = str(v or "").strip()
+            if not s:
+                return default
+            return s.lower() in ("是", "true", "1", "yes", "y", "on")
+
+        for row in rows:
+            # v1.88.2 真实文件行号（含表头/说明行计数），报错可精确定位
+            idx = row.get("__line__") or 0
+            # v1.88.2 修复：行字典键为原始表头（中文），须按位置从原始键取值；
+            # 此前用归一化后的英文键查询导致全部取空 → 每行报"缺少必填"，导入 0 条
+            mapped = {header[i]: row.get(raw_header[i], "") for i in range(len(header))}
+            title = (mapped.get("title") or "").strip()
+            if not title:
+                errors.append(f"第{idx}行：缺少 标题")
+                continue
+            period = (mapped.get("period") or "mid").strip()
+            if period not in valid_periods:
+                errors.append(f"第{idx}行：无效的孕期阶段「{period}」(early/mid/late)")
+                continue
+            try:
+                sort_order = int(mapped.get("sort_order") or 0)
+            except ValueError:
+                sort_order = 0
+            obj = Recipe.objects.create(
+                title=title,
+                nutrient_tag=(mapped.get("nutrient_tag") or "").strip(),
+                period=period,
+                period_month=(mapped.get("period_month") or "").strip(),
+                ingredients=(mapped.get("ingredients") or "").strip() or "见原文",
+                steps=(mapped.get("steps") or "").strip() or "见原文",
+                nutrition_tip=(mapped.get("nutrition_tip") or "").strip(),
+                cover_image=(mapped.get("cover_image") or "").strip() or None,
+                sort_order=sort_order,
+                is_active=_yn(mapped.get("is_active")),
+            )
+            created += 1
+        # v1.88.2 统一导入响应：汇总文案附首条失败原因，并落审计
+        return _kb_import_result(request, "孕期食谱", "recipe", created, errors)
+
 
 # ============ 幼儿百科 ============
 
 class KidsEncyclopediaViewSet(viewsets.ModelViewSet):
     serializer_class = KidsEncyclopediaSerializer
     permission_classes = [IsAuthenticated]
+    kb_manage_perm = "kb_encyclopedia_manage"
+    kb_view_perm = "kb_encyclopedia_view"
+
+    # v1.88.1 导入模板：中文表头 → 英文字段名映射
+    CN_HEADER_MAP = {
+        "章节*": "chapter", "题号*": "question_number", "问题*": "question",
+        "选项A": "option_a", "选项B": "option_b", "选项C": "option_c",
+        "解答正文*": "answer", "漫画对话": "comic_dialogue", "配图URL": "cover_image",
+        "排序权重": "sort_order", "是否启用（是/否）": "is_active",
+    }
 
     def initial(self, request, *args, **kwargs):
         super().initial(request, *args, **kwargs)
         if request.method not in ("OPTIONS",):
-            check_permission_or_403(request.user, "menu_encyclopedia", "管理员已关闭您的幼儿百科访问权限")
+            # v1.88 兼容知识库管理页：菜单权限 / 知识库查看 / 知识库管理权限任一即可
+            if not (
+                _kb_menu_allowed(request.user, "menu_encyclopedia", "kb_encyclopedia_view")
+                or has_permission(request.user, "kb_encyclopedia_manage")
+            ):
+                raise PermissionDenied(detail={"code": 4030, "message": "管理员已关闭「幼儿百科」页面访问，如有需要请联系管理员开启", "permission": "menu_encyclopedia"})
 
     def get_queryset(self):
         qs = KidsEncyclopedia.objects.all()
-        chapter = self.request.query_params.get("chapter")
-        search = self.request.query_params.get("search")
+        # v1.88.1 前台一律只显示启用条目（含管理员）；仅知识库管理中心（with_inactive=1）可见全部
+        # v1.88.1 前台展示（list/retrieve）只显示启用数据；写操作放行（否则停用条目无法编辑/删除/重新启用）
+        if self.action in ("list", "retrieve") and not _kb_can_see_inactive(self):
+            qs = qs.filter(is_active=True)
+        params = _kb_params(self)
+        chapter = params.get("chapter")
+        search = params.get("search")
         if chapter:
             qs = qs.filter(chapter=chapter)
         if search:
-            qs = qs.filter(question__icontains=search)
+            qs = qs.filter(
+                models.Q(question__icontains=search)
+                | models.Q(answer__icontains=search)
+                | models.Q(option_a__icontains=search)
+                | models.Q(option_b__icontains=search)
+            )
+        # v1.88 知识库管理：启用状态筛选（仅管理接口有效）
+        status_filter = params.get("status")
+        if status_filter in ("active", "inactive") and _kb_can_see_inactive(self):
+            qs = qs.filter(is_active=(status_filter == "active"))
         return qs
 
+    def list(self, request, *args, **kwargs):
+        qs = self.filter_queryset(self.get_queryset())
+        stats = {
+            "total": qs.count(),
+            "active_count": qs.filter(is_active=True).count(),
+            "inactive_count": qs.filter(is_active=False).count(),
+        }
+        return _kb_paged_response(qs, request, KidsEncyclopediaSerializer, extra_stats=stats)
+
     def get_permissions(self):
-        if self.action in ("create", "update", "partial_update", "destroy"):
-            return [IsAuthenticated(), IsAdminUser()]
+        """知识库写操作仅管理员或被授权用户（kb_encyclopedia_manage）"""
+        if self.action in ("create", "update", "partial_update", "destroy", "import_csv", "batch"):
+            return [KbWritePermission()]
         return super().get_permissions()
+
+    def perform_create(self, serializer):
+        obj = serializer.save()
+        _kb_write_audit(self.request, "create", "幼儿百科", "encyclopedia", obj, f"新增百科问答【{obj.question}】")
+
+    def perform_update(self, serializer):
+        obj = serializer.save()
+        _kb_write_audit(self.request, "update", "幼儿百科", "encyclopedia", obj, f"修改百科问答【{obj.question}】(#{obj.id})")
+
+    def perform_destroy(self, instance):
+        _kb_write_audit(self.request, "delete", "幼儿百科", "encyclopedia", instance, f"删除百科问答【{instance.question}】(#{instance.id})")
+        instance.delete()
+
+    @action(detail=False, methods=["post"])
+    def batch(self, request):
+        """v1.88 批量操作：delete / active / inactive"""
+        return _kb_batch_action(request, KidsEncyclopedia.objects.all(), "幼儿百科", "encyclopedia", get_name=lambda x: x.question)
 
     @action(detail=True, methods=["post"])
     def increment_view(self, request, pk=None):
@@ -1337,6 +1834,112 @@ class KidsEncyclopediaViewSet(viewsets.ModelViewSet):
         qs = KidsEncyclopedia.objects.values("chapter").annotate(count=Count("id")).order_by("chapter")
         return Response({"code": 0, "message": "ok", "data": list(qs)})
 
+    @action(detail=False, methods=["post"])
+    def export_csv(self, request):
+        """v1.88.1 导出幼儿百科 CSV：scope=page/filtered/selected"""
+        data = request.data or {}
+        qs = self.get_queryset().order_by("chapter", "sort_order")
+        qs = _kb_apply_export_scope(qs, data)
+        scope_suffix = {"selected": "选中", "filtered": "筛选", "page": f"第{data.get('page', 1)}页"}.get(str(data.get("scope") or "page"), "")
+        return _kb_export_response(
+            qs, request, f"encyclopedia_export_{scope_suffix}.csv",
+            ["ID", "章节", "题号", "问题", "选项A", "选项B", "选项C", "解答正文", "漫画对话", "配图URL", "排序权重", "是否启用"],
+            lambda e: [e.id, e.chapter, e.question_number, e.question, e.option_a, e.option_b, e.option_c,
+                       e.answer, e.comic_dialogue, e.cover_image or "", e.sort_order, "是" if e.is_active else "否"],
+        )
+
+    @action(detail=False, methods=["get"])
+    def import_template(self, request):
+        """v1.88.1 下载幼儿百科导入模板（?lang=cn|en）"""
+        lang = (request.query_params.get("lang") or "cn").strip().lower()
+        response = HttpResponse(content_type="text/csv; charset=utf-8")
+        response["Content-Disposition"] = f'attachment; filename="encyclopedia_import_template_{lang}.csv"'
+        response.write("\ufeff")
+        writer = csv.writer(response)
+        sample = ["body", 1, "为什么我会肚子疼？", "吃太多啦", "肚子着凉了", "要拉便便了",
+                  "小朋友的肚子里住着一位「小管家」，吃太多、着凉或者想拉便便时它都会提醒你哦。",
+                  "", "", 0, "是"]
+        if lang == "en":
+            writer.writerow(["chapter*", "question_number*", "question*", "option_a", "option_b",
+                             "option_c", "answer*", "comic_dialogue", "cover_image", "sort_order", "is_active(是/否)"])
+            writer.writerow(["# Required: chapter, question_number, question, answer. chapter: origin(Where do I come from)/"
+                             "body(My body)/growth(My growth)/mystery(Mysteries of body). is_active: 是/否, blank=是."])
+        else:
+            writer.writerow(["章节*", "题号*", "问题*", "选项A", "选项B", "选项C", "解答正文*",
+                             "漫画对话", "配图URL", "排序权重", "是否启用（是/否）"])
+            writer.writerow(["# 必填列：章节/题号/问题/解答正文。章节：origin(我从哪里来)/body(我的身体)/growth(我的成长)/"
+                             "mystery(身体的奥秘)；题号为数字；选项C可留空；是否启用填 是/否，留空默认为是；# 开头说明行导入时自动忽略"])
+        writer.writerow(sample)
+        return response
+
+    @action(detail=False, methods=["post"])
+    def import_csv(self, request):
+        """导入幼儿百科 CSV（管理员/授权用户）"""
+        file = request.FILES.get("file")
+        if not file:
+            return Response({"code": 2001, "message": "请上传 CSV 文件", "data": None}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            # v1.88.2 修复：字节流只读一次——此前 UTF-8 解码失败后第二次 read() 返回空流，
+            # 导致 GBK/ANSI 编码文件（Excel 中文环境另存）静默导入 0 条
+            raw = file.read()
+            text = raw.decode("utf-8-sig")
+        except Exception:
+            try:
+                text = raw.decode("gbk")
+            except Exception:
+                return Response({"code": 2001, "message": "文件编码无法识别，请使用 UTF-8 或 GBK", "data": None}, status=status.HTTP_400_BAD_REQUEST)
+        raw_header, rows = _kb_read_csv_rows(text)
+        header = _kb_normalize_header(raw_header, self.CN_HEADER_MAP)
+        valid_chapters = {c[0] for c in KidsEncyclopedia.CHAPTER_CHOICES}
+        created = 0
+        errors = []
+
+        def _yn(v, default=True):
+            s = str(v or "").strip()
+            if not s:
+                return default
+            return s.lower() in ("是", "true", "1", "yes", "y", "on")
+
+        for row in rows:
+            # v1.88.2 真实文件行号（含表头/说明行计数），报错可精确定位
+            idx = row.get("__line__") or 0
+            # v1.88.2 修复：行字典键为原始表头（中文），须按位置从原始键取值；
+            # 此前用归一化后的英文键查询导致全部取空 → 每行报"缺少必填"，导入 0 条
+            mapped = {header[i]: row.get(raw_header[i], "") for i in range(len(header))}
+            question = (mapped.get("question") or "").strip()
+            if not question:
+                errors.append(f"第{idx}行：缺少 问题")
+                continue
+            chapter = (mapped.get("chapter") or "body").strip()
+            if chapter not in valid_chapters:
+                errors.append(f"第{idx}行：无效的章节「{chapter}」(origin/body/growth/mystery)")
+                continue
+            try:
+                q_number = int(mapped.get("question_number") or 0)
+            except ValueError:
+                errors.append(f"第{idx}行：题号不是数字")
+                continue
+            try:
+                sort_order = int(mapped.get("sort_order") or 0)
+            except ValueError:
+                sort_order = 0
+            KidsEncyclopedia.objects.create(
+                chapter=chapter,
+                question_number=q_number,
+                question=question,
+                option_a=(mapped.get("option_a") or "").strip(),
+                option_b=(mapped.get("option_b") or "").strip(),
+                option_c=(mapped.get("option_c") or "").strip(),
+                answer=(mapped.get("answer") or "").strip() or question,
+                comic_dialogue=(mapped.get("comic_dialogue") or "").strip(),
+                cover_image=(mapped.get("cover_image") or "").strip() or None,
+                sort_order=sort_order,
+                is_active=_yn(mapped.get("is_active")),
+            )
+            created += 1
+        # v1.88.2 统一导入响应：汇总文案附首条失败原因，并落审计
+        return _kb_import_result(request, "幼儿百科", "encyclopedia", created, errors)
+
 
 # ============ 商品 ============
 
@@ -1344,21 +1947,44 @@ class ProductViewSet(viewsets.ModelViewSet):
     serializer_class = ProductSerializer
     permission_classes = [IsAuthenticated]
 
+    # v1.88.1 导入模板：中文表头 → 英文字段名映射
+    CN_HEADER_MAP = {
+        "商品名称*": "name", "品牌*": "brand", "型号": "model", "一级分类*": "first_category",
+        "二级分类": "second_category", "商品图片URL": "image_url", "商品描述": "description",
+        "综合评分(0-10)": "overall", "均价(元)": "price_avg", "价格区间": "price_range",
+        "必备（是/否）": "is_essential", "上架（是/否）": "is_active", "CCC认证（是/否）": "has_ccc_certification",
+        "安全提示": "safety_alert", "适用起始月龄": "applicable_age_start", "适用结束月龄": "applicable_age_end",
+        "适用季节": "applicable_season",
+    }
+
     def get_queryset(self):
-        # 管理员可以查看所有商品（含下架/暂存），普通用户只看上架商品
-        if self.request.user.is_staff:
+        # v1.88.1 前台一律只显示上架商品（含管理员）；仅管理场景（with_inactive=1 且有权限）可见全部
+        params = _kb_params(self)
+        can_manage = _is_admin(self.request.user) or has_permission(self.request.user, "menu_admin_products_manage")
+        if params.get("with_inactive") == "1" and can_manage:
+            qs = Product.objects.all()
+        elif self.action not in ("list", "retrieve"):
+            # v1.88.1 写操作（编辑/删除/重新上架暂存商品）不受上架过滤限制
             qs = Product.objects.all()
         else:
             qs = Product.objects.filter(is_active=True)
 
-        category = self.request.query_params.get("category")
-        brand = self.request.query_params.get("brand")
-        q = self.request.query_params.get("q")
-        sort = self.request.query_params.get("sort")
+        category = params.get("category")
+        brand = params.get("brand")
+        q = params.get("q")
+        sort = params.get("sort")
+        # v1.88 知识库管理：上下架状态筛选（active/inactive，仅管理接口有效）
+        status = params.get("status")
+        if status in ("active", "inactive") and params.get("with_inactive") == "1" and can_manage:
+            qs = qs.filter(is_active=(status == "active"))
         if category:
             qs = qs.filter(first_category=category)
         if brand:
             qs = qs.filter(brand=brand)
+        # v1.88.1 品牌库：按品牌档案 ID 筛选关联商品（品牌删除前提示使用）
+        brand_profile_id = params.get("brand_profile_id")
+        if brand_profile_id:
+            qs = qs.filter(brand_profile_id=brand_profile_id)
         if q:
             qs = qs.filter(name__icontains=q)
         if sort == "rating":
@@ -1373,7 +1999,7 @@ class ProductViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         """只有管理员可以创建/更新/删除商品"""
-        if self.action in ("create", "update", "partial_update", "destroy", "import_csv", "export_csv", "import_template"):
+        if self.action in ("create", "update", "partial_update", "destroy", "import_csv", "export_csv", "import_template", "batch"):
             return [IsAuthenticated(), IsAdminUser()]
         return super().get_permissions()
 
@@ -1429,60 +2055,93 @@ class ProductViewSet(viewsets.ModelViewSet):
         audit(self.request, "product_delete", "删除商品", "product", instance.id, instance.name, f"删除商品【{instance.brand} {instance.name}】")
         instance.delete()
 
+    @action(detail=False, methods=["post"])
+    def batch(self, request):
+        """v1.88 商品批量操作：delete / active（上架）/ inactive（暂存）"""
+        data = request.data or {}
+        ids = data.get("ids", [])
+        act = str(data.get("action") or "").strip()
+        if not isinstance(ids, list) or len(ids) == 0:
+            return Response({"code": 2001, "message": "请选择要操作的商品"}, status=status.HTTP_400_BAD_REQUEST)
+        if act not in ("delete", "active", "inactive"):
+            return Response({"code": 2001, "message": "无效的操作类型"}, status=status.HTTP_400_BAD_REQUEST)
+        targets = list(Product.objects.filter(id__in=ids))
+        ids_text = ",".join(str(i) for i in ids[:50])
+        if act == "delete":
+            count, _ = Product.objects.filter(id__in=ids).delete()
+            names = "、".join([t.name for t in targets[:5]])
+            suffix = "…" if len(targets) > 5 else ""
+            audit(request, "product_batch_delete", "批量删除商品", "product", ids_text, f"{len(targets)}条",
+                  f"批量删除商品 {len(targets)} 条：{names}{suffix}")
+            return Response({"code": 0, "message": f"成功删除 {count} 条商品", "data": {"count": count, "action": act}})
+        count = Product.objects.filter(id__in=ids).update(is_active=(act == "active"))
+        audit(request, "product_batch_status", "批量修改商品状态", "product", ids_text, f"{len(targets)}条",
+              f"批量{'上架' if act == 'active' else '暂存'}商品 {count} 条")
+        return Response({"code": 0, "message": f"成功{'上架' if act == 'active' else '暂存'} {count} 条商品", "data": {"count": count, "action": act}})
+
     @action(detail=True, methods=["post"], url_path="ai-evaluate")
     def ai_evaluate(self, request, pk=None):
         """商品 AI 一键深度评测"""
-        check_permission_or_403(request.user, "product_ai_evaluate", "管理员已关闭普通用户的 AI 一键评测功能")
+        check_permission_or_403(request.user, "product_ai_evaluate", "您暂无「AI 一键评测」权限，请联系管理员开启")
         product = self.get_object()
         result = ai_service.ai_evaluate_product(product, user=request.user)
         audit(request, "ai_evaluate", "AI商品评测", "product", product.id, product.name, f"对商品【{product.brand} {product.name}】进行AI深度评测")
         return Response({"code": 0, "message": "success", "data": result})
 
 
-    @action(detail=False, methods=["get"])
+    @action(detail=False, methods=["post"])
     def export_csv(self, request):
-        """导出商品 CSV（仅管理员）"""
-        qs = Product.objects.all().order_by("id")
-        response = HttpResponse(content_type="text/csv; charset=utf-8")
-        response["Content-Disposition"] = 'attachment; filename="products_export.csv"'
-        response.write("\ufeff")  # BOM 使 Excel 正确识别 UTF-8
-        writer = csv.writer(response)
-        writer.writerow([
-            "id", "name", "brand", "model", "first_category", "second_category",
-            "image_url", "description", "overall_rating", "price_avg", "price_range",
-            "is_essential", "is_active", "has_ccc_certification", "safety_alert",
-            "applicable_age_start", "applicable_age_end", "applicable_season",
-        ])
-        for p in qs:
-            writer.writerow([
-                p.id, p.name, p.brand, p.model or "", p.first_category, p.second_category,
-                p.image_url, p.description or "", p.overall_rating,
-                (p.price_info or {}).get("avg", ""), (p.price_info or {}).get("range", ""),
-                "是" if p.is_essential else "否", "是" if p.is_active else "否",
-                "是" if p.has_ccc_certification else "否", p.safety_alert or "",
-                p.applicable_age_start or "", p.applicable_age_end or "", p.applicable_season or "",
-            ])
-        return response
+        """v1.88.1 导出商品 CSV：scope=page/filtered/selected；带品牌档案标签列"""
+        data = request.data or {}
+        qs = self.get_queryset().order_by("id")
+        qs = _kb_apply_export_scope(qs, data)
+        scope_suffix = {"selected": "选中", "filtered": "筛选", "page": f"第{data.get('page', 1)}页"}.get(str(data.get("scope") or "page"), "")
+        return _kb_export_response(
+            qs, request, f"products_export_{scope_suffix}.csv",
+            ["ID", "商品名称", "品牌", "品牌库定位", "型号", "一级分类", "二级分类", "商品图片URL", "商品描述",
+             "综合评分", "均价", "价格区间", "必备", "上架", "CCC认证", "安全提示",
+             "适用起始月龄", "适用结束月龄", "适用季节"],
+            lambda p: [p.id, p.name, p.brand,
+                       (p.brand_profile.get_positioning_display() if p.brand_profile else "未建档"),
+                       p.model or "", p.first_category, p.second_category, p.image_url, p.description or "",
+                       p.overall_rating, (p.price_info or {}).get("avg", ""), (p.price_info or {}).get("range", ""),
+                       "是" if p.is_essential else "否", "是" if p.is_active else "否",
+                       "是" if p.has_ccc_certification else "否", p.safety_alert or "",
+                       p.applicable_age_start or "", p.applicable_age_end or "", p.applicable_season or ""],
+        )
 
     @action(detail=False, methods=["get"])
     def import_template(self, request):
-        """下载商品导入模板 CSV（仅管理员）"""
+        """v1.88.1 下载商品导入模板（?lang=cn|en）"""
+        lang = (request.query_params.get("lang") or "cn").strip().lower()
         response = HttpResponse(content_type="text/csv; charset=utf-8")
-        response["Content-Disposition"] = 'attachment; filename="products_import_template.csv"'
+        response["Content-Disposition"] = f'attachment; filename="products_import_template_{lang}.csv"'
         response.write("\ufeff")
         writer = csv.writer(response)
-        writer.writerow([
-            "name", "brand", "model", "first_category", "second_category",
-            "image_url", "description", "overall", "price_avg", "price_range",
-            "is_essential", "is_active", "has_ccc_certification", "safety_alert",
-            "applicable_age_start", "applicable_age_end", "applicable_season",
-        ])
-        # 示例行
-        writer.writerow([
+        sample = [
             "婴儿连体衣", "英氏", "YSS-01", "clothing", "连体衣",
             "https://example.com/1.jpg", "纯棉A类，透气亲肤", 8.5, 129, "99-159",
             "是", "是", "是", "注意按需购买，避免囤货过多", 0, 6, "all",
-        ])
+        ]
+        if lang == "en":
+            writer.writerow(["name*", "brand*", "model", "first_category*", "second_category",
+                              "image_url", "description", "overall(0-10)", "price_avg", "price_range",
+                              "is_essential(是/否)", "is_active(是/否)", "has_ccc_certification(是/否)", "safety_alert",
+                              "applicable_age_start", "applicable_age_end", "applicable_season"])
+            writer.writerow(["# Required: name, brand, first_category. first_category: food/feeding/clothing/diaper/bedding/"
+                             "furniture/bath/health_tool/travel/toy/mama_pregnancy/mama_postpartum/mama_nursing/appliance. "
+                             "applicable_season: spring/summer/autumn/winter/all. Yes-no columns: 是/否, blank=否(essential/ccc) or 是(active)."])
+        else:
+            writer.writerow(["商品名称*", "品牌*", "型号", "一级分类*", "二级分类",
+                              "商品图片URL", "商品描述", "综合评分(0-10)", "均价(元)", "价格区间",
+                              "必备（是/否）", "上架（是/否）", "CCC认证（是/否）", "安全提示",
+                              "适用起始月龄", "适用结束月龄", "适用季节"])
+            writer.writerow(["# 必填列：商品名称/品牌/一级分类。一级分类：food(食品)/feeding(食具)/clothing(服装)/diaper(尿裤)/"
+                             "bedding(寝具)/furniture(家具)/bath(洗护)/health_tool(护理工具)/travel(出行)/toy(启智早教)/"
+                             "mama_pregnancy(妈妈孕期)/mama_postpartum(妈妈产后)/mama_nursing(妈妈哺乳)/appliance(电子电器)；"
+                             "综合评分 0-10；必备/上架/CCC认证填 是/否，留空默认：必备=否、上架=是、CCC=否；"
+                             "适用季节：spring(春)/summer(夏)/autumn(秋)/winter(冬)/all(全年)；# 开头说明行导入时自动忽略"])
+        writer.writerow(sample)
         return response
 
     @action(detail=False, methods=["post"])
@@ -1495,16 +2154,20 @@ class ProductViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         try:
-            text = file.read().decode("utf-8-sig")
+            # v1.88.2 修复：字节流只读一次——此前 UTF-8 解码失败后第二次 read() 返回空流，
+            # 导致 GBK/ANSI 编码文件（Excel 中文环境另存）静默导入 0 条
+            raw = file.read()
+            text = raw.decode("utf-8-sig")
         except Exception:
             try:
-                text = file.read().decode("gbk")
+                text = raw.decode("gbk")
             except Exception:
                 return Response(
                     {"code": 2001, "message": "文件编码无法识别，请使用 UTF-8 或 GBK", "data": None},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-        reader = csv.DictReader(io.StringIO(text))
+        raw_header, rows = _kb_read_csv_rows(text)
+        header = _kb_normalize_header(raw_header, self.CN_HEADER_MAP)
         valid_categories = {c[0] for c in Product.FIRST_CATEGORY_CHOICES}
         created = 0
         errors = []
@@ -1515,56 +2178,61 @@ class ProductViewSet(viewsets.ModelViewSet):
                 return default
             return s.lower() in ("是", "true", "1", "yes", "y", "on")
 
-        for idx, row in enumerate(reader, start=2):
-            name = (row.get("name") or "").strip()
-            brand = (row.get("brand") or "").strip()
+        for row in rows:
+            # v1.88.2 真实文件行号（含表头/说明行计数），报错可精确定位
+            idx = row.get("__line__") or 0
+            # v1.88.2 修复：行字典键为原始表头（中文），须按位置从原始键取值；
+            # 此前用归一化后的英文键查询导致全部取空 → 每行报"缺少必填"，导入 0 条
+            mapped = {header[i]: row.get(raw_header[i], "") for i in range(len(header))}
+            name = (mapped.get("name") or "").strip()
+            brand = (mapped.get("brand") or "").strip()
             if not name or not brand:
-                errors.append(f"第{idx}行：缺少 name 或 brand")
+                errors.append(f"第{idx}行：缺少 商品名称 或 品牌")
                 continue
-            first_category = (row.get("first_category") or "").strip()
+            first_category = (mapped.get("first_category") or "").strip()
             if first_category not in valid_categories:
                 errors.append(f"第{idx}行：无效的一级分类「{first_category}」")
                 continue
             try:
-                overall = float(row.get("overall") or 0)
+                overall = float(mapped.get("overall") or 0)
             except ValueError:
                 overall = 0
             try:
-                price_avg = float(row.get("price_avg") or 0)
+                price_avg = float(mapped.get("price_avg") or 0)
             except ValueError:
                 price_avg = 0
             try:
-                age_start = int(row.get("applicable_age_start")) if row.get("applicable_age_start") else None
+                age_start = int(mapped.get("applicable_age_start")) if mapped.get("applicable_age_start") else None
             except ValueError:
                 age_start = None
             try:
-                age_end = int(row.get("applicable_age_end")) if row.get("applicable_age_end") else None
+                age_end = int(mapped.get("applicable_age_end")) if mapped.get("applicable_age_end") else None
             except ValueError:
                 age_end = None
+            # v1.88.1 自动关联品牌库：同名品牌档案存在时建立关联
+            brand_profile = BrandProfile.objects.filter(name=brand).first()
             Product.objects.create(
                 name=name,
                 brand=brand,
-                model=(row.get("model") or "").strip(),
+                brand_profile=brand_profile,
+                model=(mapped.get("model") or "").strip(),
                 first_category=first_category,
-                second_category=(row.get("second_category") or "默认").strip(),
-                image_url=(row.get("image_url") or "").strip() or f"https://placehold.co/300x300/fef3c7/f97316?text={name[:4]}",
-                description=(row.get("description") or "").strip(),
+                second_category=(mapped.get("second_category") or "默认").strip(),
+                image_url=(mapped.get("image_url") or "").strip() or f"https://placehold.co/300x300/fef3c7/f97316?text={name[:4]}",
+                description=(mapped.get("description") or "").strip(),
                 overall_rating=overall,
-                price_info={"avg": price_avg, "range": (row.get("price_range") or str(price_avg)).strip()},
-                is_essential=_yn(row.get("is_essential")),
-                is_active=_yn(row.get("is_active"), True),
-                has_ccc_certification=_yn(row.get("has_ccc_certification")),
-                safety_alert=(row.get("safety_alert") or "").strip(),
+                price_info={"avg": price_avg, "range": (mapped.get("price_range") or str(price_avg)).strip()},
+                is_essential=_yn(mapped.get("is_essential")),
+                is_active=_yn(mapped.get("is_active"), True),
+                has_ccc_certification=_yn(mapped.get("has_ccc_certification")),
+                safety_alert=(mapped.get("safety_alert") or "").strip(),
                 applicable_age_start=age_start,
                 applicable_age_end=age_end,
-                applicable_season=(row.get("applicable_season") or "all").strip() or "all",
+                applicable_season=(mapped.get("applicable_season") or "all").strip() or "all",
             )
             created += 1
-        return Response({
-            "code": 0,
-            "message": f"导入完成：成功 {created} 条" + (f"，{len(errors)} 条失败" if errors else ""),
-            "data": {"created": created, "errors": errors},
-        })
+        # v1.88.2 统一导入响应：汇总文案附首条失败原因，并补齐此前缺失的审计落库
+        return _kb_import_result(request, "商品", "product", created, errors)
 
 
 # ============ 品牌 ============
@@ -1574,7 +2242,39 @@ class BrandViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        return BrandProfile.objects.filter(is_active=True)
+        # v1.88.1 前台一律只显示有效品牌（含管理员）；仅管理场景（with_inactive=1 且有权限）可见全部
+        params = _kb_params(self)
+        can_manage = _is_admin(self.request.user) or has_permission(self.request.user, "menu_admin_products_manage")
+        if params.get("with_inactive") == "1" and can_manage:
+            qs = BrandProfile.objects.all()
+        elif self.action not in ("list", "retrieve"):
+            # v1.88.1 写操作（编辑/删除/重新启用停用品牌）不受有效过滤限制
+            qs = BrandProfile.objects.all()
+        else:
+            qs = BrandProfile.objects.filter(is_active=True)
+        # v1.88.1 品牌名搜索（品牌库管理页用）
+        search = params.get("search")
+        if search:
+            qs = qs.filter(models.Q(name__icontains=search) | models.Q(name_en__icontains=search))
+        return qs.order_by("id")
+
+    def get_permissions(self):
+        """v1.88 安全收口：品牌写操作仅限管理员（此前任何登录用户均可创建/修改/删除品牌）"""
+        if self.action in ("create", "update", "partial_update", "destroy"):
+            return [IsAuthenticated(), IsAdminUser()]
+        return super().get_permissions()
+
+    def perform_create(self, serializer):
+        obj = serializer.save()
+        audit(self.request, "knowledge_create", "新增品牌", "brand", obj.id, obj.name, f"新增品牌【{obj.name}】")
+
+    def perform_update(self, serializer):
+        obj = serializer.save()
+        audit(self.request, "knowledge_update", "编辑品牌", "brand", obj.id, obj.name, f"修改品牌【{obj.name}】(#{obj.id})")
+
+    def perform_destroy(self, instance):
+        audit(self.request, "knowledge_delete", "删除品牌", "brand", instance.id, instance.name, f"删除品牌【{instance.name}】(#{instance.id})")
+        instance.delete()
 
 
 # ============ 待产包 ============
@@ -1587,20 +2287,20 @@ class ShoppingListViewSet(viewsets.ModelViewSet):
         return ShoppingList.objects.filter(user=self.request.user).prefetch_related("items", "items__product")
 
     def perform_create(self, serializer):
-        check_permission_or_403(self.request.user, "shopping_list_create", "您没有新建待产包清单的权限")
+        check_permission_or_403(self.request.user, "shopping_list_create", "您暂无「新建清单」的权限，请联系管理员开启")
         serializer.save(user=self.request.user)
 
     def perform_update(self, serializer):
-        check_permission_or_403(self.request.user, "shopping_list_update", "您没有修改待产包清单的权限")
+        check_permission_or_403(self.request.user, "shopping_list_update", "您暂无「修改清单」的权限，请联系管理员开启")
         serializer.save()
 
     def perform_destroy(self, instance):
-        check_permission_or_403(self.request.user, "shopping_list_delete", "您没有删除待产包清单的权限")
+        check_permission_or_403(self.request.user, "shopping_list_delete", "您暂无「删除清单」的权限，请联系管理员开启")
         instance.delete()
 
     @action(detail=False, methods=["post"])
     def generate(self, request):
-        check_permission_or_403(request.user, "shopping_list_create", "您没有生成待产包清单的权限")
+        check_permission_or_403(request.user, "shopping_list_create", "您暂无「生成清单」的权限，请联系管理员开启")
         """智能生成待产包"""
         season = request.data.get("season", "all")
         delivery_method = request.data.get("delivery_method", "both")
@@ -1768,28 +2468,57 @@ class ShoppingListViewSet(viewsets.ModelViewSet):
 # ============ 待产包参考数据（妈妈篇/宝宝篇） ============
 
 class BabyShoppingItemViewSet(viewsets.ModelViewSet):
-    """待产包参考物品 — 所有用户可读，仅管理员可写"""
+    """待产包参考物品 — 所有用户可读，管理员或被授权用户（kb_shopping_manage）可写"""
     serializer_class = BabyShoppingItemSerializer
     permission_classes = [IsAuthenticated]
+    kb_manage_perm = "kb_shopping_manage"
+    kb_view_perm = "kb_shopping_view"
 
     def get_queryset(self):
-        qs = BabyShoppingItem.objects.filter(is_active=True).order_by("owner", "sort_order", "id")
-        # 筛选参数
-        owner = self.request.query_params.get("owner")
+        # v1.88.1 前台展示（list/retrieve）只显示启用条目（含管理员）；写操作放行（停用条目可编辑/删除/重新启用）
+        if self.action not in ("list", "retrieve") or _kb_can_see_inactive(self):
+            qs = BabyShoppingItem.objects.all()
+        else:
+            qs = BabyShoppingItem.objects.filter(is_active=True)
+        qs = qs.order_by("owner", "sort_order", "id")
+        # 筛选参数（兼容 GET/POST）
+        params = _kb_params(self)
+        owner = params.get("owner")
         if owner:
             qs = qs.filter(owner=owner)
-        category = self.request.query_params.get("category")
+        category = params.get("category")
         if category:
             qs = qs.filter(category=category)
-        keyword = self.request.query_params.get("keyword")
+        keyword = params.get("keyword")
         if keyword:
             qs = qs.filter(models.Q(name__icontains=keyword) | models.Q(remark__icontains=keyword))
+        # v1.88 知识库管理：启用状态筛选（仅管理接口有效）
+        status_filter = params.get("status")
+        if status_filter in ("active", "inactive") and _kb_can_see_inactive(self):
+            qs = qs.filter(is_active=(status_filter == "active"))
         return qs
 
     def get_permissions(self):
-        if self.action in ("create", "update", "partial_update", "destroy"):
-            return [IsAdminUser()]
+        if self.action in ("create", "update", "partial_update", "destroy", "batch"):
+            return [KbWritePermission()]
         return [IsAuthenticated()]
+
+    def perform_create(self, serializer):
+        obj = serializer.save()
+        _kb_write_audit(self.request, "create", "待产包预置物品", "baby_shopping", obj, f"新增预置物品【{obj.name}】(归属 {obj.get_owner_display()})")
+
+    def perform_update(self, serializer):
+        obj = serializer.save()
+        _kb_write_audit(self.request, "update", "待产包预置物品", "baby_shopping", obj, f"修改预置物品【{obj.name}】(#{obj.id})")
+
+    def perform_destroy(self, instance):
+        _kb_write_audit(self.request, "delete", "待产包预置物品", "baby_shopping", instance, f"删除预置物品【{instance.name}】(#{instance.id})")
+        instance.delete()
+
+    @action(detail=False, methods=["post"])
+    def batch(self, request):
+        """v1.88 批量操作：delete / active / inactive"""
+        return _kb_batch_action(request, BabyShoppingItem.objects.all(), "待产包预置物品", "baby_shopping", get_name=lambda x: x.name)
 
     def list(self, request, *args, **kwargs):
         """重写 list，返回分页 + 统计信息"""
@@ -1805,8 +2534,14 @@ class BabyShoppingItemViewSet(viewsets.ModelViewSet):
         )
 
         # 分页
-        page = int(request.query_params.get("page", 1))
-        page_size = int(request.query_params.get("page_size", 10))
+        try:
+            page = max(1, int(request.query_params.get("page", 1)))
+        except (TypeError, ValueError):
+            page = 1
+        try:
+            page_size = max(1, min(100, int(request.query_params.get("page_size", 10))))
+        except (TypeError, ValueError):
+            page_size = 10
         start = (page - 1) * page_size
         end = start + page_size
         items = qs[start:end]
@@ -1820,7 +2555,7 @@ class BabyShoppingItemViewSet(viewsets.ModelViewSet):
                 "total": total,
                 "page": page,
                 "page_size": page_size,
-                "total_pages": (total + page_size - 1) // page_size,
+                "total_pages": (total + page_size - 1) // page_size if total > 0 else 1,
                 "stats": {
                     "mom_count": mom_count,
                     "baby_count": baby_count,
@@ -2247,7 +2982,7 @@ class HealthRecordViewSet(viewsets.ModelViewSet):
         return super().create(request, *args, **kwargs)
 
     def perform_create(self, serializer):
-        check_permission_or_403(self.request.user, "health_record_create", "您没有添加健康记录的权限")
+        check_permission_or_403(self.request.user, "health_record_create", "您暂无「添加健康记录」的权限，请联系管理员开启")
         record_type = serializer.validated_data.get("record_type") or self.request.data.get("record_type")
         extra_kwargs = {"user": self.request.user}
         if record_type == "prenatal_exam" and not serializer.validated_data.get("mother"):
@@ -2276,19 +3011,19 @@ class HealthRecordViewSet(viewsets.ModelViewSet):
         audit(self.request, "health_record_create", "添加健康记录", "health", rec.id, rec.record_type, f"记录类型: {rec.record_type}")
 
     def perform_update(self, serializer):
-        check_permission_or_403(self.request.user, "health_record_update", "您没有修改健康记录的权限")
+        check_permission_or_403(self.request.user, "health_record_update", "您暂无「修改健康记录」的权限，请联系管理员开启")
         rec = serializer.save()
         audit(self.request, "health_record_update", "修改健康记录", "health", rec.id, rec.record_type, f"修改记录 #{rec.id}")
 
     def perform_destroy(self, instance):
-        check_permission_or_403(self.request.user, "health_record_delete", "您没有删除健康记录的权限")
+        check_permission_or_403(self.request.user, "health_record_delete", "您暂无「删除健康记录」的权限，请联系管理员开启")
         audit(self.request, "health_record_delete", "删除健康记录", "health", instance.id, instance.record_type, f"删除记录 #{instance.id}")
         instance.delete()
 
     # ===== v1.57 批量删除（单事务 + 逐条审计 + 权限校验，仅删除本人记录） =====
     @action(detail=False, methods=["post"], url_path="batch-delete")
     def batch_delete(self, request):
-        check_permission_or_403(request.user, "health_record_delete", "您没有删除健康记录的权限")
+        check_permission_or_403(request.user, "health_record_delete", "您暂无「删除健康记录」的权限，请联系管理员开启")
         ids = request.data.get("ids") or []
         if not isinstance(ids, list) or not ids:
             return Response(
@@ -2336,7 +3071,7 @@ class HealthRecordViewSet(viewsets.ModelViewSet):
     # ===== v1.57 CSV 健康数据批量导入（妈妈体重打卡 / 宝宝生长测量，冲突策略 skip|overwrite） =====
     @action(detail=False, methods=["post"], url_path="batch-import")
     def batch_import(self, request):
-        check_permission_or_403(request.user, "health_record_create", "您没有添加健康记录的权限")
+        check_permission_or_403(request.user, "health_record_create", "您暂无「添加健康记录」的权限，请联系管理员开启")
         from django.utils import timezone
 
         records = request.data.get("records") or []
@@ -2805,9 +3540,9 @@ class HealthBmiAnalysisView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        check_permission_or_403(request.user, "menu_health", "您没有访问健康中心的权限")
+        check_permission_or_403(request.user, "menu_health", "管理员已关闭「健康中心」页面访问，如有需要请联系管理员开启")
         # v1.57 权限补齐：时序拉取属于健康档案查看能力，需同时具备查看权限（原仅校验菜单级权限存在越权漏洞）
-        check_permission_or_403(request.user, "health_record_view", "您没有查看健康档案的权限")
+        check_permission_or_403(request.user, "health_record_view", "您暂无「查看健康档案」的权限，请联系管理员开启")
         mother_id = request.query_params.get("mother_id")
         return Response({
             "code": 0,
@@ -2818,9 +3553,9 @@ class HealthBmiAnalysisView(APIView):
         })
 
     def post(self, request):
-        check_permission_or_403(request.user, "menu_health", "您没有访问健康中心的权限")
+        check_permission_or_403(request.user, "menu_health", "管理员已关闭「健康中心」页面访问，如有需要请联系管理员开启")
         # v1.57 权限补齐：分析接口会自动归档写库，必须具备新增健康记录权限（原仅校验菜单级权限存在越权漏洞）
-        check_permission_or_403(request.user, "health_record_create", "您没有添加健康记录的权限")
+        check_permission_or_403(request.user, "health_record_create", "您暂无「添加健康记录」的权限，请联系管理员开启")
         from apps.core.serializers.health import BmiAnalysisInputSerializer
         from apps.core.services.medical_calculator import MedicalCalculator
         from apps.core.services.diet_recommendation_service import DietRecommendationService
@@ -3283,8 +4018,8 @@ class HealthVitalsAnalysisView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        check_permission_or_403(request.user, "menu_health", "您没有访问健康中心的权限")
-        check_permission_or_403(request.user, "health_record_view", "您没有查看健康档案的权限")
+        check_permission_or_403(request.user, "menu_health", "管理员已关闭「健康中心」页面访问，如有需要请联系管理员开启")
+        check_permission_or_403(request.user, "health_record_view", "您暂无「查看健康档案」的权限，请联系管理员开启")
         mother_id = request.query_params.get("mother_id")
         timeseries, summary = _build_vitals_timeseries(request.user, mother_id=mother_id)
         return Response({
@@ -3297,8 +4032,8 @@ class HealthVitalsAnalysisView(APIView):
         })
 
     def post(self, request):
-        check_permission_or_403(request.user, "menu_health", "您没有访问健康中心的权限")
-        check_permission_or_403(request.user, "health_record_create", "您没有添加健康记录的权限")
+        check_permission_or_403(request.user, "menu_health", "管理员已关闭「健康中心」页面访问，如有需要请联系管理员开启")
+        check_permission_or_403(request.user, "health_record_create", "您暂无「添加健康记录」的权限，请联系管理员开启")
         from apps.core.serializers.health import VitalsAnalysisInputSerializer
         from apps.core.services.vitals_calculator import VitalsCalculator
         from apps.core.services.gestation_engine import validate_gestational_week
@@ -3585,8 +4320,8 @@ class HealthVitalsAiAnalysisView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        check_permission_or_403(request.user, "menu_health", "您没有访问健康中心的权限")
-        check_permission_or_403(request.user, "health_record_view", "您没有查看健康档案的权限")
+        check_permission_or_403(request.user, "menu_health", "管理员已关闭「健康中心」页面访问，如有需要请联系管理员开启")
+        check_permission_or_403(request.user, "health_record_view", "您暂无「查看健康档案」的权限，请联系管理员开启")
         from apps.core.models.health import HealthRecord
         from apps.core.services.ai_service import ai_analyze_vitals
         from apps.core.services.vitals_calculator import VitalsCalculator
@@ -3651,7 +4386,7 @@ class HealthVitalsAiAnalysisView(APIView):
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def ai_chat(request):
-    check_permission_or_403(request.user, "ai_chat", "管理员已关闭普通用户的 AI 问答功能")
+    check_permission_or_403(request.user, "ai_chat", "您暂无「AI 问答」权限，请联系管理员开启")
     query_text = request.data.get("query", "").strip()
     if not query_text:
         return Response(
@@ -3888,7 +4623,8 @@ class FavoriteViewSet(viewsets.ModelViewSet):
         return qs
 
     def create(self, request, *args, **kwargs):
-        check_permission_or_403(request.user, "product_favorite", "您没有添加收藏的权限")
+        # v1.88.1 收藏权限独立成「我的收藏中心」组：favorite_create
+        check_permission_or_403(request.user, "favorite_create", "您暂无添加收藏的权限，请联系管理员开启")
         fav_type = request.data.get("favorite_type", "product")
         obj_id = request.data.get("object_id")
         existing = UserFavorite.objects.filter(
@@ -3909,7 +4645,7 @@ class FavoriteViewSet(viewsets.ModelViewSet):
               f"收藏了 {fav.favorite_type} #{fav.object_id}")
 
     def destroy(self, request, *args, **kwargs):
-        check_permission_or_403(request.user, "product_unfavorite", "您没有取消收藏的权限")
+        check_permission_or_403(request.user, "favorite_delete", "您暂无取消收藏的权限，请联系管理员开启")
         instance = self.get_object()
         self.perform_destroy(instance)
         return Response({"code": 0, "message": "已取消收藏", "data": None}, status=status.HTTP_200_OK)
@@ -3930,7 +4666,7 @@ class FavoriteViewSet(viewsets.ModelViewSet):
             return Response({"code": 2001, "message": "缺少 object_id", "data": None}, status=status.HTTP_400_BAD_REQUEST)
         existing = UserFavorite.objects.filter(user=request.user, favorite_type=fav_type, object_id=obj_id).first()
         if existing:
-            check_permission_or_403(request.user, "product_unfavorite", "您没有取消收藏的权限")
+            check_permission_or_403(request.user, "favorite_delete", "您暂无取消收藏的权限，请联系管理员开启")
             fav_id = existing.id
             if existing.favorite_type == "product":
                 Product.objects.filter(id=existing.object_id, fav_count__gt=0).update(fav_count=models.F("fav_count") - 1)
@@ -3939,7 +4675,7 @@ class FavoriteViewSet(viewsets.ModelViewSet):
             existing.delete()
             return Response({"code": 0, "message": "已取消收藏", "data": {"favorited": False, "object_id": obj_id, "id": fav_id}})
         else:
-            check_permission_or_403(request.user, "product_favorite", "您没有添加收藏的权限")
+            check_permission_or_403(request.user, "favorite_create", "您暂无添加收藏的权限，请联系管理员开启")
             fav = UserFavorite.objects.create(
                 user=request.user,
                 favorite_type=fav_type,
@@ -3951,6 +4687,43 @@ class FavoriteViewSet(viewsets.ModelViewSet):
             audit(request, "favorite_add", "添加收藏", fav.favorite_type, fav.object_id, fav.note or "",
                   f"收藏了 {fav.favorite_type} #{fav.object_id}")
             return Response({"code": 0, "message": "已添加到收藏夹", "data": {"favorited": True, "object_id": obj_id, "id": fav.id}})
+
+    @action(detail=False, methods=["get"], url_path="map")
+    def map(self, request):
+        """v1.88.4 类型级收藏状态查询（一次返回当前用户该类型全部收藏）：
+        GET /api/favorites/map/?favorite_type=timeline → {"182": true, "395": true}
+        配合前端全局 favoriteStore，将列表页 N 次单对象查询收敛为 1 次请求。
+        不传 favorite_type 时返回全部类型 {"timeline": {"182": true}, ...}。
+        """
+        fav_type = request.query_params.get("favorite_type", "")
+        qs = UserFavorite.objects.filter(user=request.user)
+        if fav_type:
+            qs = qs.filter(favorite_type=fav_type)
+        data: dict = {}
+        for fav in qs.only("favorite_type", "object_id"):
+            if fav_type:
+                data[str(fav.object_id)] = True
+            else:
+                data.setdefault(fav.favorite_type, {})[str(fav.object_id)] = True
+        return Response({"code": 0, "message": "ok", "data": data})
+
+    @action(detail=False, methods=["post"], url_path="batch-delete")
+    def batch_delete(self, request):
+        """v1.88.1 批量取消收藏（收藏中心多选删除）：传 ids=[收藏记录ID]"""
+        check_permission_or_403(request.user, "favorite_delete", "您暂无取消收藏的权限，请联系管理员开启")
+        ids = request.data.get("ids", [])
+        if not isinstance(ids, list) or len(ids) == 0:
+            return Response({"code": 2001, "message": "请选择要取消的收藏项", "data": None}, status=status.HTTP_400_BAD_REQUEST)
+        targets = list(UserFavorite.objects.filter(user=request.user, id__in=ids))
+        # 同步回减商品收藏计数
+        product_ids = [t.object_id for t in targets if t.favorite_type == "product"]
+        if product_ids:
+            Product.objects.filter(id__in=product_ids, fav_count__gt=0).update(fav_count=models.F("fav_count") - 1)
+        count, _ = UserFavorite.objects.filter(user=request.user, id__in=ids).delete()
+        ids_text = ",".join(str(i) for i in ids[:50])
+        audit(request, "favorite_batch_delete", "批量取消收藏", "favorite", ids_text, f"{count}条",
+              f"批量取消收藏 {count} 条")
+        return Response({"code": 0, "message": f"已取消 {count} 条收藏", "data": {"count": count}})
 
 
 # ============ 用户管理 ============
@@ -4747,29 +5520,90 @@ class FetalStoryViewSet(viewsets.ModelViewSet):
     """胎教故事 ViewSet —— 按孕周天序展示，支持中英双语"""
     queryset = FetalStory.objects.all()
     serializer_class = FetalStorySerializer
+    permission_classes = [IsAuthenticated]
+    kb_manage_perm = "kb_stories_manage"
+    kb_view_perm = "kb_stories_view"
+
+    # v1.88.1 导入模板：中文表头 → 英文字段名映射
+    CN_HEADER_MAP = {
+        "标题（中文）*": "title", "英文标题": "title_en", "副标题": "subtitle", "英文副标题": "subtitle_en",
+        "起始孕周*": "week_start", "天数偏移": "day_offset", "当天序号": "day_index",
+        "故事正文（中文）*": "content", "英文正文": "content_en", "胎教提示（中文）": "tips", "英文提示": "tips_en",
+        "封面图URL": "cover_image", "讲述者": "narrator", "来源": "source", "英文来源": "source_en",
+        "排序权重": "sort_order", "是否启用（是/否）": "is_active",
+    }
 
     def initial(self, request, *args, **kwargs):
         super().initial(request, *args, **kwargs)
         if request.method not in ("OPTIONS",):
-            check_permission_or_403(request.user, "menu_fetal_stories", "管理员已关闭您的胎教故事访问权限")
+            # v1.88 兼容知识库管理页：菜单权限 / 知识库查看 / 知识库管理权限任一即可
+            if not (
+                _kb_menu_allowed(request.user, "menu_fetal_stories", "kb_stories_view")
+                or has_permission(request.user, "kb_stories_manage")
+            ):
+                raise PermissionDenied(detail={"code": 4030, "message": "管理员已关闭「胎教故事」页面访问，如有需要请联系管理员开启", "permission": "menu_fetal_stories"})
 
     def get_permissions(self):
-        if self.action in ["list", "retrieve"]:
-            return [IsAuthenticated()]
-        return [IsAdminUser()]
+        """知识库写操作仅管理员或被授权用户（kb_stories_manage）"""
+        if self.action in ("create", "update", "partial_update", "destroy", "import_csv", "batch"):
+            return [KbWritePermission()]
+        return super().get_permissions()
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        # v1.88.1 前台一律只显示启用条目（含管理员）；仅知识库管理中心（with_inactive=1）可见全部
+        # v1.88.1 前台展示（list/retrieve）只显示启用数据；写操作放行（否则停用条目无法编辑/删除/重新启用）
+        if self.action in ("list", "retrieve") and not _kb_can_see_inactive(self):
+            qs = qs.filter(is_active=True)
+        return qs
 
     def list(self, request, *args, **kwargs):
-        """列表：支持按 week_start / narrator 筛选"""
-        week = request.query_params.get("week")
-        narrator = request.query_params.get("narrator")
+        """列表：支持按 week_start / narrator 筛选；带 page 参数时服务端分页（v1.88）"""
+        params = _kb_params(self)
+        week = params.get("week")
+        narrator = params.get("narrator")
+        search = params.get("search")
         qs = self.get_queryset()
         if week:
             qs = qs.filter(week_start=int(week))
         if narrator:
             qs = qs.filter(narrator=narrator)
+        if search:
+            qs = qs.filter(
+                models.Q(title__icontains=search)
+                | models.Q(title_en__icontains=search)
+                | models.Q(content__icontains=search)
+                | models.Q(subtitle__icontains=search)
+            )
+        # v1.88 知识库管理：启用状态筛选（仅管理接口有效）
+        status_filter = params.get("status")
+        if status_filter in ("active", "inactive") and _kb_can_see_inactive(self):
+            qs = qs.filter(is_active=(status_filter == "active"))
         qs = qs.order_by("week_start", "day_offset", "day_index")
-        serializer = self.get_serializer(qs, many=True)
-        return Response({"code": 0, "message": "success", "data": serializer.data})
+        stats = {
+            "total": qs.count(),
+            "active_count": qs.filter(is_active=True).count(),
+            "inactive_count": qs.filter(is_active=False).count(),
+            "weeks_count": qs.values("week_start").distinct().count(),
+        }
+        return _kb_paged_response(qs, request, FetalStorySerializer, extra_stats=stats)
+
+    def perform_create(self, serializer):
+        obj = serializer.save()
+        _kb_write_audit(self.request, "create", "胎教故事", "fetal_story", obj, f"新增胎教故事【{obj.title}】(孕{obj.week_start}周+{obj.day_offset}天)")
+
+    def perform_update(self, serializer):
+        obj = serializer.save()
+        _kb_write_audit(self.request, "update", "胎教故事", "fetal_story", obj, f"修改胎教故事【{obj.title}】(#{obj.id})")
+
+    def perform_destroy(self, instance):
+        _kb_write_audit(self.request, "delete", "胎教故事", "fetal_story", instance, f"删除胎教故事【{instance.title}】(#{instance.id})")
+        instance.delete()
+
+    @action(detail=False, methods=["post"])
+    def batch(self, request):
+        """v1.88 批量操作：delete / active / inactive"""
+        return _kb_batch_action(request, FetalStory.objects.all(), "胎教故事", "fetal_story", get_name=lambda x: x.title)
 
     @action(detail=False, methods=["get"])
     def weeks(self, request):
@@ -4789,6 +5623,127 @@ class FetalStoryViewSet(viewsets.ModelViewSet):
         story.view_count += 1
         story.save(update_fields=["view_count"])
         return Response({"code": 0, "message": "success", "data": {"view_count": story.view_count}})
+
+    @action(detail=False, methods=["post"])
+    def export_csv(self, request):
+        """v1.88.1 导出胎教故事 CSV：scope=page/filtered/selected"""
+        data = request.data or {}
+        qs = self.get_queryset().order_by("week_start", "day_offset", "day_index")
+        qs = _kb_apply_export_scope(qs, data)
+        scope_suffix = {"selected": "选中", "filtered": "筛选", "page": f"第{data.get('page', 1)}页"}.get(str(data.get("scope") or "page"), "")
+        return _kb_export_response(
+            qs, request, f"fetal_stories_export_{scope_suffix}.csv",
+            ["ID", "标题（中文）", "英文标题", "副标题", "英文副标题", "起始孕周", "天数偏移", "当天序号",
+             "故事正文（中文）", "英文正文", "胎教提示（中文）", "英文提示", "封面图URL", "讲述者", "来源", "英文来源", "排序权重", "是否启用"],
+            lambda s: [s.id, s.title, s.title_en, s.subtitle, s.subtitle_en, s.week_start, s.day_offset, s.day_index,
+                       s.content, s.content_en, s.tips, s.tips_en, s.cover_image or "", s.narrator, s.source, s.source_en,
+                       s.sort_order, "是" if s.is_active else "否"],
+        )
+
+    @action(detail=False, methods=["get"])
+    def import_template(self, request):
+        """v1.88.1 下载胎教故事导入模板（?lang=cn|en）"""
+        lang = (request.query_params.get("lang") or "cn").strip().lower()
+        response = HttpResponse(content_type="text/csv; charset=utf-8")
+        response["Content-Disposition"] = f'attachment; filename="fetal_stories_import_template_{lang}.csv"'
+        response.write("\ufeff")
+        writer = csv.writer(response)
+        sample = [
+            "月亮婆婆的摇篮曲", "Moon Lullaby", "温柔与安全感", "Gentleness and security",
+            17, 0, 1,
+            "夜幕降临，月亮婆婆轻轻哼起了摇篮曲……",
+            "Night falls, and Grandma Moon hums a soft lullaby...",
+            "睡前轻声讲述，配合轻抚腹部节奏感更佳。",
+            "Tell it softly before sleep, gently stroking your belly.",
+            "", "mom", "", "", 0, "是",
+        ]
+        if lang == "en":
+            writer.writerow(["title*", "title_en", "subtitle", "subtitle_en", "week_start*", "day_offset",
+                             "day_index", "content*", "content_en", "tips", "tips_en", "cover_image",
+                             "narrator", "source", "source_en", "sort_order", "is_active(是/否)"])
+            writer.writerow(["# Required: title, week_start, content. narrator: mom(妈妈讲)/dad(爸爸讲)/either(都可以), "
+                             "blank=mom. week_start range 17-40. is_active: 是/否, blank=是. # lines are ignored."])
+        else:
+            writer.writerow(["标题（中文）*", "英文标题", "副标题", "英文副标题", "起始孕周*", "天数偏移",
+                             "当天序号", "故事正文（中文）*", "英文正文", "胎教提示（中文）", "英文提示", "封面图URL",
+                             "讲述者", "来源", "英文来源", "排序权重", "是否启用（是/否）"])
+            writer.writerow(["# 必填列：标题（中文）/起始孕周/故事正文（中文）。起始孕周范围 17-40；讲述者：mom(妈妈讲)/dad(爸爸讲)/"
+                             "either(都可以)，留空默认 mom；天数偏移从本周起第几天（0=第1天）；当天序号同一天多个故事时用；"
+                             "是否启用填 是/否，留空默认为是；# 开头说明行导入时自动忽略"])
+        writer.writerow(sample)
+        return response
+
+    @action(detail=False, methods=["post"])
+    def import_csv(self, request):
+        """导入胎教故事 CSV（管理员/授权用户）"""
+        file = request.FILES.get("file")
+        if not file:
+            return Response({"code": 2001, "message": "请上传 CSV 文件", "data": None}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            # v1.88.2 修复：字节流只读一次——此前 UTF-8 解码失败后第二次 read() 返回空流，
+            # 导致 GBK/ANSI 编码文件（Excel 中文环境另存）静默导入 0 条
+            raw = file.read()
+            text = raw.decode("utf-8-sig")
+        except Exception:
+            try:
+                text = raw.decode("gbk")
+            except Exception:
+                return Response({"code": 2001, "message": "文件编码无法识别，请使用 UTF-8 或 GBK", "data": None}, status=status.HTTP_400_BAD_REQUEST)
+        raw_header, rows = _kb_read_csv_rows(text)
+        header = _kb_normalize_header(raw_header, self.CN_HEADER_MAP)
+        valid_narrators = {c[0] for c in FetalStory.NARRATOR_CHOICES}
+        created = 0
+        errors = []
+
+        def _yn(v, default=True):
+            s = str(v or "").strip()
+            if not s:
+                return default
+            return s.lower() in ("是", "true", "1", "yes", "y", "on")
+
+        def _int(v, default=0):
+            try:
+                return int(str(v).strip())
+            except (ValueError, TypeError):
+                return default
+
+        for row in rows:
+            # v1.88.2 真实文件行号（含表头/说明行计数），报错可精确定位
+            idx = row.get("__line__") or 0
+            # v1.88.2 修复：行字典键为原始表头（中文），须按位置从原始键取值；
+            # 此前用归一化后的英文键查询导致全部取空 → 每行报"缺少必填"，导入 0 条
+            mapped = {header[i]: row.get(raw_header[i], "") for i in range(len(header))}
+            title = (mapped.get("title") or "").strip()
+            content = (mapped.get("content") or "").strip()
+            if not title or not content:
+                errors.append(f"第{idx}行：缺少 标题 或 故事正文")
+                continue
+            narrator = (mapped.get("narrator") or "mom").strip()
+            if narrator not in valid_narrators:
+                errors.append(f"第{idx}行：无效的讲述者「{narrator}」(mom/dad/either)")
+                continue
+            FetalStory.objects.create(
+                title=title,
+                title_en=(mapped.get("title_en") or "").strip(),
+                subtitle=(mapped.get("subtitle") or "").strip(),
+                subtitle_en=(mapped.get("subtitle_en") or "").strip(),
+                week_start=_int(mapped.get("week_start"), 17),
+                day_offset=_int(mapped.get("day_offset"), 0),
+                day_index=_int(mapped.get("day_index"), 1),
+                content=content,
+                content_en=(mapped.get("content_en") or "").strip(),
+                tips=(mapped.get("tips") or "").strip(),
+                tips_en=(mapped.get("tips_en") or "").strip(),
+                cover_image=(mapped.get("cover_image") or "").strip() or "",
+                narrator=narrator,
+                source=(mapped.get("source") or "").strip(),
+                source_en=(mapped.get("source_en") or "").strip(),
+                sort_order=_int(mapped.get("sort_order"), 0),
+                is_active=_yn(mapped.get("is_active")),
+            )
+            created += 1
+        # v1.88.2 统一导入响应：汇总文案附首条失败原因，并落审计
+        return _kb_import_result(request, "胎教故事", "fetal_story", created, errors)
 
 class AIConfigTestView(APIView):
     """测试 AI API 配置连接可用性（一键测试）"""
@@ -5093,7 +6048,7 @@ class WeatherQueryView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        check_permission_or_403(request.user, "menu_weather", "您无权访问天气查询功能")
+        check_permission_or_403(request.user, "menu_weather", "管理员已关闭「天气」功能，如有需要请联系管理员开启")
         days = request.query_params.get("days") or weather_service.DEFAULT_FORECAST_DAYS
         lat = (request.query_params.get("lat") or "").strip()
         lon = (request.query_params.get("lon") or "").strip()
@@ -5211,7 +6166,7 @@ class HolidayYearView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, year):
-        check_permission_or_403(request.user, "menu_weather", "您无权访问万年历节假日数据")
+        check_permission_or_403(request.user, "menu_weather", "管理员已关闭「万年历/节假日」功能，如有需要请联系管理员开启")
         if year < holiday_service.HOLIDAY_YEAR_MIN or year > holiday_service.HOLIDAY_YEAR_MAX:
             return Response(
                 {"code": 4000, "message": f"年份超出支持范围（{holiday_service.HOLIDAY_YEAR_MIN}~{holiday_service.HOLIDAY_YEAR_MAX}）", "data": None},
@@ -5230,7 +6185,7 @@ class AIConfigModelsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        check_permission_or_403(request.user, "ai_fetch_models", "您暂无拉取 AI 模型列表的权限")
+        check_permission_or_403(request.user, "ai_fetch_models", "您暂无「获取 AI 模型列表」权限，请联系管理员开启")
         data = request.data or {}
         config_index = data.get("config_index")
         api_key = (data.get("api_key") or "").strip()

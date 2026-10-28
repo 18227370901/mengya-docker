@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import api from "@/api/client";
 import { authApi } from "@/api/auth";
+import { useFavoriteStore } from "@/store/favoriteStore";
 import type { Stage, User } from "@/types";
 
 interface AuthState {
@@ -48,6 +49,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   setAuth: async (user, access, refresh) => {
     localStorage.setItem("mengya_access", access);
     localStorage.setItem("mengya_refresh", refresh);
+    // v1.88.4 账号切换时清空收藏缓存（新旧用户数据严格隔离）
+    useFavoriteStore.getState().reset();
     const initialPerms = user && user.permissions && Object.keys(user.permissions).length > 0 ? user.permissions : {};
     set({ user: { ...user, permissions: initialPerms }, token: access, permissions: initialPerms, loading: true });
     try {
@@ -65,6 +68,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   logout: () => {
     localStorage.removeItem("mengya_access");
     localStorage.removeItem("mengya_refresh");
+    // v1.88.4 登出时清空收藏缓存
+    useFavoriteStore.getState().reset();
     localStorage.removeItem("mengya_last_active");
     try {
       const keys = Object.keys(localStorage);

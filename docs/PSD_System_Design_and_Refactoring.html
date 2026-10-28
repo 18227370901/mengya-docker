@@ -2236,6 +2236,61 @@ apps/core/                                    apps/core/
       </div>
     </div>
 
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-badge">ADR 10.50</span>
+        <span class="adr-title">知识库管理中心五模块统一治理与 CSV 导入韧性体系落地决策 (v1.88 ~ v1.88.2)</span>
+      </div>
+      <div class="adr-body">
+        <p><strong>决策背景</strong>：五大知识模块（孕期时间轴、胎教故事、孕产食谱、育儿百科、待产包预置）此前仅有种子预置数据，管理员无法在界面内增删改与批量维护。知识库管理中心上线后 CSV 导入链路暴露两处致命缺陷：归一化表头后查询中文键字典全部落空导致任何合法模板导入恒为 0 条（修复 5 处映射逻辑）；GBK 编码文件首次 <code>read()</code> 消耗文件流后二次 <code>read()</code> 得到空流，编码识别永远失败。同时权限模型粒度不足（需 74 键 15 组扩容），管理页全表加载性能持续恶化。</p>
+        <p><strong>核心架构治理</strong>：</p>
+        <ul>
+          <li><strong>视图层分离</strong>：独立 <code>views_knowledge_admin.py</code> 承载知识库管理 CRUD 与导入导出，与用户端展示业务视图彻底解耦；</li>
+          <li><strong>种子服务独立</strong>：新增 <code>knowledge_seed_service.py</code> 支撑五大模块「恢复出厂预置」，与 <code>init_data</code> 全量初始化解耦，支持单模块精准重置；</li>
+          <li><strong>统一响应契约 <code>_kb_import_result</code></strong>：成功条数、失败条数、按文件<strong>真实物理行号</strong>精确定位的逐行错误明细，同步写入审计日志；</li>
+          <li><strong>前端明细弹窗 <code>CsvImportResultModal</code></strong>：result 成功摘要与 error 错误明细双模式，错误常驻展示需手动「知道了」关闭；</li>
+          <li><strong>服务端分页治理</strong>：知识库管理各模块与商品管理页全部接入服务端分页（默认每页 10 条），支持 <code>page_size=-1</code> 全量语义；</li>
+          <li><strong>74 键 15 组权限体系</strong>：<code>PermissionTreeCard</code> 分组渲染 + 权限分组独立保存（基线配置 + 各分组乐观独立提交，杜绝连带提交）。</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-badge">ADR 10.51</span>
+        <span class="adr-title">全局收藏状态中心化 Store 与列表页性能治理落地决策 (v1.88.4)</span>
+      </div>
+      <div class="adr-body">
+        <p><strong>决策背景</strong>：每张列表卡片独立发起一次收藏状态查询引发 N+1 请求风暴（时间轴页实测 204 个请求、胎教故事页 245 个）；列表卡片与详情弹窗收藏状态各自维护，详情页取消收藏后列表不刷新；任意增删改操作触发全量重拉导致整页闪白，且长列表无分页治理。</p>
+        <p><strong>核心架构治理</strong>：</p>
+        <ul>
+          <li><strong>全局收藏 Store（zustand）</strong>：新增 <code>favoriteStore.ts</code>，核心数据结构 <code>maps</code>（类型 → 已收藏 ID 集合）配合 <code>loaded/loading/failed</code> 三态实现并发去重与失败重试；点击收藏执行<strong>乐观更新</strong>（先本地切换再调 API，失败自动回滚）；账号切换与登出时 <code>reset()</code> 清空全部缓存；</li>
+          <li><strong>后端类型级接口</strong>：新增 <code>GET /api/favorites/map/</code>，一次请求返回该类型全部已收藏 ID 集合，将 N+1 收敛为每类型 1 个请求（204 → 1）；</li>
+          <li><strong>全端统一接入</strong>：时间轴、胎教故事、孕期周历、孕产食谱、育儿百科、商品三页与收藏中心统一读取同一份 store，任一处切换收藏全局即时同步；</li>
+          <li><strong>分页体系</strong>：<code>page_size=-1</code> 全量语义、<code>LightPagination</code> 轻量分页组件、每页条数选择记忆至 <code>localStorage</code>（时间轴 12/24/48/全部，胎教故事 24/48/96/全部）；</li>
+          <li><strong>切换体验治理</strong>：切换筛选保留旧内容、仅顶部渲染 <code>TopProgressBar</code> 渐变加载，消除整页闪白；删除乐观移除、编辑静默刷新。</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-badge">ADR 10.52</span>
+        <span class="adr-title">4030 权限拒绝提示结构化与全端 UX 规范统一落地决策 (v1.88.5)</span>
+      </div>
+      <div class="adr-body">
+        <p><strong>决策背景</strong>：普通用户触发权限拦截时界面仅显示「4030」数字编码。根因：DRF 将 dict 结构的 <code>detail</code> 直接展开为 <code>response.data</code>（不再有 detail 包裹层），<code>custom_exception_handler</code> 走入未覆盖的 elif 分支，<code>message=str(第一个键值)</code> 将数字编码字符串原样透传。同时全平台 40 处权限校验点文案句式不统一（部分权限类如 <code>KbWritePermission</code> 抛英文默认语），前端仅有 alert 级提示且路由守卫不携带具体页面名。</p>
+        <p><strong>核心架构治理</strong>：</p>
+        <ul>
+          <li><strong>异常处理器解包修复</strong>：<code>exceptions.py</code> 正确识别 dict 结构 <code>detail</code> 中的 <code>message</code>/<code>code</code> 键并解包，<code>code</code> 显式 <code>int</code> 数字化，杜绝字符串透传；</li>
+          <li><strong>40 处权限文案统一</strong>：全平台 40 处权限校验点提示词统一为「您暂无「XX」权限，请联系管理员开启」标准句式，<code>KbWritePermission</code> 英文默认语改中文显式抛出；</li>
+          <li><strong>两层防线体系</strong>：第一道为前端路由守卫 <code>PermissionGuard</code> 整页阻断提示卡（17 个路由全部携带具体页名，文案「管理员已关闭「XX」页面访问」）；第二道为新增 <code>PermissionDeniedCard</code> 组件接入时间轴、胎教故事、孕期周历、孕产食谱、育儿百科 5 个展示页，覆盖管理员中途修改权限的运行时场景；</li>
+          <li><strong>排版规范化</strong>：胎教故事按周分组视图统一单列竖排，任意天数（1 篇或 2 篇）卡片等宽规整，消除混排参差感。</li>
+        </ul>
+      </div>
+    </div>
+
 </div>
 </body>
 
