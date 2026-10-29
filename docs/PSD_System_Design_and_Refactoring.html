@@ -1404,7 +1404,19 @@ apps/core/                                    apps/core/
         </div>
       </section>
 
-    </main>
+    
+<section class="section" id="adr-10-61">
+  <h2>10.61 全站 CSV 导入/导出/模板列级对齐与全模块字段规范矩阵重构 (v1.96)</h2>
+  <div class="card">
+    <h3>核心优化与重构决策</h3>
+    <ul>
+      <li><strong>列级对齐说明行</strong>：彻底修复 Excel 打开 CSV 模板第二行列说明缺失问题，所有 6 大模块模板第 2 行严格 1:1 对齐字段说明并以 <code>#</code> 开头。</li>
+      <li><strong>待产包全套 CSV 支持</strong>：补齐 <code>BabyShoppingItemViewSet</code> 导入、导出与模板接口，并在 <code>kbModules.tsx</code> 注册。</li>
+      <li><strong>模板规范说明矩阵</strong>：知识库管理中心与好物推荐页面均升级全字段明细对照表弹窗与中英双语下载。</li>
+    </ul>
+  </div>
+</section>
+</main>
   </div>
 
 <div class="card" style="margin-top:20px;border-left:4px solid #10b981;padding:16px;background:var(--bg-card, #fff);">
@@ -2410,6 +2422,38 @@ apps/core/                                    apps/core/
             <li><strong>解耦绑定 IP 与外部端口：</strong>抽象为 <code>NGINX_BIND_IP</code> 与 <code>EXTERNAL_PORT</code>；前置代理模式渲染 <code>listen 127.0.0.1:&lt;PORT&gt; ssl;</code>（安全隔离）；标准公网模式渲染稳妥的 <code>listen &lt;PORT&gt; ssl;</code>（根除双栈冲突）；</li>
             <li><strong>命令行参数解析闭环：</strong><code>run.sh</code> 新增 <code>--local</code> / <code>--front-proxy</code>、<code>--public</code>、<code>--nginx-port &lt;PORT&gt;</code> 与 <code>--bind-ip &lt;IP&gt;</code>，支持与 <code>add_nginx</code> 免重启热重载；自动持久化同步 <code>.env</code>；</li>
             <li><strong>智能运行状态提示与双版同构：</strong><code>bin/env.sh</code> 自动检测并在前置代理模式下追加友好指引；传统版与 Docker 版同构同步升级。</li>
+          </ul>
+        </div>
+      </section>
+
+      <section id="adr-10-59" class="card mt-6">
+        <div class="flex items-center justify-between border-b pb-3 mb-4">
+          <h3 class="text-xl font-bold text-gray-800">10.59 健康打卡模板字段全覆盖矩阵与历史日期补录逻辑纠偏 (v1.94)</h3>
+          <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">已实施 (Accepted)</span>
+        </div>
+        <div class="space-y-4 text-sm text-gray-600 leading-relaxed">
+          <p><strong>业务背景：</strong>BMI 历史模板与血压血糖体征模板需完整呈现腹围、收缩压、舒张压、脉搏、血糖、测定场景、阶段、孕周等全部基础字段，并按模块场景分别明确专属必填项与互通选填项。此外纠正日期说明文案，明确支持补录历史过往任意日期的健康数据。</p>
+          <p><strong>重构实施：</strong></p>
+          <ul class="list-disc pl-5 space-y-1">
+            <li><strong>字段 100% 完整覆盖：</strong>BMI 模板与体征模板均完整包含 12 维字段，中文与英文表头结构对称；</li>
+            <li><strong>模块化差异约束说明：</strong>BMI 页面严格要求日期、体重与首次身高，体征字段列为互通选填项；体征页面严格要求血压或血糖，身高体重列为互通选填项；</li>
+            <li><strong>历史补录语义纠偏：</strong>统一规范提示语为「格式 YYYY-MM-DD，支持补录历史任意日期（不可填未来日期；每行必填）」，后端严格防呆未来日期。</li>
+          </ul>
+        </div>
+      </section>
+
+      <section id="adr-10-60" class="card mt-6">
+        <div class="flex items-center justify-between border-b pb-3 mb-4">
+          <h3 class="text-xl font-bold text-gray-800">10.60 弹性日期正则自适应与纯数据首行表头误判防御 (v1.95)</h3>
+          <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">已实施 (Accepted)</span>
+        </div>
+        <div class="space-y-4 text-sm text-gray-600 leading-relaxed">
+          <p><strong>缺陷定位：</strong>用户导入如 <code>2026-8-30</code> 等包含单数字月份的日期时，严格双位正则 <code>^\d{4}-\d{2}-\d{2}$</code> 导致校验失败；且首行纯数据被误判为表头导致字段错位。</p>
+          <p><strong>修复方案：</strong></p>
+          <ul class="list-disc pl-5 space-y-1">
+            <li><strong>智能补零自愈：</strong><code>normalizeDate</code> 自动将单数字月/日规范化补齐为双数字标准 ISO 格式（如 <code>2026-8-30</code> ➔ <code>2026-08-30</code>）；</li>
+            <li><strong>首行表头精准断言：</strong>引入 <code>isDateLike</code> 识别任何类日期格式，彻底杜绝无表头纯数据首行被误吞；</li>
+            <li><strong>后端双保险防御：</strong><code>batch_import</code> 增强日期正则提取，全面兼容弹性日期输入。</li>
           </ul>
         </div>
       </section>

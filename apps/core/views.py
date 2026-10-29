@@ -1443,7 +1443,7 @@ class TimelineViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"])
     def import_template(self, request):
-        """v1.88.1 下载时间轴导入模板（?lang=cn|en，三段式：表头+说明行+示例行）"""
+        """v1.88.4 下载时间轴导入模板（?lang=cn|en，逐列对齐说明行+示例行）"""
         lang = (request.query_params.get("lang") or "cn").strip().lower()
         response = HttpResponse(content_type="text/csv; charset=utf-8")
         response["Content-Disposition"] = f'attachment; filename="timeline_import_template_{lang}.csv"'
@@ -1451,20 +1451,38 @@ class TimelineViewSet(viewsets.ModelViewSet):
         writer = csv.writer(response)
         if lang == "en":
             writer.writerow(["stage_type*", "stage_value*", "category*", "title*", "subtitle",
-                             "content*", "tips", "cover_image", "is_essential(是/否)", "sort_order", "is_active(是/否)"])
-            writer.writerow(["# Required: stage_type, stage_value, category, title, content. "
-                             "stage_type: pregnancy_week/baby_age_day/baby_age_month/pregnancy_trimester. "
-                             "category: food/clothing/housing/travel/health/shopping/milestone/emotion/exercise/checkup/education. "
-                             "is_essential & is_active: 是/否, blank=否/是. Lines starting with # are ignored on import."])
-            writer.writerow(["pregnancy_week", 10, "health", "孕10周：胎儿发育关键期",
-                             "神经系统快速发育", "本周宝宝神经系统快速发育……", "补充叶酸、均衡饮食", "", "是", 0, "是"])
+                             "content*", "tips", "cover_image", "is_essential(Yes/No)", "sort_order", "is_active(Yes/No)"])
+            writer.writerow([
+                "# [Required] pregnancy_week / baby_age_day / baby_age_month / pregnancy_trimester",
+                "# [Required] Integer (e.g. 10 for week 10, 30 for day 30)",
+                "# [Required] food/clothing/housing/travel/health/shopping/milestone/emotion/exercise/checkup/education",
+                "# [Required] Title of timeline milestone",
+                "# [Optional] Short subtitle or summary",
+                "# [Required] Detailed instructions or milestone description",
+                "# [Optional] Practical tips or caveats",
+                "# [Optional] Cover image URL",
+                "# [Optional] Yes / No (default: No)",
+                "# [Optional] Integer weight (default: 0)",
+                "# [Optional] Yes / No (default: Yes)",
+            ])
+            writer.writerow(["pregnancy_week", 10, "health", "Week 10: Critical Fetal Growth",
+                             "Rapid Nervous System Growth", "Fetal brain and nervous system develop rapidly this week...", "Supplement folic acid and maintain balanced diet", "", "Yes", 0, "Yes"])
         else:
             writer.writerow(["阶段类型*", "阶段值*", "分类*", "标题*", "副标题", "详细内容*",
                              "小贴士", "封面图URL", "必读（是/否）", "排序权重", "是否启用（是/否）"])
-            writer.writerow(["# 必填列：阶段类型/阶段值/分类/标题/详细内容。阶段类型：pregnancy_week(孕周)/baby_age_day(宝宝天数)/"
-                             "baby_age_month(宝宝月龄)/pregnancy_trimester(孕早中晚期)；分类：food(饮食)/clothing(穿衣)/housing(居家)/"
-                             "travel(出行)/health(健康)/shopping(购物)/milestone(里程碑)/emotion(心理情绪)/exercise(运动)/"
-                             "checkup(产检)/education(胎教)；必读、是否启用填 是/否，留空默认为 否、是；# 开头的说明行导入时自动忽略"])
+            writer.writerow([
+                "# [必填] pregnancy_week(孕周)/baby_age_day(宝宝天数)/baby_age_month(宝宝月龄)/pregnancy_trimester(孕早中晚期)",
+                "# [必填] 整数数字，如孕周填10、宝宝天数填30、月龄填3",
+                "# [必填] food(饮食)/clothing(穿衣)/housing(居家)/travel(出行)/health(健康)/shopping(购物)/milestone(里程碑)/emotion(情绪)/exercise(运动)/checkup(产检)/education(胎教)",
+                "# [必填] 事件主标题，如：孕10周：胎儿发育关键期",
+                "# [选填] 简明副标题，如：神经系统快速发育",
+                "# [必填] 详尽指导内容，支持多行换行",
+                "# [选填] 小贴士或备忘",
+                "# [选填] 封面图片网络URL",
+                "# [选填] 是/否，留空默认否",
+                "# [选填] 排序权重数字，越大越靠前（默认0）",
+                "# [选填] 是/否，留空默认是",
+            ])
             writer.writerow(["pregnancy_week", 10, "health", "孕10周：胎儿发育关键期",
                              "神经系统快速发育", "本周宝宝神经系统快速发育……", "补充叶酸、均衡饮食", "", "是", 0, "是"])
         return response
@@ -1667,7 +1685,7 @@ class RecipeViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"])
     def import_template(self, request):
-        """v1.88.1 下载食谱导入模板（?lang=cn|en）"""
+        """v1.88.4 下载食谱导入模板（?lang=cn|en，逐列对齐说明行+示例行）"""
         lang = (request.query_params.get("lang") or "cn").strip().lower()
         response = HttpResponse(content_type="text/csv; charset=utf-8")
         response["Content-Disposition"] = f'attachment; filename="recipes_import_template_{lang}.csv"'
@@ -1675,16 +1693,36 @@ class RecipeViewSet(viewsets.ModelViewSet):
         writer = csv.writer(response)
         if lang == "en":
             writer.writerow(["title*", "nutrient_tag", "period*", "period_month", "ingredients*",
-                             "steps*", "nutrition_tip", "cover_image", "sort_order", "is_active(是/否)"])
-            writer.writerow(["# Required: title, period, ingredients, steps. period: early(1-12w)/mid(13-27w)/late(28-40w). "
-                             "period_month like month_5_6, optional. is_active: 是/否, blank=是. # lines are ignored."])
-            writer.writerow(["清蒸鲈鱼", "高蛋白·DHA", "mid", "month_5_6",
-                             "鲈鱼一条约500g\n姜丝适量", "1. 鲈鱼洗净划刀\n2. 大火蒸8分钟", "孕中期优质蛋白助力大脑发育", "", 0, "是"])
+                             "steps*", "nutrition_tip", "cover_image", "sort_order", "is_active(Yes/No)"])
+            writer.writerow([
+                "# [Required] Recipe dish title",
+                "# [Optional] Nutrition tags (e.g. High Protein · DHA)",
+                "# [Required] early (1-12w) / mid (13-27w) / late (28-40w)",
+                "# [Optional] Month code (e.g. month_5_6, optional)",
+                "# [Required] Ingredients and quantities (supports multi-line)",
+                "# [Required] Step-by-step cooking steps (supports multi-line)",
+                "# [Optional] Nutrition tips or dietary guidance",
+                "# [Optional] Cover image URL",
+                "# [Optional] Sort order weight (default: 0)",
+                "# [Optional] Yes / No (default: Yes)",
+            ])
+            writer.writerow(["Steamed Sea Bass", "High Protein · DHA", "mid", "month_5_6",
+                             "1 sea bass approx 500g\nGinger slices", "1. Clean fish\n2. Steam on high heat for 8 mins", "High quality protein for fetal brain growth", "", 0, "Yes"])
         else:
             writer.writerow(["标题*", "营养标签", "孕期阶段*", "月份分组", "材料*",
                              "做法步骤*", "营养小叮咛", "封面图URL", "排序权重", "是否启用（是/否）"])
-            writer.writerow(["# 必填列：标题/孕期阶段/材料/做法步骤。孕期阶段：early(孕早期1-12周)/mid(孕中期13-27周)/late(孕晚期28-40周)；"
-                             "月份分组如 month_5_6 可留空；营养标签如“高蛋白·DHA”；是否启用填 是/否，留空默认为是；# 开头说明行导入时自动忽略"])
+            writer.writerow([
+                "# [必填] 菜品名称，如：清蒸鲈鱼",
+                "# [选填] 营养标签，如：高蛋白·DHA·清淡",
+                "# [必填] early(孕早期1-12周)/mid(孕中期13-27周)/late(孕晚期28-40周)",
+                "# [选填] 月份分组代码，如 month_5_6（可选留空）",
+                "# [必填] 食材清单与用量（支持多行文本）",
+                "# [必填] 制作步骤详情（支持多行文本）",
+                "# [选填] 孕妇营养贴士或食用建议",
+                "# [选填] 封面图片网络URL",
+                "# [选填] 排序权重数字（默认0）",
+                "# [选填] 是/否，留空默认是",
+            ])
             writer.writerow(["清蒸鲈鱼", "高蛋白·DHA", "mid", "month_5_6",
                              "鲈鱼一条约500g\n姜丝适量", "1. 鲈鱼洗净划刀\n2. 大火蒸8分钟", "孕中期优质蛋白助力大脑发育", "", 0, "是"])
         return response
@@ -1865,26 +1903,48 @@ class KidsEncyclopediaViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"])
     def import_template(self, request):
-        """v1.88.1 下载幼儿百科导入模板（?lang=cn|en）"""
+        """v1.88.4 下载幼儿百科导入模板（?lang=cn|en，逐列对齐说明行+示例行）"""
         lang = (request.query_params.get("lang") or "cn").strip().lower()
         response = HttpResponse(content_type="text/csv; charset=utf-8")
         response["Content-Disposition"] = f'attachment; filename="encyclopedia_import_template_{lang}.csv"'
         response.write("\ufeff")
         writer = csv.writer(response)
-        sample = ["body", 1, "为什么我会肚子疼？", "吃太多啦", "肚子着凉了", "要拉便便了",
-                  "小朋友的肚子里住着一位「小管家」，吃太多、着凉或者想拉便便时它都会提醒你哦。",
-                  "", "", 0, "是"]
         if lang == "en":
             writer.writerow(["chapter*", "question_number*", "question*", "option_a", "option_b",
-                             "option_c", "answer*", "comic_dialogue", "cover_image", "sort_order", "is_active(是/否)"])
-            writer.writerow(["# Required: chapter, question_number, question, answer. chapter: origin(Where do I come from)/"
-                             "body(My body)/growth(My growth)/mystery(Mysteries of body). is_active: 是/否, blank=是."])
+                             "option_c", "answer*", "comic_dialogue", "cover_image", "sort_order", "is_active(Yes/No)"])
+            writer.writerow([
+                "# [Required] origin (Where I come from) / body (My body) / growth (My growth) / mystery (Mysteries)",
+                "# [Required] Question sequence integer (e.g. 1, 2)",
+                "# [Required] Science question title",
+                "# [Optional] Interactive option A",
+                "# [Optional] Interactive option B",
+                "# [Optional] Interactive option C",
+                "# [Required] Scientific explanation text",
+                "# [Optional] Fun parent-child comic dialogue",
+                "# [Optional] Illustration image URL",
+                "# [Optional] Sort order weight (default: 0)",
+                "# [Optional] Yes / No (default: Yes)",
+            ])
+            writer.writerow(["body", 1, "Why do I get tummy ache?", "Ate too full", "Tummy caught cold", "Need to poop",
+                             "There is a little helper living in your body that reminds you when eating too fast.", "", "", 0, "Yes"])
         else:
             writer.writerow(["章节*", "题号*", "问题*", "选项A", "选项B", "选项C", "解答正文*",
                              "漫画对话", "配图URL", "排序权重", "是否启用（是/否）"])
-            writer.writerow(["# 必填列：章节/题号/问题/解答正文。章节：origin(我从哪里来)/body(我的身体)/growth(我的成长)/"
-                             "mystery(身体的奥秘)；题号为数字；选项C可留空；是否启用填 是/否，留空默认为是；# 开头说明行导入时自动忽略"])
-        writer.writerow(sample)
+            writer.writerow([
+                "# [必填] origin(我从哪里来)/body(我的身体)/growth(我的成长)/mystery(身体的奥秘)",
+                "# [必填] 题号数字，如 1、2、3",
+                "# [必填] 好奇探索问题，如：为什么我会肚子疼？",
+                "# [选填] 互动选项A，如：吃太饱啦",
+                "# [选填] 互动选项B，如：肚子着凉了",
+                "# [选填] 互动选项C，如：要拉便便了",
+                "# [必填] 科学易懂的解答正文，支持换行",
+                "# [选填] 亲子漫画场景趣味对话",
+                "# [选填] 配图图片网络URL",
+                "# [选填] 排序权重数字（默认0）",
+                "# [选填] 是/否，留空默认是",
+            ])
+            writer.writerow(["body", 1, "为什么我会肚子疼？", "吃太饱啦", "肚子着凉了", "要拉便便了",
+                             "小朋友的肚子里住着一位「小管家」，吃太多、着凉或者想拉便便时它都会提醒你哦。", "", "", 0, "是"])
         return response
 
     @action(detail=False, methods=["post"])
@@ -1967,7 +2027,9 @@ class ProductViewSet(viewsets.ModelViewSet):
         "商品名称*": "name", "品牌*": "brand", "型号": "model", "一级分类*": "first_category",
         "二级分类": "second_category", "商品图片URL": "image_url", "商品描述": "description",
         "综合评分(0-10)": "overall", "均价(元)": "price_avg", "价格区间": "price_range",
-        "必备（是/否）": "is_essential", "上架（是/否）": "is_active", "CCC认证（是/否）": "has_ccc_certification",
+        "特别推荐(是/否)": "is_essential", "特别推荐（是/否）": "is_essential", "必备（是/否）": "is_essential", "必备(是/否)": "is_essential",
+        "上架(是/否)": "is_active", "上架（是/否）": "is_active",
+        "CCC认证(是/否)": "has_ccc_certification", "CCC认证（是/否）": "has_ccc_certification",
         "安全提示": "safety_alert", "适用起始月龄": "applicable_age_start", "适用结束月龄": "applicable_age_end",
         "适用季节": "applicable_season",
     }
@@ -2127,36 +2189,70 @@ class ProductViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"])
     def import_template(self, request):
-        """v1.88.1 下载商品导入模板（?lang=cn|en）"""
+        """v1.88.4 下载商品导入模板（?lang=cn|en，逐列对齐说明行+示例行）"""
         lang = (request.query_params.get("lang") or "cn").strip().lower()
         response = HttpResponse(content_type="text/csv; charset=utf-8")
         response["Content-Disposition"] = f'attachment; filename="products_import_template_{lang}.csv"'
         response.write("\ufeff")
         writer = csv.writer(response)
-        sample = [
-            "婴儿连体衣", "英氏", "YSS-01", "clothing", "连体衣",
-            "https://example.com/1.jpg", "纯棉A类，透气亲肤", 8.5, 129, "99-159",
-            "是", "是", "是", "注意按需购买，避免囤货过多", 0, 6, "all",
-        ]
         if lang == "en":
             writer.writerow(["name*", "brand*", "model", "first_category*", "second_category",
                               "image_url", "description", "overall(0-10)", "price_avg", "price_range",
-                              "is_essential(是/否)", "is_active(是/否)", "has_ccc_certification(是/否)", "safety_alert",
+                              "is_essential(Yes/No)", "is_active(Yes/No)", "has_ccc_certification(Yes/No)", "safety_alert",
                               "applicable_age_start", "applicable_age_end", "applicable_season"])
-            writer.writerow(["# Required: name, brand, first_category. first_category: food/feeding/clothing/diaper/bedding/"
-                             "furniture/bath/health_tool/travel/toy/mama_pregnancy/mama_postpartum/mama_nursing/appliance. "
-                             "applicable_season: spring/summer/autumn/winter/all. Yes-no columns: 是/否, blank=否(essential/ccc) or 是(active)."])
+            writer.writerow([
+                "# [Required] Product name",
+                "# [Required] Brand name (e.g. Babycare / Pigeon)",
+                "# [Optional] Model or code",
+                "# [Required] first_category: food/feeding/clothing/diaper/bedding/furniture/bath/health_tool/travel/toy/mama_pregnancy/mama_postpartum/mama_nursing/appliance",
+                "# [Optional] Secondary category name",
+                "# [Optional] Image URL",
+                "# [Optional] Product description & highlights",
+                "# [Optional] Score 0.0 - 10.0 (default 8.0)",
+                "# [Optional] Average price in CNY",
+                "# [Optional] Price range (e.g. 99-159)",
+                "# [Optional] Yes / No (default: No)",
+                "# [Optional] Yes / No (default: Yes)",
+                "# [Optional] Yes / No (default: Yes)",
+                "# [Optional] Safety alert notes",
+                "# [Optional] Starting age in months (integer)",
+                "# [Optional] Ending age in months (integer)",
+                "# [Optional] Season: spring / summer / autumn / winter / all",
+            ])
+            writer.writerow([
+                "Organic Cotton Baby Onesie", "YEEHOO", "YSS-01", "clothing", "Onesie",
+                "https://example.com/1.jpg", "Class A pure cotton, breathable and gentle on baby skin", 8.5, 129, "99-159",
+                "Yes", "Yes", "Yes", "Choose size based on current baby length", 0, 6, "all",
+            ])
         else:
             writer.writerow(["商品名称*", "品牌*", "型号", "一级分类*", "二级分类",
                               "商品图片URL", "商品描述", "综合评分(0-10)", "均价(元)", "价格区间",
-                              "必备（是/否）", "上架（是/否）", "CCC认证（是/否）", "安全提示",
+                              "特别推荐（是/否）", "上架（是/否）", "CCC认证（是/否）", "安全提示",
                               "适用起始月龄", "适用结束月龄", "适用季节"])
-            writer.writerow(["# 必填列：商品名称/品牌/一级分类。一级分类：food(食品)/feeding(食具)/clothing(服装)/diaper(尿裤)/"
-                             "bedding(寝具)/furniture(家具)/bath(洗护)/health_tool(护理工具)/travel(出行)/toy(启智早教)/"
-                             "mama_pregnancy(妈妈孕期)/mama_postpartum(妈妈产后)/mama_nursing(妈妈哺乳)/appliance(电子电器)；"
-                             "综合评分 0-10；必备/上架/CCC认证填 是/否，留空默认：必备=否、上架=是、CCC=否；"
-                             "适用季节：spring(春)/summer(夏)/autumn(秋)/winter(冬)/all(全年)；# 开头说明行导入时自动忽略"])
-        writer.writerow(sample)
+            writer.writerow([
+                "# [必填] 商品全称",
+                "# [必填] 品牌中文或英文名，如：英氏 / Babycare",
+                "# [选填] 商品型号，如：YSS-01",
+                "# [必填] food(食品)/feeding(食具)/clothing(服装)/diaper(纸尿裤)/bedding(寝具)/furniture(家具)/bath(洗护)/health_tool(护理工具)/travel(出行)/toy(启智玩具)/mama_pregnancy(孕妈专区)/mama_postpartum(产后恢复)/mama_nursing(哺乳文胸)/appliance(母婴电器)",
+                "# [选填] 二级类别名称，如：连体衣 / 奶瓶",
+                "# [选填] 商品主图网络URL",
+                "# [选填] 商品卖点与材质详情描述",
+                "# [选填] 评分 0.0-10.0（默认8.0）",
+                "# [选填] 参考平均售价，数字",
+                "# [选填] 价格区间，如：99-159",
+                "# [选填] 是/否，留空默认否",
+                "# [选填] 是/否，留空默认是",
+                "# [选填] 是/否，留空默认是",
+                "# [选填] 安全使用提示与避坑建议",
+                "# [选填] 适用最小月龄整数（如0）",
+                "# [选填] 适用最大月龄整数（如6）",
+                "# [选填] spring(春)/summer(夏)/autumn(秋)/winter(冬)/all(全年)",
+            ])
+            writer.writerow([
+                "婴儿连体衣", "英氏", "YSS-01", "clothing", "连体衣",
+                "https://example.com/1.jpg", "纯棉A类，透气亲肤", 8.5, 129, "99-159",
+                "是", "是", "是", "注意按需购买，避免囤货过多", 0, 6, "all",
+            ])
         return response
 
     @action(detail=False, methods=["post"])
@@ -2489,6 +2585,14 @@ class BabyShoppingItemViewSet(viewsets.ModelViewSet):
     kb_manage_perm = "kb_shopping_manage"
     kb_view_perm = "kb_shopping_view"
 
+    # v1.88.4 导入模板：中文表头 到 英文字段名映射（中英文兼容）
+    CN_HEADER_MAP = {
+        "物品归属*": "owner", "类别*": "category", "物品名称*": "name",
+        "建议数量": "quantity", "单位": "unit", "单价(元)": "unit_price", "单价（元）": "unit_price",
+        "总价(元)": "total_price", "总价（元）": "total_price", "备注说明": "remark", "示例图片URL": "image_url",
+        "排序权重": "sort_order", "是否启用（是/否）": "is_active", "是否启用(是/否)": "is_active",
+    }
+
     def get_queryset(self):
         # v1.88.1 前台展示（list/retrieve）只显示启用条目（含管理员）；写操作放行（停用条目可编辑/删除/重新启用）
         if self.action not in ("list", "retrieve") or _kb_can_see_inactive(self):
@@ -2514,7 +2618,7 @@ class BabyShoppingItemViewSet(viewsets.ModelViewSet):
         return qs
 
     def get_permissions(self):
-        if self.action in ("create", "update", "partial_update", "destroy", "batch"):
+        if self.action in ("create", "update", "partial_update", "destroy", "batch", "import_csv"):
             return [KbWritePermission()]
         return [IsAuthenticated()]
 
@@ -2534,6 +2638,149 @@ class BabyShoppingItemViewSet(viewsets.ModelViewSet):
     def batch(self, request):
         """v1.88 批量操作：delete / active / inactive"""
         return _kb_batch_action(request, BabyShoppingItem.objects.all(), "待产包预置物品", "baby_shopping", get_name=lambda x: x.name)
+
+    @action(detail=False, methods=["post"])
+    def export_csv(self, request):
+        """v1.88.4 导出待产包预置物品 CSV"""
+        qs = _kb_apply_export_scope(self.get_queryset(), request.data)
+        header = ["物品归属", "类别", "物品名称", "建议数量", "单位",
+                  "单价(元)", "总价(元)", "备注说明", "示例图片URL", "排序权重", "是否启用"]
+        return _kb_export_response(
+            qs, request, "baby_shopping_export.csv", header,
+            lambda i: [
+                i.get_owner_display(), i.category, i.name, i.quantity, i.unit,
+                i.unit_price if i.unit_price is not None else "",
+                i.total_price if i.total_price is not None else "",
+                i.remark, i.image_url or "", i.sort_order,
+                "是" if i.is_active else "否",
+            ]
+        )
+
+    @action(detail=False, methods=["get"])
+    def import_template(self, request):
+        """v1.88.4 下载待产包预置库导入模板（?lang=cn|en，逐列对齐说明行+示例行）"""
+        lang = (request.query_params.get("lang") or "cn").strip().lower()
+        response = HttpResponse(content_type="text/csv; charset=utf-8")
+        response["Content-Disposition"] = f'attachment; filename="baby_shopping_import_template_{lang}.csv"'
+        response.write("\ufeff")
+        writer = csv.writer(response)
+        if lang == "en":
+            writer.writerow(["owner*", "category*", "name*", "quantity", "unit", "unit_price", "total_price", "remark", "image_url", "sort_order", "is_active(Yes/No)"])
+            writer.writerow([
+                "# [Required] owner: mom (Mother) / baby (Baby)",
+                "# [Required] Category name (e.g. Nursing / Diapers / Apparel)",
+                "# [Required] Item name",
+                "# [Optional] Recommended quantity (e.g. 1 or 2-3)",
+                "# [Optional] Unit (e.g. pack / pcs / box)",
+                "# [Optional] Estimated unit price in CNY",
+                "# [Optional] Estimated total price in CNY",
+                "# [Optional] Purchasing notes or advice",
+                "# [Optional] Sample image URL",
+                "# [Optional] Sort order weight (default: 0)",
+                "# [Optional] Yes / No (default: Yes)",
+            ])
+            writer.writerow(["mom", "Postpartum Care", "Maternity Sanitary Pads Pack", "2", "packs", 39.9, 79.8, "Prepare before delivery for postpartum lochia", "", 1, "Yes"])
+            writer.writerow(["baby", "Apparel", "Organic Cotton Baby Romper", "3-5", "pcs", 45.0, 180.0, "Choose Class A soft cotton seams", "", 2, "Yes"])
+        else:
+            writer.writerow(["物品归属*", "类别*", "物品名称*", "建议数量", "单位", "单价(元)", "总价(元)", "备注说明", "示例图片URL", "排序权重", "是否启用（是/否）"])
+            writer.writerow([
+                "# [必填] mom(妈妈篇) / baby(宝宝篇)",
+                "# [必填] 类别（如：待产证件/产后护理/哺乳用品/新生喂养/新生穿衣）",
+                "# [必填] 物品名称（如：一次性产妇卫生巾/纯棉婴儿连体衣）",
+                "# [选填] 建议备货数量（如：2 或 2-3，默认1）",
+                "# [选填] 包装计量单位（如：包/件/盒/罐，默认件）",
+                "# [选填] 预估单价，数字（如：29.9）",
+                "# [选填] 预估总价，数字（如：59.8）",
+                "# [选填] 选购要点、适用阶段或温馨提示",
+                "# [选填] 示例图片网络URL",
+                "# [选填] 排序权重数字（默认0）",
+                "# [选填] 是/否，留空默认是",
+            ])
+            writer.writerow(["mom", "产后护理", "一次性产妇卫生巾套包", "2", "包", 39.9, 79.8, "建议产前提前备齐，产后恶露期必备", "", 1, "是"])
+            writer.writerow(["baby", "新生穿衣", "纯棉婴儿连体哈衣", "3-5", "件", 45.0, 180.0, "选择纯棉A类安全无骨缝制款式", "", 2, "是"])
+        return response
+
+    @action(detail=False, methods=["post"])
+    def import_csv(self, request):
+        """v1.88.4 导入待产包预置物品 CSV（支持中英文表头，自动跳过 # 说明行）"""
+        file = request.FILES.get("file")
+        if not file:
+            return Response({"code": 2001, "message": "请上传 CSV 文件", "data": None}, status=status.HTTP_400_BAD_REQUEST)
+        try:
+            raw = file.read()
+            text = raw.decode("utf-8-sig")
+        except Exception:
+            try:
+                text = raw.decode("gbk")
+            except Exception:
+                return Response({"code": 2001, "message": "文件编码无法识别，请使用 UTF-8 或 GBK", "data": None}, status=status.HTTP_400_BAD_REQUEST)
+        raw_header, rows = _kb_read_csv_rows(text)
+        header = _kb_normalize_header(raw_header, self.CN_HEADER_MAP)
+        created = 0
+        errors = []
+
+        def _yn(v, default=True):
+            s = str(v or "").strip()
+            if not s:
+                return default
+            return s.lower() in ("是", "true", "1", "yes", "y", "on")
+
+        for row in rows:
+            idx = row.get("__line__") or 0
+            mapped = {}
+            for k, val in row.items():
+                if k == "__line__":
+                    continue
+                std_key = self.CN_HEADER_MAP.get(k, k)
+                mapped[std_key] = val
+
+            owner_raw = str(mapped.get("owner", "")).strip().lower()
+            owner = "mom" if "mom" in owner_raw or "妈" in owner_raw else "baby" if "baby" in owner_raw or "宝" in owner_raw else ""
+            if not owner:
+                errors.append(f"第 {idx} 行：物品归属不能为空，填 mom(妈妈篇) 或 baby(宝宝篇)")
+                continue
+            category = str(mapped.get("category", "")).strip()
+            if not category:
+                errors.append(f"第 {idx} 行：类别不能为空")
+                continue
+            name = str(mapped.get("name", "")).strip()
+            if not name:
+                errors.append(f"第 {idx} 行：物品名称不能为空")
+                continue
+            quantity = str(mapped.get("quantity", "")).strip() or "1"
+            unit = str(mapped.get("unit", "")).strip() or "件"
+
+            def _parse_dec(val):
+                s = str(val or "").strip().replace("¥", "").replace("￥", "").replace(",", "")
+                if not s:
+                    return None
+                try:
+                    return round(float(s), 2)
+                except Exception:
+                    return None
+
+            unit_price = _parse_dec(mapped.get("unit_price"))
+            total_price = _parse_dec(mapped.get("total_price"))
+            remark = str(mapped.get("remark", "")).strip()
+            image_url = str(mapped.get("image_url", "")).strip() or None
+            try:
+                sort_order = int(mapped.get("sort_order") or 0)
+            except Exception:
+                sort_order = 0
+            is_active = _yn(mapped.get("is_active"), default=True)
+
+            try:
+                BabyShoppingItem.objects.create(
+                    owner=owner, category=category, name=name, quantity=quantity,
+                    unit=unit, unit_price=unit_price, total_price=total_price,
+                    remark=remark, image_url=image_url, sort_order=sort_order,
+                    is_active=is_active,
+                )
+                created += 1
+            except Exception as e:
+                errors.append(f"第 {idx} 行创建失败：{str(e)}")
+
+        return _kb_import_result(request, "待产包预置物品", "baby_shopping", created, errors)
 
     def list(self, request, *args, **kwargs):
         """重写 list，返回分页 + 统计信息"""
@@ -3198,13 +3445,19 @@ class HealthRecordViewSet(viewsets.ModelViewSet):
             raw_date = str(row.get("date") or "").strip()
             try:
                 from datetime import datetime as _dt
+                import re as _re
 
-                rec_date = _dt.strptime(raw_date, "%Y-%m-%d").date()
-            except ValueError:
-                _fail("日期格式错误（应为 YYYY-MM-DD）")
+                _dm = _re.match(r"^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$", raw_date)
+                if _dm:
+                    _y, _mo, _d = _dm.groups()
+                    rec_date = _dt(int(_y), int(_mo), int(_d)).date()
+                else:
+                    rec_date = _dt.strptime(raw_date, "%Y-%m-%d").date()
+            except (ValueError, TypeError):
+                _fail("日期格式错误（支持 YYYY-MM-DD、YYYY-M-D、YYYY/M/D）")
                 continue
             if rec_date > today:
-                _fail("日期不能晚于今天")
+                _fail("记录日期不可为未来日期（支持补录今天或历史任意日期的打卡数据）")
                 continue
 
             def _to_float(val):
@@ -5713,35 +5966,76 @@ class FetalStoryViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get"])
     def import_template(self, request):
-        """v1.88.1 下载胎教故事导入模板（?lang=cn|en）"""
+        """v1.88.4 下载胎教故事导入模板（?lang=cn|en，逐列对齐说明行+示例行）"""
         lang = (request.query_params.get("lang") or "cn").strip().lower()
         response = HttpResponse(content_type="text/csv; charset=utf-8")
         response["Content-Disposition"] = f'attachment; filename="fetal_stories_import_template_{lang}.csv"'
         response.write("\ufeff")
         writer = csv.writer(response)
-        sample = [
-            "月亮婆婆的摇篮曲", "Moon Lullaby", "温柔与安全感", "Gentleness and security",
-            17, 0, 1,
-            "夜幕降临，月亮婆婆轻轻哼起了摇篮曲……",
-            "Night falls, and Grandma Moon hums a soft lullaby...",
-            "睡前轻声讲述，配合轻抚腹部节奏感更佳。",
-            "Tell it softly before sleep, gently stroking your belly.",
-            "", "mom", "", "", 0, "是",
-        ]
         if lang == "en":
             writer.writerow(["title*", "title_en", "subtitle", "subtitle_en", "week_start*", "day_offset",
                              "day_index", "content*", "content_en", "tips", "tips_en", "cover_image",
-                             "narrator", "source", "source_en", "sort_order", "is_active(是/否)"])
-            writer.writerow(["# Required: title, week_start, content. narrator: mom(妈妈讲)/dad(爸爸讲)/either(都可以), "
-                             "blank=mom. week_start range 17-40. is_active: 是/否, blank=是. # lines are ignored."])
+                             "narrator", "source", "source_en", "sort_order", "is_active(Yes/No)"])
+            writer.writerow([
+                "# [Required] Story Chinese Title",
+                "# [Optional] English Title",
+                "# [Optional] Subtitle / Theme",
+                "# [Optional] English Subtitle",
+                "# [Required] Start week integer (17-40)",
+                "# [Optional] Day offset within week (0-6, 0=day 1)",
+                "# [Optional] Sequence index on same day (1, 2)",
+                "# [Required] Chinese story full text",
+                "# [Optional] English story translation",
+                "# [Optional] Prenatal education tips (Chinese)",
+                "# [Optional] English tips",
+                "# [Optional] Cover image URL",
+                "# [Optional] mom / dad / either (default: mom)",
+                "# [Optional] Story source / author",
+                "# [Optional] English source",
+                "# [Optional] Sort order weight (default: 0)",
+                "# [Optional] Yes / No (default: Yes)",
+            ])
+            writer.writerow([
+                "月亮婆婆的摇篮曲", "Moon Lullaby", "温柔与安全感", "Gentleness and security",
+                17, 0, 1,
+                "夜幕降临，月亮婆婆轻轻哼起了摇篮曲……",
+                "Night falls, and Grandma Moon hums a soft lullaby...",
+                "睡前轻声讲述，配合轻抚腹部节奏感更佳。",
+                "Tell it softly before sleep, gently stroking your belly.",
+                "", "mom", "", "", 0, "Yes",
+            ])
         else:
             writer.writerow(["标题（中文）*", "英文标题", "副标题", "英文副标题", "起始孕周*", "天数偏移",
                              "当天序号", "故事正文（中文）*", "英文正文", "胎教提示（中文）", "英文提示", "封面图URL",
                              "讲述者", "来源", "英文来源", "排序权重", "是否启用（是/否）"])
-            writer.writerow(["# 必填列：标题（中文）/起始孕周/故事正文（中文）。起始孕周范围 17-40；讲述者：mom(妈妈讲)/dad(爸爸讲)/"
-                             "either(都可以)，留空默认 mom；天数偏移从本周起第几天（0=第1天）；当天序号同一天多个故事时用；"
-                             "是否启用填 是/否，留空默认为是；# 开头说明行导入时自动忽略"])
-        writer.writerow(sample)
+            writer.writerow([
+                "# [必填] 故事中文名称",
+                "# [选填] 故事英文名称",
+                "# [选填] 故事寓意或副标题",
+                "# [选填] 英文副标题",
+                "# [必填] 起始孕周（整数 17-40）",
+                "# [选填] 周内天数偏移（0-6，0表示第1天）",
+                "# [选填] 同一天内序号（从1开始）",
+                "# [必填] 中文故事全文内容，支持多行换行",
+                "# [选填] 英文故事内容",
+                "# [选填] 胎教温情小提示",
+                "# [选填] 英文胎教提示",
+                "# [选填] 封面插图URL",
+                "# [选填] 适合讲述者：mom(妈妈讲) / dad(爸爸讲) / either(都可以)，默认 mom",
+                "# [选填] 故事来源或作者",
+                "# [选填] 英文来源出处",
+                "# [选填] 排序权重数字（默认0）",
+                "# [选填] 是/否，留空默认是",
+            ])
+            writer.writerow([
+                "月亮婆婆的摇篮曲", "Moon Lullaby", "温柔与安全感", "Gentleness and security",
+                17, 0, 1,
+                "夜幕降临，月亮婆婆轻轻哼起了摇篮曲……",
+                "Night falls, and Grandma Moon hums a soft lullaby...",
+                "睡前轻声讲述，配合轻抚腹部节奏感更佳。",
+                "Tell it softly before sleep, gently stroking your belly.",
+                "", "mom", "", "", 0, "是",
+            ])
         return response
 
     @action(detail=False, methods=["post"])

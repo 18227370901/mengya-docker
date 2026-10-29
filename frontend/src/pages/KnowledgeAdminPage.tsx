@@ -954,15 +954,20 @@ export default function KnowledgeAdminPage() {
         </div>
       )}
 
-      {/* v1.88.1 模板填写说明 Modal */}
+      {/* v1.88.4 模板填写说明与全字段规范明细 Modal */}
       {templateHelpOpen && activeModule && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
-          <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-gray-900">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-gray-900">
             <div className="mb-4 flex items-center justify-between border-b border-gray-100 pb-3 dark:border-gray-800">
-              <h3 className="flex items-center gap-2 text-base font-bold text-gray-800 dark:text-gray-100">
-                <Info className="h-5 w-5 text-brand-500" />
-                CSV 导入模板填写说明 —— {activeModule.title}
-              </h3>
+              <div>
+                <h3 className="flex items-center gap-2 text-base font-bold text-gray-800 dark:text-gray-100">
+                  <Info className="h-5 w-5 text-brand-500 shrink-0" />
+                  <span>【表名：{activeModule.title} 批量导入模板】字段规范与说明</span>
+                </h3>
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  下载的 CSV 模板第 2 行严格逐列对齐字段注释（以 # 开头），导入时自动忽略说明行
+                </p>
+              </div>
               <button
                 type="button"
                 onClick={() => setTemplateHelpOpen(false)}
@@ -971,33 +976,105 @@ export default function KnowledgeAdminPage() {
                 <X className="h-5 w-5" />
               </button>
             </div>
-            <div className="space-y-3 text-xs leading-relaxed text-gray-600 dark:text-gray-300">
-              <p className="font-semibold text-gray-800 dark:text-gray-100">模板结构（三段式）：</p>
-              <ul className="list-inside list-disc space-y-1 pl-1">
-                <li><b>第 1 行：表头行</b> —— 字段名，中文/英文模板各一套表头，导入时均自动识别；</li>
-                <li><b>第 2 行：说明行</b> —— 以 <code className="rounded bg-gray-100 px-1 dark:bg-gray-800">#</code> 开头，逐列说明必填性、字段含义与可选值，导入时自动跳过；</li>
-                <li><b>第 3 行：示例行</b> —— 一条完整示例数据，可直接仿照填写。</li>
+
+            {/* 必填项与选填项分类徽章 */}
+            {activeModule.templateSpecs && (
+              <div className="mb-3.5 space-y-2 rounded-xl bg-gray-50 p-3 text-xs dark:bg-gray-800/60">
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="font-bold text-rose-600 dark:text-rose-400 flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full bg-rose-500 inline-block"></span> 必填项：
+                  </span>
+                  {activeModule.templateSpecs.filter((s) => s.required).map((s) => (
+                    <span key={s.headerCn} className="rounded-md bg-rose-100/80 px-2 py-0.5 text-[11px] font-semibold text-rose-700 dark:bg-rose-900/40 dark:text-rose-300">
+                      {s.headerCn.replace("*", "")}
+                    </span>
+                  ))}
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  <span className="font-bold text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                    <span className="h-2 w-2 rounded-full bg-gray-400 inline-block"></span> 选填项：
+                  </span>
+                  {activeModule.templateSpecs.filter((s) => !s.required).map((s) => (
+                    <span key={s.headerCn} className="rounded-md bg-gray-200/70 px-2 py-0.5 text-[11px] text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                      {s.headerCn}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 结构化字段明细表格 */}
+            {activeModule.templateSpecs && (
+              <div className="mb-4 overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-gray-50 text-[11px] font-semibold text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                    <tr>
+                      <th className="px-3 py-2">字段名称（中/英）</th>
+                      <th className="px-2.5 py-2 text-center">属性</th>
+                      <th className="px-3 py-2">格式规范与约束说明</th>
+                      <th className="px-3 py-2">填写示例</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100 text-gray-700 dark:divide-gray-800 dark:text-gray-200">
+                    {activeModule.templateSpecs.map((s) => (
+                      <tr key={s.headerCn} className="hover:bg-gray-50/50 dark:hover:bg-gray-800/40">
+                        <td className="px-3 py-2 font-medium">
+                          <div>{s.headerCn}</div>
+                          <div className="font-mono text-[10px] text-gray-400">{s.headerEn}</div>
+                        </td>
+                        <td className="px-2.5 py-2 text-center">
+                          {s.required ? (
+                            <span className="rounded bg-rose-50 px-1.5 py-0.5 text-[10px] font-bold text-rose-600 dark:bg-rose-950/60 dark:text-rose-400">
+                              必填
+                            </span>
+                          ) : (
+                            <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                              选填
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-gray-600 dark:text-gray-300 leading-relaxed">
+                          {s.desc}
+                        </td>
+                        <td className="px-3 py-2 font-mono text-[11px] text-gray-500 dark:text-gray-400">
+                          {s.example || "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div className="space-y-1.5 rounded-xl bg-amber-50/70 p-3 text-[11px] leading-relaxed text-amber-800 dark:bg-amber-950/30 dark:text-amber-200">
+              <p className="font-bold">填写规则与兼容性：</p>
+              <ul className="list-inside list-disc space-y-0.5 pl-1">
+                <li>文件为 UTF-8 编码（含 BOM），Excel 与 WPS 直接打开不乱码；</li>
+                <li>支持多行文本（如做法步骤、详细内容），在 Excel 单元格中按 <kbd className="rounded bg-white px-1 shadow-xs dark:bg-gray-800">Alt + Enter</kbd> 换行；</li>
+                <li>是/否类字段填「是 / 否」（英文模板填 Yes / No），留空默认取安全推荐值；</li>
+                <li>导入为新增语义，遇到格式异常行时将弹窗列出具体错误原因，其余正常行继续导入。</li>
               </ul>
-              <p className="font-semibold text-gray-800 dark:text-gray-100">填写规则：</p>
-              <ul className="list-inside list-disc space-y-1 pl-1">
-                <li>必填字段为空时该行报错跳过，其余行正常导入；</li>
-                <li>是/否类字段填「是 / 否」（英文模板 Yes / No）；</li>
-                <li>多行文本（详细内容、做法步骤等）请使用换行，Excel 中按 <code className="rounded bg-gray-100 px-1 dark:bg-gray-800">Alt+Enter</code>；</li>
-                <li>文件为 UTF-8 编码（含 BOM），Excel / WPS 直接打开不乱码；</li>
-                <li>导入为<b>新增</b>语义，不会覆盖或修改已有条目。</li>
-              </ul>
-              <p className="rounded-xl bg-brand-50 p-3 text-brand-700 dark:bg-brand-950/40 dark:text-brand-300">
-                建议先下载中文模板，对照说明行填写少量数据试导入，确认无误后再批量导入。
-              </p>
             </div>
-            <div className="mt-4 flex items-center justify-end gap-2 border-t border-gray-100 pt-3 dark:border-gray-800">
-              <button
-                type="button"
-                onClick={() => { setTemplateHelpOpen(false); handleDownloadTemplate("cn"); }}
-                className="cursor-pointer rounded-xl bg-brand-500 px-4 py-2 text-xs font-semibold text-white transition hover:bg-brand-600"
-              >
-                下载中文模板
-              </button>
+
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-3 dark:border-gray-800">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setTemplateHelpOpen(false); handleDownloadTemplate("cn"); }}
+                  className="cursor-pointer rounded-xl bg-brand-500 px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-brand-600 flex items-center gap-1.5 shadow-xs"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  下载中文模板
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setTemplateHelpOpen(false); handleDownloadTemplate("en"); }}
+                  className="cursor-pointer rounded-xl border border-gray-200 bg-white px-3.5 py-2 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 flex items-center gap-1.5"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  下载英文模板
+                </button>
+              </div>
               <button
                 type="button"
                 onClick={() => setTemplateHelpOpen(false)}

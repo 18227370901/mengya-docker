@@ -201,6 +201,16 @@ export const babyShoppingApi = {
   remove: (id: number) => api.delete<ApiResponse<null>>(`/baby-shopping/${id}/`).then((r) => r.data.data),
   batch: (ids: number[], action: "delete" | "active" | "inactive") =>
     api.post<ApiResponse<{ count: number; action: string }>>("/baby-shopping/batch/", { ids, action }).then((r) => r.data),
+  // v1.88.4 导入导出 + 模板
+  exportCsv: (payload: KbExportPayload) =>
+    api.post<Blob>("/baby-shopping/export_csv/", payload, { responseType: "blob" }).then((r) => r.data),
+  importTemplate: (lang: "cn" | "en" = "cn") =>
+    api.get<Blob>("/baby-shopping/import_template/", { params: { lang }, responseType: "blob" }).then((r) => r.data),
+  importCsv: (file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return api.post<ApiResponse<{ created: number; errors: string[] }>>("/baby-shopping/import_csv/", fd).then((r) => r.data);
+  },
 };
 
 export const knowledgeAdminApi = {

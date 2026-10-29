@@ -47,14 +47,14 @@ interface ColumnSpec {
 }
 
 const MOM_FULL_COLUMNS: ColumnSpec[] = [
-  { key: "date", en: "date*", cn: "日期*", required: true, requiredBadge: "required", requiredText: "必填项", desc: "格式 YYYY-MM-DD，不能晚于今天（每行必填）", example: "2026-09-01" },
-  { key: "height", en: "height*", cn: "身高(cm)*", required: false, requiredBadge: "core", requiredText: "首次最少一行必填/后续选填", desc: "单位 cm，合理范围 80~250 cm（首次录入必填一次，首行填写后后续行自动继承；已有历史身高可留空）", example: "165.0" },
+  { key: "date", en: "date*", cn: "日期*", required: true, requiredBadge: "required", requiredText: "必填项", desc: "格式 YYYY-MM-DD，支持补录历史任意日期（不可填未来日期；每行必填）", example: "2026-09-01" },
   { key: "weight", en: "weight*", cn: "体重(kg)*", required: false, requiredBadge: "core", requiredText: "核心项·至少填一项", desc: "单位 kg，合理范围 25~250 kg（体重、血压、血糖三者至少填一项）", example: "58.20" },
-  { key: "waist", en: "waist", cn: "腹围(cm)", required: false, requiredBadge: "optional", requiredText: "选填项", desc: "单位 cm，腹围测量值（选填）", example: "86.0" },
+  { key: "height", en: "height*", cn: "身高(cm)*", required: false, requiredBadge: "core", requiredText: "首次最少一行必填/后续选填", desc: "单位 cm，合理范围 80~250 cm（首次录入必填一次，首行填写后后续行自动继承；已有历史身高可留空）", example: "165.0" },
+  { key: "waist", en: "waist", cn: "腹围(cm)", required: false, requiredBadge: "optional", requiredText: "选填项", desc: "单位 cm，腹围测量值（选填项）", example: "86.0" },
   { key: "systolic", en: "systolic", cn: "收缩压(mmHg)", required: false, requiredBadge: "core", requiredText: "核心项·至少填一项", desc: "单位 mmHg（高压，与舒张压成对填写）", example: "118" },
   { key: "diastolic", en: "diastolic", cn: "舒张压(mmHg)", required: false, requiredBadge: "core", requiredText: "核心项·至少填一项", desc: "单位 mmHg（低压，与收缩压成对填写）", example: "76" },
-  { key: "pulse", en: "pulse", cn: "脉搏(次/分)", required: false, requiredBadge: "optional", requiredText: "选填项", desc: "单位 次/分（心率，选填）", example: "75" },
-  { key: "blood_sugar", en: "blood_sugar", cn: "血糖(mmol/L)", required: false, requiredBadge: "core", requiredText: "核心项·至少填一项", desc: "单位 mmol/L（血糖值，选填）", example: "5.20" },
+  { key: "pulse", en: "pulse", cn: "脉搏(次/分)", required: false, requiredBadge: "optional", requiredText: "选填项", desc: "单位 次/分（心率，选填项）", example: "75" },
+  { key: "blood_sugar", en: "blood_sugar", cn: "血糖(mmol/L)", required: false, requiredBadge: "core", requiredText: "核心项·至少填一项", desc: "单位 mmol/L（血糖值，选填项）", example: "5.20" },
   { key: "glucose_type", en: "glucose_type", cn: "测定场景", required: false, requiredBadge: "optional", requiredText: "选填项", desc: "fasting(空腹) | postprandial_1h | postprandial_2h | bedtime | random", example: "fasting" },
   {
     key: "stage",
@@ -76,47 +76,47 @@ const MOM_FULL_COLUMNS: ColumnSpec[] = [
     desc: "仅孕期有效。若档案已设置预产期，此列可留空由系统自动推算为 x周x天；亦可手填(如 20)",
     example: "20",
   },
-  { key: "note", en: "note", cn: "备注", required: false, requiredBadge: "optional", requiredText: "选填项", desc: "打卡说明与生活备忘（选填）", example: "晨起空腹体重与静息血压" },
+  { key: "note", en: "note", cn: "备注", required: false, requiredBadge: "optional", requiredText: "选填项", desc: "打卡说明与生活备忘（选填项）", example: "晨起空腹称重与静息血压" },
 ];
 
 const MOM_BMI_COLUMNS: ColumnSpec[] = [
-  { key: "date", en: "date*", cn: "日期*", required: true, requiredBadge: "required", requiredText: "必填项", desc: "格式 YYYY-MM-DD，不能晚于今天（每行必填）", example: "2026-09-01" },
-  { key: "weight", en: "weight*", cn: "体重(kg)*", required: true, requiredBadge: "required", requiredText: "必填项", desc: "单位 kg，合理范围 25~250 kg（每行必填）", example: "58.20" },
-  { key: "height", en: "height*", cn: "身高(cm)*", required: false, requiredBadge: "core", requiredText: "首次最少一行必填/后续选填", desc: "单位 cm，合理范围 80~250 cm。首次导入时最少需有一行填写身高，后续行留空将自动顺推继承；若历史已有身高记录则选填（留空自动继承历史身高，亦可填新值校准）", example: "165.0" },
-  { key: "systolic", en: "systolic", cn: "收缩压(mmHg)", required: false, requiredBadge: "optional", requiredText: "选填·体征互通", desc: "单位 mmHg（高压，与舒张压成对填写；体征互通选填）", example: "118" },
-  { key: "diastolic", en: "diastolic", cn: "舒张压(mmHg)", required: false, requiredBadge: "optional", requiredText: "选填·体征互通", desc: "单位 mmHg（低压，与收缩压成对填写；体征互通选填）", example: "76" },
-  { key: "pulse", en: "pulse", cn: "脉搏(次/分)", required: false, requiredBadge: "optional", requiredText: "选填·体征互通", desc: "单位 次/分（心率，体征互通选填）", example: "75" },
-  { key: "blood_sugar", en: "blood_sugar", cn: "血糖(mmol/L)", required: false, requiredBadge: "optional", requiredText: "选填·体征互通", desc: "单位 mmol/L（血糖值，体征互通选填）", example: "5.20" },
-  { key: "glucose_type", en: "glucose_type", cn: "测定场景", required: false, requiredBadge: "optional", requiredText: "选填·体征互通", desc: "fasting(空腹) | postprandial_1h | postprandial_2h | bedtime | random", example: "fasting" },
-  { key: "waist", en: "waist", cn: "腹围(cm)", required: false, requiredBadge: "optional", requiredText: "选填项", desc: "单位 cm，腹围测量值（选填）", example: "86.0" },
+  { key: "date", en: "date*", cn: "日期*", required: true, requiredBadge: "required", requiredText: "必填项", desc: "格式 YYYY-MM-DD，支持补录历史任意日期（不可填未来日期；每行必填）", example: "2026-09-01" },
+  { key: "weight", en: "weight*", cn: "体重(kg)*", required: true, requiredBadge: "required", requiredText: "必填项", desc: "单位 kg，合理范围 25~250 kg（本模块核心必填项）", example: "58.20" },
+  { key: "height", en: "height*", cn: "身高(cm)*", required: false, requiredBadge: "core", requiredText: "首次最少一行必填/后续选填", desc: "单位 cm，合理范围 80~250 cm。首次录入时最少需有一行填写身高，后续行留空将自动顺推继承；若历史已有身高记录则选填（留空自动继承历史身高，亦可填新值校准）", example: "165.0" },
+  { key: "waist", en: "waist", cn: "腹围(cm)", required: false, requiredBadge: "optional", requiredText: "选填项", desc: "单位 cm，腹围测量值（选填项）", example: "86.0" },
+  { key: "systolic", en: "systolic", cn: "收缩压(mmHg)", required: false, requiredBadge: "optional", requiredText: "选填·体征互通", desc: "单位 mmHg（高压，体征互通选填项，与舒张压成对填写）", example: "118" },
+  { key: "diastolic", en: "diastolic", cn: "舒张压(mmHg)", required: false, requiredBadge: "optional", requiredText: "选填·体征互通", desc: "单位 mmHg（低压，体征互通选填项，与收缩压成对填写）", example: "76" },
+  { key: "pulse", en: "pulse", cn: "脉搏(次/分)", required: false, requiredBadge: "optional", requiredText: "选填·体征互通", desc: "单位 次/分（心率，体征互通选填项）", example: "75" },
+  { key: "blood_sugar", en: "blood_sugar", cn: "血糖(mmol/L)", required: false, requiredBadge: "optional", requiredText: "选填·体征互通", desc: "单位 mmol/L（血糖值，体征互通选填项）", example: "5.20" },
+  { key: "glucose_type", en: "glucose_type", cn: "测定场景", required: false, requiredBadge: "optional", requiredText: "选填·体征互通", desc: "fasting(空腹) | postprandial_1h | postprandial_2h | bedtime | random（体征互通选填项）", example: "fasting" },
   { key: "stage", en: "stage", cn: "阶段", required: false, requiredBadge: "optional", requiredText: "选填项", desc: "pregnancy(孕期) | postpartum(产后) | general(非孕期/备孕)，留空默认按个人档案智能识别", example: "pregnancy" },
   { key: "week", en: "week", cn: "孕周", required: false, requiredBadge: "optional", requiredText: "选填项", desc: "仅孕期有效。若档案已设置预产期可留空由系统自动推算；亦可手填(如 20)", example: "20" },
-  { key: "note", en: "note", cn: "备注", required: false, requiredBadge: "optional", requiredText: "选填项", desc: "打卡说明与生活备忘（选填）", example: "晨起空腹称重与静息血压" },
+  { key: "note", en: "note", cn: "备注", required: false, requiredBadge: "optional", requiredText: "选填项", desc: "打卡说明与生活备忘（选填项）", example: "晨起空腹称重与静息血压" },
 ];
 
 const MOM_VITALS_COLUMNS: ColumnSpec[] = [
-  { key: "date", en: "date*", cn: "日期*", required: true, requiredBadge: "required", requiredText: "必填项", desc: "格式 YYYY-MM-DD，不能晚于今天（每行必填）", example: "2026-09-01" },
-  { key: "systolic", en: "systolic*", cn: "收缩压(mmHg)*", required: false, requiredBadge: "core", requiredText: "核心项·与舒张压成对填", desc: "单位 mmHg（高压，与舒张压成对填写；血压/血糖二选一）", example: "118" },
-  { key: "diastolic", en: "diastolic*", cn: "舒张压(mmHg)*", required: false, requiredBadge: "core", requiredText: "核心项·与收缩压成对填", desc: "单位 mmHg（低压，与收缩压成对填写；血压/血糖二选一）", example: "76" },
-  { key: "blood_sugar", en: "blood_sugar*", cn: "血糖(mmol/L)*", required: false, requiredBadge: "core", requiredText: "核心项·与血压至少填一项", desc: "单位 mmol/L（血糖值；血压/血糖二选一）", example: "5.20" },
-  { key: "pulse", en: "pulse", cn: "脉搏(次/分)", required: false, requiredBadge: "optional", requiredText: "选填项", desc: "单位 次/分（心率，选填）", example: "75" },
-  { key: "glucose_type", en: "glucose_type", cn: "测定场景", required: false, requiredBadge: "optional", requiredText: "选填项", desc: "fasting(空腹) | postprandial_1h | postprandial_2h | bedtime | random", example: "fasting" },
-  { key: "height", en: "height", cn: "身高(cm)", required: false, requiredBadge: "optional", requiredText: "选填·BMI互通", desc: "单位 cm，合理范围 80~250 cm（首行填写后后续行自动继承；留空继承历史身高）", example: "165.0" },
-  { key: "weight", en: "weight", cn: "体重(kg)", required: false, requiredBadge: "optional", requiredText: "选填·BMI互通", desc: "单位 kg，合理范围 25~250 kg（填写体重后系统将自动结合身高计算并记录BMI）", example: "58.20" },
-  { key: "waist", en: "waist", cn: "腹围(cm)", required: false, requiredBadge: "optional", requiredText: "选填项", desc: "单位 cm，腹围测量值（选填）", example: "86.0" },
+  { key: "date", en: "date*", cn: "日期*", required: true, requiredBadge: "required", requiredText: "必填项", desc: "格式 YYYY-MM-DD，支持补录历史任意日期（不可填未来日期；每行必填）", example: "2026-09-01" },
+  { key: "systolic", en: "systolic*", cn: "收缩压(mmHg)*", required: false, requiredBadge: "core", requiredText: "核心项·与舒张压成对填", desc: "单位 mmHg（高压，本模块核心项，与舒张压成对填写；血压/血糖二选一）", example: "118" },
+  { key: "diastolic", en: "diastolic*", cn: "舒张压(mmHg)*", required: false, requiredBadge: "core", requiredText: "核心项·与收缩压成对填", desc: "单位 mmHg（低压，本模块核心项，与收缩压成对填写；血压/血糖二选一）", example: "76" },
+  { key: "pulse", en: "pulse", cn: "脉搏(次/分)", required: false, requiredBadge: "optional", requiredText: "选填项", desc: "单位 次/分（心率，选填项）", example: "75" },
+  { key: "blood_sugar", en: "blood_sugar*", cn: "血糖(mmol/L)*", required: false, requiredBadge: "core", requiredText: "核心项·与血压至少填一项", desc: "单位 mmol/L（血糖值，本模块核心项；血压/血糖二选一）", example: "5.20" },
+  { key: "glucose_type", en: "glucose_type", cn: "测定场景", required: false, requiredBadge: "optional", requiredText: "选填项", desc: "fasting(空腹) | postprandial_1h | postprandial_2h | bedtime | random（选填项）", example: "fasting" },
+  { key: "height", en: "height", cn: "身高(cm)", required: false, requiredBadge: "optional", requiredText: "选填·BMI互通", desc: "单位 cm，合理范围 80~250 cm（BMI 互通选填项；首行填写后自动顺推继承，留空继承历史身高）", example: "165.0" },
+  { key: "weight", en: "weight", cn: "体重(kg)", required: false, requiredBadge: "optional", requiredText: "选填·BMI互通", desc: "单位 kg，合理范围 25~250 kg（BMI 互通选填项；填写体重且具备身高时系统将自动计算并记录 BMI）", example: "58.20" },
+  { key: "waist", en: "waist", cn: "腹围(cm)", required: false, requiredBadge: "optional", requiredText: "选填项", desc: "单位 cm，腹围测量值（选填项）", example: "86.0" },
   { key: "stage", en: "stage", cn: "阶段", required: false, requiredBadge: "optional", requiredText: "选填项", desc: "pregnancy(孕期) | postpartum(产后) | general(非孕期/备孕)，留空默认按个人档案智能识别", example: "pregnancy" },
   { key: "week", en: "week", cn: "孕周", required: false, requiredBadge: "optional", requiredText: "选填项", desc: "仅孕期有效。若档案已设置预产期，此列可留空由系统自动推算为 x周x天；亦可手填(如 20)", example: "20" },
-  { key: "note", en: "note", cn: "备注", required: false, requiredBadge: "optional", requiredText: "选填项", desc: "打卡说明与生活备忘（选填）", example: "晨起静息血压与空腹血糖" },
+  { key: "note", en: "note", cn: "备注", required: false, requiredBadge: "optional", requiredText: "选填项", desc: "打卡说明与生活备忘（选填项）", example: "晨起静息血压与空腹血糖" },
 ];
 
 const MOM_COLUMNS = MOM_FULL_COLUMNS;
 
 const BABY_COLUMNS: ColumnSpec[] = [
-  { key: "date", en: "date*", cn: "日期*", required: true, requiredBadge: "required", requiredText: "必填项", desc: "格式 YYYY-MM-DD，不能晚于今天（每行必填）", example: "2026-09-01" },
+  { key: "date", en: "date*", cn: "日期*", required: true, requiredBadge: "required", requiredText: "必填项", desc: "格式 YYYY-MM-DD，支持补录历史任意日期（不可填未来日期；每行必填）", example: "2026-09-01" },
   { key: "height", en: "height*", cn: "身长/身高(cm)*", required: false, requiredBadge: "core", requiredText: "核心项·至少填一项", desc: "单位 cm，宝宝身长或身高（身长/体重/头围三者至少填一项）", example: "92.0" },
   { key: "weight", en: "weight*", cn: "体重(kg)*", required: false, requiredBadge: "core", requiredText: "核心项·至少填一项", desc: "单位 kg，宝宝实测体重（身长/体重/头围三者至少填一项）", example: "13.8" },
   { key: "head", en: "head*", cn: "头围(cm)*", required: false, requiredBadge: "core", requiredText: "核心项·至少填一项", desc: "单位 cm，宝宝头围（身长/体重/头围三者至少填一项）", example: "48.5" },
-  { key: "note", en: "note", cn: "备注", required: false, requiredBadge: "optional", requiredText: "选填项", desc: "测量说明与日常备忘（选填）", example: "满月体检生长测量" },
+  { key: "note", en: "note", cn: "备注", required: false, requiredBadge: "optional", requiredText: "选填项", desc: "测量说明与日常备忘（选填项）", example: "满月体检生长测量" },
 ];
 
 const COLUMN_ALIASES: Record<string, string[]> = {
@@ -164,6 +164,25 @@ function normalizeStage(stageStr: string): string {
   if (s === "postpartum" || s.includes("产后") || s.includes("恢复")) return "postpartum";
   if (s === "general" || s.includes("非") || s.includes("备") || s.includes("日常")) return "general";
   return s;
+}
+
+/** 智能清洗与标准化日期：支持 YYYY-M-D、YYYY/M/D、YYYY.M.D 自动补零标准化为 YYYY-MM-DD */
+function normalizeDate(rawDate: string): string {
+  const s = (rawDate || "").trim();
+  const m = s.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})$/);
+  if (m) {
+    const y = m[1];
+    const mo = m[2].padStart(2, "0");
+    const d = m[3].padStart(2, "0");
+    return `${y}-${mo}-${d}`;
+  }
+  return s;
+}
+
+/** 判断首列单元格是否为类日期格式（支持 YYYY-M-D、YYYY/M/D 等），用于精准避免将首行数据误判为表头 */
+function isDateLike(val: string): boolean {
+  const s = (val || "").trim();
+  return /^\d{4}[-/.]\d{1,2}[-/.]\d{1,2}$/.test(s);
 }
 
 function matchColumnKey(headerText: string, target: ImportTarget): string | null {
@@ -249,7 +268,7 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
 
     // 判定首行是否为表头行（只要存在匹配关键词且非纯日期格式即判定为表头）
     const headerKeyMap: Array<string | null> = firstLineCols.map((c) => matchColumnKey(c, target));
-    const hasHeader = headerKeyMap.some((k) => k !== null) && !/^\d{4}-\d{2}-\d{2}/.test(firstLineCols[0]);
+    const hasHeader = headerKeyMap.some((k) => k !== null) && !isDateLike(firstLineCols[0]);
 
     const dataLines = hasHeader ? lines.slice(1) : lines;
     const records: Array<Record<string, string>> = [];
@@ -264,12 +283,12 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
           if (key) row[key] = cols[idx] ?? "";
         });
       } else if (target === "mom_bmi") {
-        const defaultKeys = ["date", "weight", "height", "systolic", "diastolic", "pulse", "blood_sugar", "glucose_type", "waist", "stage", "week", "note"];
+        const defaultKeys = ["date", "weight", "height", "waist", "systolic", "diastolic", "pulse", "blood_sugar", "glucose_type", "stage", "week", "note"];
         defaultKeys.forEach((key, idx) => {
           row[key] = cols[idx] ?? "";
         });
       } else if (target === "mom_vitals" || target === "mom") {
-        const defaultKeys = ["date", "systolic", "diastolic", "blood_sugar", "pulse", "glucose_type", "height", "weight", "waist", "stage", "week", "note"];
+        const defaultKeys = ["date", "systolic", "diastolic", "blood_sugar", "glucose_type", "pulse", "height", "weight", "waist", "stage", "week", "note"];
         defaultKeys.forEach((key, idx) => {
           row[key] = cols[idx] ?? "";
         });
@@ -280,6 +299,9 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
         });
       }
 
+      if (row.date) {
+        row.date = normalizeDate(row.date);
+      }
       if (row.stage) {
         row.stage = normalizeStage(row.stage);
       }
@@ -397,14 +419,14 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
         filename = "宝宝生长测量导入模板(中文表头).csv";
         content =
           "日期*,身长/身高(cm)*,体重(kg)*,头围(cm)*,备注\n" +
-          "# 字段规范说明：带*为核心项。日期为每行必填项；身长、体重、头围三者至少填写一项；备注为选填项。以#开头的说明行导入时系统自动忽略。\n" +
+          "# 字段规范说明：带*为核心项。日期为每行必填项（格式 YYYY-MM-DD，支持补录历史任意日期，不可录入未来日期）；身长、体重、头围三者至少填写一项；备注为选填项。以#开头的说明行导入时系统自动忽略。\n" +
           "2026-09-01,92.0,13.80,48.5,满月生长测量\n" +
           "2026-09-08,92.5,14.00,48.6,定期复测\n";
       } else {
         filename = "baby_growth_import_template(en).csv";
         content =
           "date*,height*,weight*,head*,note\n" +
-          "# Required columns: date is required for every row. At least one of height, weight, head circumference must be filled. Note is optional. Lines starting with # are ignored on import.\n" +
+          "# Required columns: date is required for every row (format YYYY-MM-DD, supports past dates, no future dates). At least one of height, weight, head circumference must be filled. Note is optional. Lines starting with # are ignored on import.\n" +
           "2026-09-01,92.0,13.80,48.5,routine growth check\n" +
           "2026-09-08,92.5,14.00,48.6,follow-up test\n";
       }
@@ -412,38 +434,52 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
       if (lang === "cn") {
         filename = "妈妈体重与BMI历史导入模板(全能互通·中文表头).csv";
         content =
-          "日期*,体重(kg)*,身高(cm)*,收缩压(mmHg),舒张压(mmHg),脉搏(次/分),血糖(mmol/L),测定场景,腹围(cm),阶段,孕周,备注\n" +
-          "# 字段规范说明：带*为必填/核心项（日期与体重每行必填；若首次导入且历史无身高，身高项最少需在首行填写，后续行可留空自动顺推继承）。收缩压、舒张压、脉搏、血糖为全能体征互通选填项，腹围、阶段、孕周、备注为选填项。以#开头的说明行在导入时自动忽略。\n" +
-          "2026-09-01,58.20,165.0,118,76,75,5.20,空腹,86.0,孕期,20,首行填写身高后续行自动顺推继承；同步打卡血压血糖\n" +
-          "2026-09-08,58.80,,,,,5.10,空腹,87.0,孕期,21,后续行留空自动继承165身高；可单独测血糖\n" +
-          "2026-09-15,59.30,,120,78,76,,,88.5,孕期,22,自动继承身高并精准计算BMI；可单独测血压\n";
+          "日期*,体重(kg)*,身高(cm)*,腹围(cm),收缩压(mmHg),舒张压(mmHg),脉搏(次/分),血糖(mmol/L),测定场景,阶段,孕周,备注\n" +
+          "# 字段规范说明：本模块主要用于妈妈体重与BMI打卡。\n" +
+          "# 【必填项】日期（格式 YYYY-MM-DD，支持补录历史任意日期，不可填未来日期；每行必填）、体重（每行必填）。\n" +
+          "# 【条件必填项】身高：若首次导入且历史无身高，身高项最少需在首行填写，后续行可留空自动顺推继承；若历史已有身高则选填（留空继承历史身高，亦可填新值校准）。\n" +
+          "# 【选填项/体征互通兼顾录入】腹围、收缩压、舒张压、脉搏、血糖、测定场景、阶段、孕周、备注均为选填项。可留空，若填写则同步入库打卡，不填绝不报错。\n" +
+          "# 以#开头的说明行在导入时系统自动忽略。\n" +
+          "2026-09-01,58.20,165.0,86.0,118,76,75,5.20,空腹,孕期,20,首行填身高后续自动顺推继承；同步打卡体征\n" +
+          "2026-09-08,58.80,,87.0,,,,,5.10,空腹,孕期,21,后续行留空自动继承165身高；可单独测血糖\n" +
+          "2026-09-15,59.30,,88.5,120,78,76,,,孕期,22,自动继承身高并精准计算BMI；可单独测血压\n";
       } else {
         filename = "mom_bmi_import_template(en).csv";
         content =
-          "date*,weight*,height*,systolic,diastolic,pulse,blood_sugar,glucose_type,waist,stage,week,note\n" +
-          "# Required columns: date and weight are required for every row. Height is required on at least one row on first import (subsequent rows inherit). Systolic, diastolic, pulse, blood_sugar, glucose_type are interoperable vitals (optional). Waist, stage, week, note are optional. Lines starting with # are ignored on import.\n" +
-          "2026-09-01,58.20,165.0,118,76,75,5.20,fasting,86.0,pregnancy,20,first row with height inherits; log vitals together\n" +
-          "2026-09-08,58.80,,,,,5.10,fasting,87.0,pregnancy,21,subsequent rows inherit height; log blood sugar\n" +
-          "2026-09-15,59.30,,120,78,76,,,88.5,pregnancy,22,auto inherits height & computes BMI; log bp\n";
+          "date*,weight*,height*,waist,systolic,diastolic,pulse,blood_sugar,glucose_type,stage,week,note\n" +
+          "# Column specification: This template is for Mom Weight and BMI records.\n" +
+          "# Required columns: date (YYYY-MM-DD, supports past dates, no future dates) and weight are required for every row.\n" +
+          "# Conditional required: height is required on at least one row on first import if no history exists (subsequent rows inherit).\n" +
+          "# Optional/interoperable columns: waist, systolic, diastolic, pulse, blood_sugar, glucose_type, stage, week, note are optional.\n" +
+          "# Lines starting with # are ignored on import.\n" +
+          "2026-09-01,58.20,165.0,86.0,118,76,75,5.20,fasting,pregnancy,20,first row with height inherits; log vitals together\n" +
+          "2026-09-08,58.80,,87.0,,,,,5.10,fasting,pregnancy,21,subsequent rows inherit height; log blood sugar\n" +
+          "2026-09-15,59.30,,88.5,120,78,76,,,pregnancy,22,auto inherits height & computes BMI; log bp\n";
       }
     } else {
       if (lang === "cn") {
         filename = "妈妈血压血糖体征导入模板(全能互通·中文表头).csv";
         content =
-          "日期*,收缩压(mmHg)*,舒张压(mmHg)*,血糖(mmol/L)*,脉搏(次/分),测定场景,身高(cm),体重(kg),腹围(cm),阶段,孕周,备注\n" +
-          "# 字段规范说明：带*为核心项。日期为每行必填项；收缩压与舒张压需成对填写，血压与血糖至少填一项。身高、体重为BMI全能互通选填项（填写体重且具备身高时系统将自动计算BMI），脉搏、测定场景、腹围、阶段、孕周、备注为选填项。以#开头的说明行在导入时自动忽略。\n" +
-          "2026-09-01,118,76,5.20,75,空腹,165.0,58.20,86.0,孕期,20,全能打卡(首行填身高后续自动继承；同步计算BMI)\n" +
+          "日期*,收缩压(mmHg)*,舒张压(mmHg)*,血糖(mmol/L)*,测定场景,脉搏(次/分),身高(cm),体重(kg),腹围(cm),阶段,孕周,备注\n" +
+          "# 字段规范说明：本模块主要用于妈妈血压与血糖生命体征打卡。\n" +
+          "# 【必填/核心项】日期（格式 YYYY-MM-DD，支持补录历史任意日期，不可填未来日期；每行必填）。收缩压与舒张压需成对填写，血压与血糖至少填一组。\n" +
+          "# 【选填项/BMI互通兼顾录入】测定场景、脉搏、身高、体重、腹围、阶段、孕周、备注均为选填项。若在此填写了体重且具备身高，系统自动计算并记录BMI；若不填体重，仅记录体征，完全正常导入。\n" +
+          "# 以#开头的说明行在导入时系统自动忽略。\n" +
+          "2026-09-01,118,76,5.20,空腹,75,165.0,58.20,86.0,孕期,20,全能打卡(首行填身高后续自动继承；同步计算BMI)\n" +
           "2026-09-08,120,78,,,76,,58.80,87.0,孕期,21,测血压并选填体重(自动继承首行身高并更新BMI)\n" +
-          "2026-09-15,,,5.10,,空腹,,,88.5,孕期,22,单测血糖(体重留空)\n" +
+          "2026-09-15,,,5.10,空腹,,,,88.5,孕期,22,单测血糖(体重留空)\n" +
           "2026-09-22,116,74,,,72,,57.50,,产后,,产后恢复血压与体重\n";
       } else {
         filename = "mom_vitals_import_template(en).csv";
         content =
-          "date*,systolic*,diastolic*,blood_sugar*,pulse,glucose_type,height,weight,waist,stage,week,note\n" +
-          "# Required columns: date is required for every row. Systolic and diastolic must be paired. At least one of blood pressure or blood_sugar must be provided. Height and weight are interoperable BMI fields (filling weight with height auto-calculates BMI). Pulse, glucose_type, waist, stage, week, note are optional. Lines starting with # are ignored on import.\n" +
-          "2026-09-01,118,76,5.20,75,fasting,165.0,58.20,86.0,pregnancy,20,full check-in (height on 1st row auto-inherits & computes BMI)\n" +
+          "date*,systolic*,diastolic*,blood_sugar*,glucose_type,pulse,height,weight,waist,stage,week,note\n" +
+          "# Column specification: This template is for Mom Blood Pressure & Glucose Vitals records.\n" +
+          "# Required/core columns: date is required for every row (YYYY-MM-DD, supports past dates). Systolic and diastolic must be paired. At least one of blood pressure or blood_sugar must be provided.\n" +
+          "# Optional/interoperable columns: glucose_type, pulse, height, weight, waist, stage, week, note are optional. Filling weight with height auto-calculates BMI.\n" +
+          "# Lines starting with # are ignored on import.\n" +
+          "2026-09-01,118,76,5.20,fasting,75,165.0,58.20,86.0,pregnancy,20,full check-in (height on 1st row auto-inherits & computes BMI)\n" +
           "2026-09-08,120,78,,,76,,58.80,87.0,pregnancy,21,blood pressure with weight (inherits height & calculates BMI)\n" +
-          "2026-09-15,,,5.10,,fasting,,,88.5,pregnancy,22,blood sugar only (weight blank)\n" +
+          "2026-09-15,,,5.10,fasting,,,,88.5,pregnancy,22,blood sugar only (weight blank)\n" +
           "2026-09-22,116,74,,,72,,57.50,,postpartum,,postpartum recovery bp and weight\n";
       }
     }

@@ -24,6 +24,7 @@ import {
   Trash2,
   Upload,
   X,
+  Info,
 } from "lucide-react";
 import { brandApi, knowledgeAdminApi, productApi, type KbExportScope } from "@/api/catalog";
 import { useAuthStore } from "@/store/authStore";
@@ -136,6 +137,7 @@ export default function ProductAdminPage() {
   const [searchQ, setSearchQ] = useState("");
   const [toast, setToast] = useState("");
   const [importing, setImporting] = useState(false);
+  const [templateHelpOpen, setTemplateHelpOpen] = useState(false);
   const importInputRef = useRef<HTMLInputElement>(null);
   /** v1.88.2 导入结果明细弹窗（v1.88.3 接口级错误也常驻弹窗） */
   const [importResult, setImportResult] = useState<{
@@ -400,11 +402,11 @@ export default function ProductAdminPage() {
     }
   };
 
-  const handleDownloadTemplate = async () => {
+  const handleDownloadTemplate = async (lang: "cn" | "en" = "cn") => {
     try {
-      const blob = await productApi.importTemplate("cn");
-      downloadBlob(blob, "products_import_template_cn.csv");
-      showToast("模板已下载");
+      const blob = await productApi.importTemplate(lang);
+      downloadBlob(blob, `products_import_template_${lang}.csv`);
+      showToast(`模板已下载（${lang === "cn" ? "中文" : "英文"}）`);
     } catch {
       showToast("下载失败");
     }
@@ -801,9 +803,22 @@ export default function ProductAdminPage() {
                     if (f) handleImport(f);
                   }}
                 />
-                <button className="flex items-center gap-1 rounded-lg bg-gray-50 px-3 py-1.5 text-xs text-gray-500 hover:bg-gray-100" onClick={handleDownloadTemplate}>
-                  <Download className="h-3.5 w-3.5" /> 模板
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    className="flex items-center gap-1 rounded-lg bg-gray-50 px-2.5 py-1.5 text-xs text-gray-600 hover:bg-gray-100 dark:bg-gray-800 dark:text-gray-300"
+                    onClick={() => setTemplateHelpOpen(true)}
+                    title="查看商品 CSV 导入字段明细规范与必填项说明"
+                  >
+                    <Info className="h-3.5 w-3.5 text-brand-500" /> 模板说明
+                  </button>
+                  <button
+                    className="flex items-center gap-1 rounded-lg bg-gray-50 px-2.5 py-1.5 text-xs text-gray-500 hover:bg-gray-100 dark:bg-gray-800 dark:text-gray-300"
+                    onClick={() => handleDownloadTemplate("cn")}
+                    title="下载中文 CSV 模板"
+                  >
+                    <Download className="h-3.5 w-3.5" /> 中文模板
+                  </button>
+                </div>
                 <button
                   className="flex items-center gap-1 rounded-lg border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100"
                   onClick={openProductReset}
@@ -1009,6 +1024,143 @@ export default function ProductAdminPage() {
           </div>
 
           {/* 品牌编辑/新增表单 */}
+      {/* v1.88.4 好物推荐 CSV 导入模板字段规范 Modal */}
+      {templateHelpOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
+          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl dark:bg-gray-900">
+            <div className="mb-4 flex items-center justify-between border-b border-gray-100 pb-3 dark:border-gray-800">
+              <div>
+                <h3 className="flex items-center gap-2 text-base font-bold text-gray-800 dark:text-gray-100">
+                  <Info className="h-5 w-5 text-brand-500 shrink-0" />
+                  <span>【表名：好物商品推荐与评测批量导入表】字段规范与说明</span>
+                </h3>
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                  包含 17 个专业商品属性字段，下载的 CSV 模板第 2 行严格逐列对齐字段注释（以 # 开头）
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTemplateHelpOpen(false)}
+                className="cursor-pointer text-gray-400 transition hover:text-gray-600"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* 必填与选填徽章栏 */}
+            <div className="mb-3.5 space-y-2 rounded-xl bg-gray-50 p-3 text-xs dark:bg-gray-800/60">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="font-bold text-rose-600 dark:text-rose-400 flex items-center gap-1">
+                  <span className="h-2 w-2 rounded-full bg-rose-500 inline-block"></span> 必填项：
+                </span>
+                {["商品名称*", "品牌*", "一级分类*"].map((name) => (
+                  <span key={name} className="rounded-md bg-rose-100/80 px-2 py-0.5 text-[11px] font-semibold text-rose-700 dark:bg-rose-900/40 dark:text-rose-300">
+                    {name.replace("*", "")}
+                  </span>
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <span className="font-bold text-gray-500 dark:text-gray-400 flex items-center gap-1">
+                  <span className="h-2 w-2 rounded-full bg-gray-400 inline-block"></span> 选填项：
+                </span>
+                {["型号", "二级分类", "商品图片URL", "商品描述", "综合评分(0-10)", "均价(元)", "价格区间", "特别推荐", "上架", "CCC认证", "安全提示", "适用起始月龄", "适用结束月龄", "适用季节"].map((name) => (
+                  <span key={name} className="rounded-md bg-gray-200/70 px-2 py-0.5 text-[11px] text-gray-600 dark:bg-gray-700 dark:text-gray-300">
+                    {name}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* 17 字段明细表 */}
+            <div className="mb-4 overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-gray-50 text-[11px] font-semibold text-gray-600 dark:bg-gray-800 dark:text-gray-300">
+                  <tr>
+                    <th className="px-3 py-2">字段名称（中/英）</th>
+                    <th className="px-2.5 py-2 text-center">属性</th>
+                    <th className="px-3 py-2">格式规范与约束说明</th>
+                    <th className="px-3 py-2">填写示例</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100 text-gray-700 dark:divide-gray-800 dark:text-gray-200">
+                  {[
+                    { cn: "商品名称*", en: "name*", req: true, desc: "商品全称（必填）", ex: "婴儿纯棉连体衣" },
+                    { cn: "品牌*", en: "brand*", req: true, desc: "品牌中文或英文名，如：英氏 / Babycare（必填）", ex: "英氏" },
+                    { cn: "型号", en: "model", req: false, desc: "商品规格或型号代码（选填）", ex: "YSS-01" },
+                    { cn: "一级分类*", en: "first_category*", req: true, desc: "food(食品)/feeding(食具)/clothing(服装)/diaper(纸尿裤)/bedding(寝具)/furniture(家具)/bath(洗护)/health_tool(护理工具)/travel(出行)/toy(启智玩具)/mama_pregnancy(孕妈专区)/mama_postpartum(产后恢复)/mama_nursing(哺乳文胸)/appliance(母婴电器)", ex: "clothing" },
+                    { cn: "二级分类", en: "second_category", req: false, desc: "二级细分品类（选填）", ex: "连体衣" },
+                    { cn: "商品图片URL", en: "image_url", req: false, desc: "商品主图网络URL（选填）", ex: "https://example.com/1.jpg" },
+                    { cn: "商品描述", en: "description", req: false, desc: "材质、卖点与评测详情（选填）", ex: "纯棉A类，透气亲肤" },
+                    { cn: "综合评分(0-10)", en: "overall(0-10)", req: false, desc: "综合评分 0.0 - 10.0，默认 8.0", ex: "8.5" },
+                    { cn: "均价(元)", en: "price_avg", req: false, desc: "参考售价，数字（选填）", ex: "129" },
+                    { cn: "价格区间", en: "price_range", req: false, desc: "价格范围文本（选填）", ex: "99-159" },
+                    { cn: "特别推荐（是/否）", en: "is_essential(Yes/No)", req: false, desc: "填 是/否，留空默认否", ex: "是" },
+                    { cn: "上架（是/否）", en: "is_active(Yes/No)", req: false, desc: "填 是/否，留空默认是", ex: "是" },
+                    { cn: "CCC认证（是/否）", en: "has_ccc_certification(Yes/No)", req: false, desc: "填 是/否，留空默认是", ex: "是" },
+                    { cn: "安全提示", en: "safety_alert", req: false, desc: "安全使用提示与避坑建议（选填）", ex: "按需购买，避免囤货" },
+                    { cn: "适用起始月龄", en: "applicable_age_start", req: false, desc: "最小月龄整数（如 0）", ex: "0" },
+                    { cn: "适用结束月龄", en: "applicable_age_end", req: false, desc: "最大月龄整数（如 6）", ex: "6" },
+                    { cn: "适用季节", en: "applicable_season", req: false, desc: "spring(春)/summer(夏)/autumn(秋)/winter(冬)/all(全年)", ex: "all" },
+                  ].map((s) => (
+                    <tr key={s.cn} className="hover:bg-gray-50/50 dark:hover:bg-gray-800/40">
+                      <td className="px-3 py-2 font-medium">
+                        <div>{s.cn}</div>
+                        <div className="font-mono text-[10px] text-gray-400">{s.en}</div>
+                      </td>
+                      <td className="px-2.5 py-2 text-center">
+                        {s.req ? (
+                          <span className="rounded bg-rose-50 px-1.5 py-0.5 text-[10px] font-bold text-rose-600 dark:bg-rose-950/60 dark:text-rose-400">
+                            必填
+                          </span>
+                        ) : (
+                          <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] text-gray-500 dark:bg-gray-800 dark:text-gray-400">
+                            选填
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-gray-600 dark:text-gray-300 leading-relaxed">
+                        {s.desc}
+                      </td>
+                      <td className="px-3 py-2 font-mono text-[11px] text-gray-500 dark:text-gray-400">
+                        {s.ex}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-3 dark:border-gray-800">
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => { setTemplateHelpOpen(false); handleDownloadTemplate("cn"); }}
+                  className="cursor-pointer rounded-xl bg-brand-500 px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-brand-600 flex items-center gap-1.5 shadow-xs"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  下载中文模板
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setTemplateHelpOpen(false); handleDownloadTemplate("en"); }}
+                  className="cursor-pointer rounded-xl border border-gray-200 bg-white px-3.5 py-2 text-xs font-semibold text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200 flex items-center gap-1.5"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  下载英文模板
+                </button>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTemplateHelpOpen(false)}
+                className="cursor-pointer rounded-xl border border-gray-200 px-4 py-2 text-xs text-gray-600 transition hover:bg-gray-100 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+              >
+                关闭
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
           {brandEditing && (
             <section className="card space-y-3">
               <div className="flex items-center justify-between">

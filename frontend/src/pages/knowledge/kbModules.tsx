@@ -71,6 +71,14 @@ export interface KbStatusSwitch {
   toggleApi: (id: number, value: any) => Promise<any>;
 }
 
+export interface KbTemplateColumnSpec {
+  headerCn: string;
+  headerEn: string;
+  required: boolean;
+  desc: string;
+  example: string;
+}
+
 export interface KbModuleConfig {
   /** 恢复出厂的模块键 */
   key: string;
@@ -109,6 +117,8 @@ export interface KbModuleConfig {
   /** 编辑时从列表条目提取表单值 */
   toForm: (item: any) => Record<string, any>;
   unitLabel: string;
+  /** v1.88.4 模板字段规范明细表（用于帮助弹窗直观展示与校验规则） */
+  templateSpecs?: KbTemplateColumnSpec[];
 }
 
 /* ============ 公共渲染 ============ */
@@ -259,6 +269,19 @@ export const KB_MODULES: KbModuleConfig[] = [
       is_active: item.is_active ?? true,
     }),
     unitLabel: "条事件",
+    templateSpecs: [
+      { headerCn: "阶段类型*", headerEn: "stage_type*", required: true, desc: "pregnancy_week(孕周) / baby_age_day(宝宝天数) / baby_age_month(宝宝月龄) / pregnancy_trimester(孕期三阶段)", example: "pregnancy_week" },
+      { headerCn: "阶段值*", headerEn: "stage_value*", required: true, desc: "整数数字（如孕周填10、宝宝天数填30、月龄填3）", example: "10" },
+      { headerCn: "分类*", headerEn: "category*", required: true, desc: "food/clothing/housing/travel/health/shopping/milestone/emotion/exercise/checkup/education", example: "health" },
+      { headerCn: "标题*", headerEn: "title*", required: true, desc: "事件主标题（必填）", example: "孕10周：胎儿发育关键期" },
+      { headerCn: "副标题", headerEn: "subtitle", required: false, desc: "简短副标题或核心摘要（选填）", example: "神经系统快速发育" },
+      { headerCn: "详细内容*", headerEn: "content*", required: true, desc: "详尽指导与科普正文，支持多行换行（必填）", example: "本周宝宝神经系统快速发育……" },
+      { headerCn: "小贴士", headerEn: "tips", required: false, desc: "备忘建议或注意事项（选填）", example: "补充叶酸、均衡饮食" },
+      { headerCn: "封面图URL", headerEn: "cover_image", required: false, desc: "图片网络URL地址（选填）", example: "https://example.com/cover.jpg" },
+      { headerCn: "必读（是/否）", headerEn: "is_essential(Yes/No)", required: false, desc: "是/否，留空默认否（标为首页必读）", example: "是" },
+      { headerCn: "排序权重", headerEn: "sort_order", required: false, desc: "数字越大越靠前（默认0）", example: "0" },
+      { headerCn: "是否启用（是/否）", headerEn: "is_active(Yes/No)", required: false, desc: "是/否，留空默认是（前台是否展示）", example: "是" },
+    ],
   },
 
   /* ---------- 2. 胎教故事 ---------- */
@@ -381,6 +404,25 @@ export const KB_MODULES: KbModuleConfig[] = [
       is_active: item.is_active ?? true,
     }),
     unitLabel: "个故事",
+    templateSpecs: [
+      { headerCn: "标题（中文）*", headerEn: "title*", required: true, desc: "故事中文名称（必填）", example: "月亮婆婆的摇篮曲" },
+      { headerCn: "英文标题", headerEn: "title_en", required: false, desc: "故事英文名称（选填）", example: "Moon Lullaby" },
+      { headerCn: "副标题", headerEn: "subtitle", required: false, desc: "故事寓意或副标题（选填）", example: "温柔与安全感" },
+      { headerCn: "英文副标题", headerEn: "subtitle_en", required: false, desc: "英文副标题（选填）", example: "Gentleness and security" },
+      { headerCn: "起始孕周*", headerEn: "week_start*", required: true, desc: "起始孕周整数（17-40周）（必填）", example: "17" },
+      { headerCn: "天数偏移", headerEn: "day_offset", required: false, desc: "周内天数偏移（0-6，0表示第1天）", example: "0" },
+      { headerCn: "当天序号", headerEn: "day_index", required: false, desc: "同一天内故事排序序号（从1开始）", example: "1" },
+      { headerCn: "故事正文（中文）*", headerEn: "content*", required: true, desc: "中文故事全文内容，支持换行（必填）", example: "夜幕降临，月亮婆婆轻轻哼起了摇篮曲……" },
+      { headerCn: "英文正文", headerEn: "content_en", required: false, desc: "英文故事内容对照（选填）", example: "Night falls, and Grandma Moon hums..." },
+      { headerCn: "胎教提示（中文）", headerEn: "tips", required: false, desc: "准爸妈伴读温馨提示（选填）", example: "睡前轻声讲述，配合轻抚腹部节奏感更佳。" },
+      { headerCn: "英文提示", headerEn: "tips_en", required: false, desc: "英文胎教提示（选填）", example: "Tell it softly before sleep..." },
+      { headerCn: "封面图URL", headerEn: "cover_image", required: false, desc: "插画封面图片网络URL（选填）", example: "" },
+      { headerCn: "讲述者", headerEn: "narrator", required: false, desc: "mom(妈妈讲) / dad(爸爸讲) / either(都可以)，默认 mom", example: "mom" },
+      { headerCn: "来源", headerEn: "source", required: false, desc: "故事出处或作者（选填）", example: "格林童话" },
+      { headerCn: "英文来源", headerEn: "source_en", required: false, desc: "英文来源出处（选填）", example: "" },
+      { headerCn: "排序权重", headerEn: "sort_order", required: false, desc: "排序权重数字（默认0）", example: "0" },
+      { headerCn: "是否启用（是/否）", headerEn: "is_active(Yes/No)", required: false, desc: "是/否，留空默认是", example: "是" },
+    ],
   },
 
   /* ---------- 3. 孕期食谱 ---------- */
@@ -487,6 +529,18 @@ export const KB_MODULES: KbModuleConfig[] = [
       cover_image: item.cover_image || "", sort_order: item.sort_order ?? 0, is_active: item.is_active ?? true,
     }),
     unitLabel: "道食谱",
+    templateSpecs: [
+      { headerCn: "标题*", headerEn: "title*", required: true, desc: "菜品名称（必填）", example: "清蒸鲈鱼" },
+      { headerCn: "营养标签", headerEn: "nutrient_tag", required: false, desc: "营养标签（选填，如：高蛋白·DHA·清淡）", example: "高蛋白·DHA" },
+      { headerCn: "孕期阶段*", headerEn: "period*", required: true, desc: "early(孕早期1-12周) / mid(孕中期13-27周) / late(孕晚期28-40周)", example: "mid" },
+      { headerCn: "月份分组", headerEn: "period_month", required: false, desc: "月份分组代码，如 month_5_6（可选留空）", example: "month_5_6" },
+      { headerCn: "材料*", headerEn: "ingredients*", required: true, desc: "食材清单与用量，支持换行（必填）", example: "鲈鱼一条约500g\n姜丝适量" },
+      { headerCn: "做法步骤*", headerEn: "steps*", required: true, desc: "烹饪步骤，支持多行换行（必填）", example: "1. 鲈鱼洗净划刀\n2. 大火蒸8分钟" },
+      { headerCn: "营养小叮咛", headerEn: "nutrition_tip", required: false, desc: "营养贴士或孕期食用注意（选填）", example: "孕中期优质蛋白助力大脑发育" },
+      { headerCn: "封面图URL", headerEn: "cover_image", required: false, desc: "菜品图片网络URL（选填）", example: "" },
+      { headerCn: "排序权重", headerEn: "sort_order", required: false, desc: "排序权重数字（默认0）", example: "0" },
+      { headerCn: "是否启用（是/否）", headerEn: "is_active(Yes/No)", required: false, desc: "是/否，留空默认是", example: "是" },
+    ],
   },
 
   /* ---------- 4. 幼儿百科 ---------- */
@@ -594,6 +648,19 @@ export const KB_MODULES: KbModuleConfig[] = [
       cover_image: item.cover_image || "", sort_order: item.sort_order ?? 0, is_active: item.is_active ?? true,
     }),
     unitLabel: "条问答",
+    templateSpecs: [
+      { headerCn: "章节*", headerEn: "chapter*", required: true, desc: "origin(我从哪里来) / body(我的身体) / growth(我的成长) / mystery(身体的奥秘)", example: "body" },
+      { headerCn: "题号*", headerEn: "question_number*", required: true, desc: "题号数字（如 1、2、3）（必填）", example: "1" },
+      { headerCn: "问题*", headerEn: "question*", required: true, desc: "科学探索问题题目（必填）", example: "为什么我会肚子疼？" },
+      { headerCn: "选项A", headerEn: "option_a", required: false, desc: "亲子互动趣味选项 A（选填）", example: "吃太饱啦" },
+      { headerCn: "选项B", headerEn: "option_b", required: false, desc: "亲子互动趣味选项 B（选填）", example: "肚子着凉了" },
+      { headerCn: "选项C", headerEn: "option_c", required: false, desc: "亲子互动趣味选项 C（选填）", example: "要拉便便了" },
+      { headerCn: "解答正文*", headerEn: "answer*", required: true, desc: "科学严谨且通俗易懂的解答内容，支持换行（必填）", example: "小朋友的肚子里住着一位「小管家」……" },
+      { headerCn: "漫画对话", headerEn: "comic_dialogue", required: false, desc: "亲子情景漫画生动对白（选填）", example: "" },
+      { headerCn: "配图URL", headerEn: "cover_image", required: false, desc: "科普图解配图网络URL（选填）", example: "" },
+      { headerCn: "排序权重", headerEn: "sort_order", required: false, desc: "排序权重数字（默认0）", example: "0" },
+      { headerCn: "是否启用（是/否）", headerEn: "is_active(Yes/No)", required: false, desc: "是/否，留空默认是", example: "是" },
+    ],
   },
 
   /* ---------- 5. 待产包预置库 ---------- */
@@ -609,6 +676,11 @@ export const KB_MODULES: KbModuleConfig[] = [
     removeApi: (id) => babyShoppingApi.remove(id),
     saveApi: (id, data) => (id ? babyShoppingApi.update(id, data as any) : babyShoppingApi.create(data as any)),
     resetApi: () => knowledgeAdminApi.reset("baby_shopping"),
+    csv: {
+      exportCsv: (payload) => babyShoppingApi.exportCsv(payload),
+      importCsv: (f) => babyShoppingApi.importCsv(f),
+      importTemplate: (lang) => babyShoppingApi.importTemplate(lang),
+    },
     filters: [
       {
         key: "owner",
@@ -699,5 +771,18 @@ export const KB_MODULES: KbModuleConfig[] = [
       is_active: item.is_active ?? true,
     }),
     unitLabel: "件物品",
+    templateSpecs: [
+      { headerCn: "物品归属*", headerEn: "owner*", required: true, desc: "mom(妈妈篇) / baby(宝宝篇)（必填）", example: "mom" },
+      { headerCn: "类别*", headerEn: "category*", required: true, desc: "待产证件/产后护理/哺乳用品/新生喂养/新生穿衣 等（必填）", example: "产后护理" },
+      { headerCn: "物品名称*", headerEn: "name*", required: true, desc: "待产物品具体名称（必填）", example: "一次性产妇卫生巾套包" },
+      { headerCn: "建议数量", headerEn: "quantity", required: false, desc: "建议备货数量（如：2 或 2-3，默认1）", example: "2" },
+      { headerCn: "单位", headerEn: "unit", required: false, desc: "计量单位（如：包/件/盒/罐，默认件）", example: "包" },
+      { headerCn: "单价(元)", headerEn: "unit_price", required: false, desc: "预估单价，数字（选填）", example: "39.9" },
+      { headerCn: "总价(元)", headerEn: "total_price", required: false, desc: "预估总价，数字（选填）", example: "79.8" },
+      { headerCn: "备注说明", headerEn: "remark", required: false, desc: "选购要点、适用阶段或温馨提示（选填）", example: "建议产前提前备齐，产后恶露期必备" },
+      { headerCn: "示例图片URL", headerEn: "image_url", required: false, desc: "物品参考图片网络URL（选填）", example: "" },
+      { headerCn: "排序权重", headerEn: "sort_order", required: false, desc: "排序权重数字（默认0）", example: "1" },
+      { headerCn: "是否启用（是/否）", headerEn: "is_active(Yes/No)", required: false, desc: "是/否，留空默认是", example: "是" },
+    ],
   },
 ];
