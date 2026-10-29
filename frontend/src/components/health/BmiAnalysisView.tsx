@@ -25,6 +25,8 @@ interface BmiAnalysisViewProps {
   externalAnalysisResult?: BmiAnalysisResult | null;
   stageType?: PregnancyStage;
   onStageTypeChange?: (st: PregnancyStage) => void;
+  stageFilter?: "all" | PregnancyStage;
+  onStageFilterChange?: (st: "all" | PregnancyStage) => void;
   fallbackHeight?: number | null;
   fallbackPreWeight?: number | null;
   motherId?: number | null;
@@ -37,6 +39,8 @@ export default function BmiAnalysisView({
   externalAnalysisResult,
   stageType,
   onStageTypeChange,
+  stageFilter = "all",
+  onStageFilterChange,
   fallbackHeight,
   fallbackPreWeight,
   motherId,
@@ -182,16 +186,26 @@ export default function BmiAnalysisView({
     }
   };
 
+  /** 根据当前选中的生命周期阶段切片过滤时序记录（全部 / 非孕期备孕 / 孕期产检 / 产后恢复） */
+  const displayedTimeseries = useMemo(() => {
+    if (!stageFilter || stageFilter === "all") return timeseries;
+    return timeseries.filter((r) => {
+      const st = r.stage || (r.gestational_week ? "pregnancy" : "general");
+      return st === stageFilter;
+    });
+  }, [timeseries, stageFilter]);
+
   const evalData = result?.evaluation;
   const isGainNormal = evalData?.gain_status === "normal";
   const isGainBelow = evalData?.gain_status === "below";
 
   // ===== v1.56：BMI 状态卡数据源（标准区间 + 当前测算 BMI + 孕前基线）=====
   const latestRecord = useMemo(() => {
-    if (!timeseries.length) return null;
-    const sorted = [...timeseries].sort((a, b) => (a.record_date < b.record_date ? -1 : 1));
+    const list = displayedTimeseries.length ? displayedTimeseries : timeseries;
+    if (!list.length) return null;
+    const sorted = [...list].sort((a, b) => (a.record_date < b.record_date ? -1 : 1));
     return sorted[sorted.length - 1] ?? null;
-  }, [timeseries]);
+  }, [displayedTimeseries, timeseries]);
 
   // 查找历史打卡中最近一次有效记录的身高与孕前体重（逆序查找最新一条有值记录，兜底外层传入的基线）
   const latestHeight = useMemo(() => {
@@ -332,15 +346,17 @@ export default function BmiAnalysisView({
         gestationAnchor={gestationAnchor}
         stageType={stageType}
         onStageTypeChange={onStageTypeChange}
+        stageFilter={stageFilter}
+        onStageFilterChange={onStageFilterChange}
         babies={babies}
       />
 
       {/* 卡片 2: 多维度时序图表看板（趋势折线 / 增量柱状 + 时间跨度筛选） */}
-      <BmiTimeSeriesBoard records={timeseries} loading={historyLoading} />
+      <BmiTimeSeriesBoard records={displayedTimeseries} loading={historyLoading} />
 
       {/* 卡片 3: 测量打卡历史数据表 */}
       <BmiHistoryTable
-        records={timeseries}
+        records={displayedTimeseries}
         loading={historyLoading}
         onDelete={handleDeleteRecord}
         onBatchDelete={handleBatchDeleteRecords}

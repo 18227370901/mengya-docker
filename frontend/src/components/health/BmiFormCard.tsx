@@ -46,6 +46,8 @@ interface BmiFormCardProps {
   gestationAnchor?: GestationAnchor | null;
   stageType?: PregnancyStage;
   onStageTypeChange?: (st: PregnancyStage) => void;
+  stageFilter?: "all" | PregnancyStage;
+  onStageFilterChange?: (st: "all" | PregnancyStage) => void;
   babies?: BabyProfile[];
 }
 
@@ -76,7 +78,7 @@ function autoPostpartumMonths(babyBirthday: string, recordDate: string): number 
   return Math.max(0, Math.floor((rec.getTime() - birth.getTime()) / (30.44 * 86400000)));
 }
 
-export default function BmiFormCard({ onSubmit, loading, initialHeight, initialPreWeight, gestationAnchor, stageType: externalStageType, onStageTypeChange, babies }: BmiFormCardProps) {
+export default function BmiFormCard({ onSubmit, loading, initialHeight, initialPreWeight, gestationAnchor, stageType: externalStageType, onStageTypeChange, stageFilter = "all", onStageFilterChange, babies }: BmiFormCardProps) {
   const { user } = useAuthStore();
   const pregnantBabies = useMemo(() => {
     return babies?.filter((b) => b.is_born === false || (b.birthday && new Date(b.birthday) > new Date())) || [];
@@ -194,6 +196,13 @@ export default function BmiFormCard({ onSubmit, loading, initialHeight, initialP
       setInternalStageType(externalStageType);
     }
   }, [externalStageType]);
+
+  useEffect(() => {
+    if (stageFilter && stageFilter !== "all" && stageFilter !== stageType) {
+      setInternalStageType(stageFilter);
+      onStageTypeChange?.(stageFilter);
+    }
+  }, [stageFilter]);
 
   const setStageType = (newStage: PregnancyStage) => {
     setInternalStageType(newStage);
@@ -475,42 +484,74 @@ export default function BmiFormCard({ onSubmit, loading, initialHeight, initialP
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div>
-            <label className="label">阶段类型 *</label>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setStageType("pregnancy")}
-                className={`flex-1 rounded-xl py-2 text-xs font-semibold transition-all ${
-                  stageType === "pregnancy"
-                    ? "bg-brand-500 text-white shadow-xs"
-                    : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300"
-                }`}
-              >
-                全孕期阶段
-              </button>
-              <button
-                type="button"
-                onClick={() => setStageType("postpartum")}
-                className={`flex-1 rounded-xl py-2 text-xs font-semibold transition-all ${
-                  stageType === "postpartum"
-                    ? "bg-brand-500 text-white shadow-xs"
-                    : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300"
-                }`}
-              >
-                产后恢复期
-              </button>
-              <button
-                type="button"
-                onClick={() => setStageType("general")}
-                className={`flex-1 rounded-xl py-2 text-xs font-semibold transition-all ${
-                  stageType === "general"
-                    ? "bg-brand-500 text-white shadow-xs"
-                    : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300"
-                }`}
-              >
-                非孕期/备孕
-              </button>
-            </div>
+            {stageFilter && stageFilter !== "all" ? (
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="label mb-0">阶段类型 *</label>
+                  <button
+                    type="button"
+                    onClick={() => onStageFilterChange?.("all")}
+                    className="text-[11px] text-brand-600 hover:text-brand-700 dark:text-brand-400 font-medium cursor-pointer"
+                  >
+                    切换为全部阶段可自由选择 ➔
+                  </button>
+                </div>
+                <div className="flex items-center justify-between rounded-xl border border-brand-200 bg-brand-50/70 px-3.5 py-2.5 text-xs font-bold text-brand-800 dark:border-brand-900/40 dark:bg-brand-950/40 dark:text-brand-300">
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-2 w-2 rounded-full bg-brand-500 animate-pulse" />
+                    <span>
+                      已锁定阶段：
+                      {stageFilter === "pregnancy" ? "全孕期阶段" : stageFilter === "postpartum" ? "产后恢复期" : "非孕期/备孕"}
+                    </span>
+                  </div>
+                  <span className="rounded-md bg-white/80 px-2 py-0.5 text-[10px] font-normal text-brand-900 shadow-2xs dark:bg-gray-800 dark:text-brand-200">
+                    已与生命周期视图切片同步
+                  </span>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="label mb-0">阶段类型 *</label>
+                  <span className="text-[10px] text-gray-400">（全部阶段视角下选择打卡阶段，并决定导入模板类型）</span>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setStageType("pregnancy")}
+                    className={`flex-1 rounded-xl py-2 text-xs font-semibold transition-all cursor-pointer ${
+                      stageType === "pregnancy"
+                        ? "bg-brand-500 text-white shadow-xs"
+                        : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300"
+                    }`}
+                  >
+                    全孕期阶段
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStageType("postpartum")}
+                    className={`flex-1 rounded-xl py-2 text-xs font-semibold transition-all cursor-pointer ${
+                      stageType === "postpartum"
+                        ? "bg-brand-500 text-white shadow-xs"
+                        : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300"
+                    }`}
+                  >
+                    产后恢复期
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setStageType("general")}
+                    className={`flex-1 rounded-xl py-2 text-xs font-semibold transition-all cursor-pointer ${
+                      stageType === "general"
+                        ? "bg-brand-500 text-white shadow-xs"
+                        : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300"
+                    }`}
+                  >
+                    非孕期/备孕
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           <div>

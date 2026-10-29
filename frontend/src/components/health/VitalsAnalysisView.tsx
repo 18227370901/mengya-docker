@@ -1,6 +1,6 @@
 import type { BabyProfile } from "@/types";
 import type { GestationAnchor } from "@/utils/gestation";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import {
   HeartPulse,
   Droplet,
@@ -33,6 +33,8 @@ interface VitalsAnalysisViewProps {
   onRecordChanged?: () => void;
   stageType?: PregnancyStage;
   onStageTypeChange?: (st: PregnancyStage) => void;
+  stageFilter?: "all" | PregnancyStage;
+  onStageFilterChange?: (st: "all" | PregnancyStage) => void;
   motherId?: number | null;
   currentGestationalWeek?: number | null;
   currentGestationalDays?: number | null;
@@ -44,6 +46,8 @@ export default function VitalsAnalysisView({
   refreshTrigger,
   onRecordChanged,
   stageType = "pregnancy",
+  stageFilter = "all",
+  onStageFilterChange,
   onStageTypeChange,
   motherId,
   currentGestationalWeek,
@@ -213,6 +217,15 @@ export default function VitalsAnalysisView({
     updateResult(mockResult);
     showToast(`已载入 ${rec.record_date} 的 AI 解读报告`);
   };
+
+  /** 根据当前选中的生命周期阶段切片过滤体征记录（全部 / 非孕期备孕 / 孕期产检 / 产后恢复） */
+  const displayedTimeseries = useMemo(() => {
+    if (!stageFilter || stageFilter === "all") return timeseries;
+    return timeseries.filter((r) => {
+      const st = r.stage || (r.gestational_week ? "pregnancy" : "general");
+      return st === stageFilter;
+    });
+  }, [timeseries, stageFilter]);
 
   return (
     <div className="space-y-6">
@@ -392,11 +405,11 @@ export default function VitalsAnalysisView({
       )}
 
       {/* 时序走势图看板 */}
-      <VitalsTimeSeriesBoard timeseries={timeseries} />
+      <VitalsTimeSeriesBoard timeseries={displayedTimeseries} />
 
       {/* 历史明细表 */}
       <VitalsHistoryTable
-        records={timeseries}
+        records={displayedTimeseries}
         loading={historyLoading}
         onDelete={handleDelete}
         onBatchDelete={handleBatchDelete}

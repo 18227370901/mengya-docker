@@ -136,7 +136,7 @@ mengya-docker/
 ├── docs/                              # 📁 [文档中心] 统一管理架构设计、HTML视图与发布日志
 │   ├── Project_System_Design.md       # 系统架构设计规范 (PSD) 与重构权威决策
 │   ├── Project_System_Design.html     # 架构设计离线 HTML 交互视图 (Mermaid 图表)
-│   └── CHANGELOG.md                   # 全量版本演化与历史变更日志 (v1.13~v1.88.6+)
+│   └── CHANGELOG.md                   # 全量版本演化与历史变更日志 (v1.13~v1.99+)
 │
 ├── tools/                             # 📁 [工具中心] 归集非线上常驻的本地开发调试脚本
 │   ├── build_frontend.py              # 前端一键构建与静态产物同步脚本 (Path两级回退)
@@ -159,7 +159,7 @@ mengya-docker/
 深入了解系统架构决策、全版本演化或容器运维深度定制，请参阅 `docs/` 目录下的专有文档：
 
 - 📐 **[PSD 架构设计与重构决策文档 (docs/Project_System_Design.md)](docs/Project_System_Design.md)**：包含系统全景技术栈审计、三大数据库部署模式自适应与 6 种物理隔离矩阵、前后台完整设计规格及 ADR-01~36 全部重构决策（另备有含完整图表的 [HTML 交互版](docs/Project_System_Design.html)）；
-- 📜 **[全量版本演化与更新日志 (docs/CHANGELOG.md)](docs/CHANGELOG.md)**：记录自 v1.13 至 v1.88.6 全部迭代历史、缺陷修复与详细技术升级公告；
+- 📜 **[全量版本演化与更新日志 (docs/CHANGELOG.md)](docs/CHANGELOG.md)**：记录自 v1.13 至 v1.99 全部迭代历史、缺陷修复与详细技术升级公告；
 - 🤖 **[AI 协作与跨工具维护规范 (AGENTS.md)](AGENTS.md)**：约束 Codex、Cursor、Claude Code、Windsurf 等各类 AI 工具严守极简自述与文档分流铁律。
 
 ---

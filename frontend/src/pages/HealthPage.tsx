@@ -46,6 +46,9 @@ export default function HealthPage() {
   const [showCheckIn, setShowCheckIn] = useState(false);
   const [checkInDate, setCheckInDate] = useState<string | undefined>(undefined);
   const [checkInMode, setCheckInMode] = useState<"mom_pregnancy" | "mom_postpartum" | "mom_general" | "baby" | undefined>(undefined);
+  type BabyGrowthStage = "all" | "infant" | "toddler" | "preschool";
+  const [momStageFilter, setMomStageFilter] = useState<"all" | PregnancyStage>("all");
+  const [babyGrowthStage, setBabyGrowthStage] = useState<BabyGrowthStage>("all");
   const [bmiStageType, setBmiStageType] = useState<PregnancyStage>(() =>
     user?.is_pregnant
       ? "pregnancy"
@@ -136,6 +139,11 @@ export default function HealthPage() {
     () => mothers.find((m) => m.id === selectedMotherId) || mothers.find((m) => m.is_primary) || mothers[0],
     [mothers, selectedMotherId]
   );
+
+  const activeStageForMom: 'pregnancy' | 'postpartum' | 'general' =
+    momStageFilter !== 'all'
+      ? momStageFilter
+      : (bmiStageType || (currentMother?.is_pregnant ? 'pregnancy' : 'general'));
   const currentBaby = useMemo(
     () => babies.find((b) => b.id === selectedBabyId) || babies.find((b) => b.is_primary) || babies[0],
     [babies, selectedBabyId]
@@ -411,13 +419,18 @@ export default function HealthPage() {
     } else if (tab === "growth") {
       setCheckInMode("baby");
     } else if (tab === "mom") {
-      setCheckInMode(
-        bmiStageType === "pregnancy"
-          ? "mom_pregnancy"
-          : bmiStageType === "postpartum"
-          ? "mom_postpartum"
-          : "mom_general"
-      );
+      if (momStageFilter === "general") setCheckInMode("mom_general");
+      else if (momStageFilter === "pregnancy") setCheckInMode("mom_pregnancy");
+      else if (momStageFilter === "postpartum") setCheckInMode("mom_postpartum");
+      else {
+        setCheckInMode(
+          bmiStageType === "pregnancy"
+            ? "mom_pregnancy"
+            : bmiStageType === "postpartum"
+            ? "mom_postpartum"
+            : "mom_general"
+        );
+      }
     } else {
       setCheckInMode(undefined);
     }
@@ -492,6 +505,19 @@ export default function HealthPage() {
 
   // ===== v1.55/1.56 统一数据口径：妈妈记录 = prenatal_exam；宝宝记录 = growth_measurement =====
   const momRecords = records.filter((r) => r.record_type === "prenatal_exam");
+  const momStageCounts = useMemo(() => {
+    let general = 0;
+    let pregnancy = 0;
+    let postpartum = 0;
+    momRecords.forEach((r) => {
+      const items = r.exam_items && typeof r.exam_items === "object" ? (r.exam_items as any) : {};
+      const st = items.stage || (r.gestational_week ? "pregnancy" : "general");
+      if (st === "pregnancy") pregnancy++;
+      else if (st === "postpartum") postpartum++;
+      else general++;
+    });
+    return { all: momRecords.length, general, pregnancy, postpartum };
+  }, [momRecords]);
   const growthRecords = records.filter((r) => r.record_type === "growth_measurement");
 
   // 统一健康打卡模式允许项（按子页面与当前选中记录严格隔离且保持引用稳定）
@@ -539,20 +565,60 @@ export default function HealthPage() {
     return growthRecords.filter((r) => !r.baby || r.baby === currentBaby.id);
   }, [growthRecords, currentBaby]);
 
-  const growthChartPoints = currentBabyGrowthRecords.map((r) => ({
+  const getBabyRecordMonthAge = (r: HealthRecord): number | null => {
+    if (r.baby_age_days != null && r.baby_age_days >= 0) {
+      return r.baby_age_days / 30.44;
+    }
+    if (currentBaby?.birthday) {
+      const diff = new Date(r.record_date).getTime() - new Date(currentBaby.birthday).getTime();
+      return diff >= 0 ? diff / (30.44 * 86400000) : null;
+    }
+    return null;
+  };
+
+  const babyGrowthStageCounts = useMemo(() => {
+    let infant = 0;
+    let toddler = 0;
+    let preschool = 0;
+    currentBabyGrowthRecords.forEach((r) => {
+      const m = getBabyRecordMonthAge(r);
+      if (m === null || m <= 12) infant++;
+      else if (m <= 36) toddler++;
+      else preschool++;
+    });
+    return {
+      all: currentBabyGrowthRecords.length,
+      infant,
+      toddler,
+      preschool,
+    };
+  }, [currentBabyGrowthRecords, currentBaby?.birthday]);
+
+  const filteredBabyGrowthRecords = useMemo(() => {
+    if (babyGrowthStage === "all") return currentBabyGrowthRecords;
+    return currentBabyGrowthRecords.filter((r) => {
+      const m = getBabyRecordMonthAge(r);
+      if (babyGrowthStage === "infant") return m === null || m <= 12;
+      if (babyGrowthStage === "toddler") return m !== null && m > 12 && m <= 36;
+      if (babyGrowthStage === "preschool") return m !== null && m > 36;
+      return true;
+    });
+  }, [currentBabyGrowthRecords, babyGrowthStage, currentBaby?.birthday]);
+
+  const growthChartPoints = filteredBabyGrowthRecords.map((r) => ({
     date: r.record_date,
     weight: r.weight,
     height: r.height,
     head: r.head_circumference,
   }));
 
-  // ===== v1.57 宝宝测量记录表分页（当前激活宝宝） =====
+  // ===== v1.57 宝宝测量记录表分页（当前激活宝宝与成长阶段切片） =====
   const babySort = useMemo(
     () => (a: HealthRecord, b: HealthRecord) =>
       a.record_date === b.record_date ? b.id - a.id : a.record_date < b.record_date ? 1 : -1,
     []
   );
-  const babyPage = useListPagination(currentBabyGrowthRecords, babySort, "mengya_page_size_baby_growth", 5);
+  const babyPage = useListPagination(filteredBabyGrowthRecords, babySort, "mengya_page_size_baby_growth", 5);
 
   const toggleInSet = (setter: React.Dispatch<React.SetStateAction<Set<number>>>, id: number) => {
     setter((prev) => {
@@ -584,28 +650,14 @@ export default function HealthPage() {
           <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100">健康中心</h1>
           <p className="mt-1 text-sm text-gray-400">妈妈孕产档案 · 宝宝生长与疫苗 · 全周期时间轴</p>
         </div>
-        {/* 仅在相关页面（妈妈·孕产档案 与 宝宝·生长档案）展示健康打卡与导入数据，不相关页面（宝宝疫苗、健康时间轴与日历）不做展示 */}
-        {(tab === "mom" || tab === "growth") && (
+        {/* 当处于宝宝生长档案时，顶部提供专属快捷打卡与导入 */}
+        {tab === "growth" && (
           <div className="flex items-center gap-2">
             {hasPermission("health_record_create") && (
               <button
                 className="btn-secondary gap-1.5"
-                onClick={() =>
-                  openImport(
-                    tab === "growth"
-                      ? "baby"
-                      : momSubTab === "vitals"
-                      ? "mom_vitals"
-                      : "mom_bmi"
-                  )
-                }
-                title={
-                  tab === "growth"
-                    ? "宝宝成长数据 CSV 批量导入"
-                    : momSubTab === "vitals"
-                    ? "血压/血糖体征数据 CSV 批量导入"
-                    : "妈妈体重/BMI CSV 批量导入"
-                }
+                onClick={() => openImport("baby")}
+                title="宝宝成长数据 CSV 批量导入"
               >
                 <FileUp className="h-4 w-4" /> 导入数据
               </button>
@@ -613,34 +665,12 @@ export default function HealthPage() {
             {hasPermission("health_record_create") ? (
               <button
                 className="btn-primary"
-                onClick={() =>
-                  openCheckIn(
-                    undefined,
-                    tab === "growth"
-                      ? "baby"
-                      : bmiStageType === "pregnancy"
-                      ? "mom_pregnancy"
-                      : bmiStageType === "postpartum"
-                      ? "mom_postpartum"
-                      : "mom_general",
-                    tab === "growth" ? currentBaby?.id : null,
-                    null,
-                    tab === "mom" && momSubTab === "vitals" ? "vitals" : "bmi"
-                  )
-                }
+                onClick={() => openCheckIn(undefined, "baby", currentBaby?.id || null, null, "bmi")}
               >
-                {tab === "mom" && momSubTab === "vitals" ? (
-                  <>
-                    <HeartPulse className="h-4 w-4" /> 记录血压/血糖
-                  </>
-                ) : (
-                  <>
-                    <Plus className="h-4 w-4" /> 健康打卡
-                  </>
-                )}
+                <Plus className="h-4 w-4" /> 生长打卡
               </button>
             ) : (
-              <span className="text-xs text-gray-400">管理员已关闭您的健康记录录入权限</span>
+              <span className="text-xs text-gray-400">管理员已关闭录入权限</span>
             )}
           </div>
         )}
@@ -700,6 +730,7 @@ export default function HealthPage() {
         motherId={currentMother?.id}
         currentMother={currentMother}
         latestHeight={latestMomHeight}
+        activeStage={activeStageForMom}
         onImported={(hint, resolvedStage) => {
           showToast(hint);
           if (resolvedStage) {
@@ -714,78 +745,212 @@ export default function HealthPage() {
         <p className="py-10 text-center text-gray-400">加载中…</p>
       ) : tab === "mom" ? (
         <div className="space-y-6">
-          {/* 妈妈档案快速切换与管理栏 */}
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-white p-3.5 border border-pink-100 shadow-2xs dark:border-gray-800 dark:bg-gray-800">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-rose-50 text-rose-500 shrink-0">
-                <HeartPulse className="h-5 w-5" />
-              </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-400">当前妈妈档案：</span>
-                  <span className="text-sm font-bold text-gray-800 dark:text-gray-100">
-                    {currentMother ? currentMother.name : "默认档案"}
-                  </span>
-                  {currentMother?.is_primary && (
-                    <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-medium text-rose-700">
-                      默认
-                    </span>
-                  )}
-                  {currentMother?.is_pregnant && (
-                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700">
-                      孕期中
-                    </span>
-                  )}
+          {/* 层次化控制台：妈妈档案主体上下文 + 专属快捷操作 + 全生命周期分段切换器 + 指标二级导航 */}
+          <div className="rounded-3xl bg-white p-5 border border-pink-100/90 shadow-xs dark:border-gray-800 dark:bg-gray-800 space-y-4">
+            {/* 第一层：当前档案主体信息与专属操作栏 */}
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-pink-50/80 pb-3.5 dark:border-gray-700/60">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-tr from-rose-500 to-pink-400 text-white shadow-md shadow-rose-200 dark:shadow-none shrink-0">
+                  <HeartPulse className="h-5 w-5" />
                 </div>
-                {currentMother?.due_date && (
-                  <p className="text-xs text-gray-400 mt-0.5">预产期：{currentMother.due_date}</p>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-xs text-gray-400">健康主档：</span>
+                    <span className="text-base font-bold text-gray-800 dark:text-gray-100">
+                      {currentMother ? currentMother.name : "默认档案"}
+                    </span>
+                    {currentMother?.is_primary && (
+                      <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-medium text-rose-700 dark:bg-rose-950 dark:text-rose-300">
+                        默认
+                      </span>
+                    )}
+                    {currentMother?.is_pregnant && (
+                      <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+                        孕期中
+                      </span>
+                    )}
+                    {mothers.length > 1 && (
+                      <select
+                        value={currentMother?.id || ""}
+                        onChange={(e) => setSelectedMotherId(Number(e.target.value))}
+                        className="input text-xs py-1 px-2 h-7 bg-gray-50 border-gray-200 ml-1 rounded-lg"
+                      >
+                        {mothers.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            切换：{m.name} {m.is_primary ? "(默认)" : ""}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 text-xs text-gray-400 mt-0.5">
+                    {currentMother?.due_date && <span>预产期：{currentMother.due_date}</span>}
+                    {latestMomHeight && <span>基线身高：{latestMomHeight} cm</span>}
+                    <span className="text-brand-600 dark:text-brand-400 font-medium">
+                      当前操作阶段：{activeStageForMom === "pregnancy" ? "全孕期产检" : activeStageForMom === "postpartum" ? "产后恢复期" : "非孕期/备孕"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 专属操作区：导入数据与健康打卡（与当前阶段精确对齐） */}
+              <div className="flex items-center gap-2.5">
+                {hasPermission("health_record_create") && (
+                  <button
+                    className="btn-secondary flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold rounded-xl cursor-pointer"
+                    onClick={() =>
+                      openImport(momSubTab === "vitals" ? "mom_vitals" : "mom_bmi")
+                    }
+                    title={`下载针对【${activeStageForMom === "pregnancy" ? "全孕期产检" : activeStageForMom === "postpartum" ? "产后恢复期" : "非孕期/备孕"}】定制的模板并导入`}
+                  >
+                    <FileUp className="h-4 w-4 text-brand-600 dark:text-brand-400" />
+                    <span>导入数据</span>
+                    <span className="rounded bg-brand-50 px-1 py-0.2 text-[10px] text-brand-700 font-normal dark:bg-gray-700 dark:text-brand-300">
+                      {activeStageForMom === "pregnancy" ? "孕期定制" : activeStageForMom === "postpartum" ? "产后定制" : "非孕期定制"}
+                    </span>
+                  </button>
+                )}
+                {hasPermission("health_record_create") ? (
+                  <button
+                    className="btn-primary flex items-center gap-1.5 px-4 py-2 text-xs font-bold rounded-xl shadow-md shadow-brand-500/20 cursor-pointer"
+                    onClick={() =>
+                      openCheckIn(
+                        undefined,
+                        activeStageForMom === "pregnancy"
+                          ? "mom_pregnancy"
+                          : activeStageForMom === "postpartum"
+                          ? "mom_postpartum"
+                          : "mom_general",
+                        null,
+                        null,
+                        momSubTab === "vitals" ? "vitals" : "bmi"
+                      )
+                    }
+                  >
+                    {momSubTab === "vitals" ? (
+                      <>
+                        <HeartPulse className="h-4 w-4" /> 记录血压/血糖
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="h-4 w-4" /> 健康打卡
+                      </>
+                    )}
+                  </button>
+                ) : (
+                  <span className="text-xs text-gray-400">录入权限已关闭</span>
                 )}
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              {mothers.length > 1 && (
-                <select
-                  value={currentMother?.id || ""}
-                  onChange={(e) => setSelectedMotherId(Number(e.target.value))}
-                  className="input text-xs py-1.5 px-2.5 h-8 bg-gray-50 border-gray-200"
+
+            {/* 第二层：妈妈全生命周期阶段视图切换器（4分段） */}
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 text-xs font-bold text-gray-700 dark:text-gray-200">
+                  <span>🌱 妈妈生命周期阶段视图：</span>
+                  <span className="text-[11px] font-normal text-gray-400">（切换阶段自动切片查看对应时期的体重与体征走势，打卡与导入模板自动对齐）</span>
+                </div>
+                <span className="text-[11px] text-gray-400 font-mono">共 {momStageCounts.all} 条历史打卡</span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setMomStageFilter("all")}
+                  className={`flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+                    momStageFilter === "all"
+                      ? "bg-brand-500 text-white shadow-md shadow-brand-500/20 ring-2 ring-brand-300 dark:ring-brand-700"
+                      : "bg-gray-50 text-gray-600 hover:bg-gray-100 dark:bg-gray-700/60 dark:text-gray-300"
+                  }`}
                 >
-                  {mothers.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name} {m.is_primary ? "(默认)" : ""}
-                    </option>
-                  ))}
-                </select>
-              )}
+                  <span>🌟 全部阶段</span>
+                  <span className={`rounded-full px-1.5 py-0.2 text-[10px] ${momStageFilter === "all" ? "bg-white/20 text-white" : "bg-gray-200 text-gray-600 dark:bg-gray-600 dark:text-gray-300"}`}>
+                    {momStageCounts.all}
+                  </span>
+                </button>
 
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMomStageFilter("general");
+                    setBmiStageType("general");
+                  }}
+                  className={`flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+                    momStageFilter === "general"
+                      ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/20 ring-2 ring-emerald-300 dark:ring-emerald-700"
+                      : "bg-gray-50 text-gray-600 hover:bg-emerald-50 hover:text-emerald-700 dark:bg-gray-700/60 dark:text-gray-300"
+                  }`}
+                >
+                  <span>🌿 非孕期/备孕</span>
+                  <span className={`rounded-full px-1.5 py-0.2 text-[10px] ${momStageFilter === "general" ? "bg-white/20 text-white" : "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300"}`}>
+                    {momStageCounts.general}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMomStageFilter("pregnancy");
+                    setBmiStageType("pregnancy");
+                  }}
+                  className={`flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+                    momStageFilter === "pregnancy"
+                      ? "bg-rose-500 text-white shadow-md shadow-rose-500/20 ring-2 ring-rose-300 dark:ring-rose-700"
+                      : "bg-gray-50 text-gray-600 hover:bg-rose-50 hover:text-rose-700 dark:bg-gray-700/60 dark:text-gray-300"
+                  }`}
+                >
+                  <span>🤰 全孕期产检</span>
+                  <span className={`rounded-full px-1.5 py-0.2 text-[10px] ${momStageFilter === "pregnancy" ? "bg-white/20 text-white" : "bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300"}`}>
+                    {momStageCounts.pregnancy}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMomStageFilter("postpartum");
+                    setBmiStageType("postpartum");
+                  }}
+                  className={`flex items-center justify-center gap-1.5 py-2.5 px-3 rounded-2xl text-xs font-bold transition-all cursor-pointer ${
+                    momStageFilter === "postpartum"
+                      ? "bg-amber-600 text-white shadow-md shadow-amber-600/20 ring-2 ring-amber-300 dark:ring-amber-700"
+                      : "bg-gray-50 text-gray-600 hover:bg-amber-50 hover:text-amber-700 dark:bg-gray-700/60 dark:text-gray-300"
+                  }`}
+                >
+                  <span>🤱 产后恢复期</span>
+                  <span className={`rounded-full px-1.5 py-0.2 text-[10px] ${momStageFilter === "postpartum" ? "bg-white/20 text-white" : "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"}`}>
+                    {momStageCounts.postpartum}
+                  </span>
+                </button>
+              </div>
             </div>
-          </div>
 
-          {/* 妈妈·孕产档案二级子看板导航：体重/BMI vs 血压/血糖 */}
-          <div className="flex items-center gap-2 rounded-2xl bg-white p-1.5 border border-pink-100 shadow-2xs dark:border-gray-800 dark:bg-gray-800">
-            <button
-              type="button"
-              onClick={() => setMomSubTab("bmi")}
-              className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-xs font-bold transition-all ${
-                momSubTab === "bmi"
-                  ? "bg-gradient-to-r from-rose-500 to-pink-500 text-white shadow-md shadow-rose-200 dark:shadow-none"
-                  : "text-gray-500 hover:text-gray-800 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-700/50"
-              }`}
-            >
-              <Scale className="h-4 w-4" />
-              <span>体重与 BMI 监测分析</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setMomSubTab("vitals")}
-              className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-xs font-bold transition-all ${
-                momSubTab === "vitals"
-                  ? "bg-gradient-to-r from-rose-500 to-pink-500 text-white shadow-md shadow-rose-200 dark:shadow-none"
-                  : "text-gray-500 hover:text-gray-800 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-700/50"
-              }`}
-            >
-              <HeartPulse className="h-4 w-4" />
-              <span>血压与血糖监测分析</span>
-            </button>
+            {/* 第三层：妈妈·孕产档案二级子看板导航：体重/BMI vs 血压/血糖 */}
+            <div className="flex items-center gap-2 pt-2 border-t border-pink-50/80 dark:border-gray-700/60">
+              <button
+                type="button"
+                onClick={() => setMomSubTab("bmi")}
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  momSubTab === "bmi"
+                    ? "bg-gradient-to-r from-rose-500 to-pink-500 text-white shadow-md shadow-rose-200 dark:shadow-none"
+                    : "text-gray-500 hover:text-gray-800 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-700/50"
+                }`}
+              >
+                <Scale className="h-4 w-4" />
+                <span>体重与 BMI 监测分析</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setMomSubTab("vitals")}
+                className={`flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  momSubTab === "vitals"
+                    ? "bg-gradient-to-r from-rose-500 to-pink-500 text-white shadow-md shadow-rose-200 dark:shadow-none"
+                    : "text-gray-500 hover:text-gray-800 hover:bg-gray-50 dark:text-gray-400 dark:hover:bg-gray-700/50"
+                }`}
+              >
+                <HeartPulse className="h-4 w-4" />
+                <span>血压与血糖监测分析</span>
+              </button>
+            </div>
           </div>
 
           {momSubTab === "bmi" ? (
@@ -795,6 +960,8 @@ export default function HealthPage() {
               externalAnalysisResult={latestAnalysisResult}
               stageType={bmiStageType}
               onStageTypeChange={(newSt) => setBmiStageType(newSt)}
+              stageFilter={momStageFilter}
+              onStageFilterChange={setMomStageFilter}
               fallbackHeight={latestMomHeight}
               fallbackPreWeight={latestMomPreWeight}
               motherId={currentMother?.id}
@@ -806,6 +973,8 @@ export default function HealthPage() {
               onRecordChanged={load}
               stageType={bmiStageType}
               onStageTypeChange={(newSt) => setBmiStageType(newSt)}
+              stageFilter={momStageFilter}
+              onStageFilterChange={setMomStageFilter}
               motherId={currentMother?.id}
               currentGestationalWeek={currentMomGestation?.week}
               currentGestationalDays={currentMomGestation?.days}
@@ -972,12 +1141,84 @@ export default function HealthPage() {
             )}
           </section>
 
+          {/* 宝宝成长发育阶段切片切换器（全部成长历程 / 婴儿期 0~1岁 / 幼儿期 1~3岁 / 学龄前 3岁+） */}
+          <div className="rounded-2xl bg-white p-3 border border-orange-100 shadow-2xs dark:border-gray-800 dark:bg-gray-800 space-y-2">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-gray-700 dark:text-gray-200">
+                <span>🍼 【{currentBaby?.name || "宝宝"}】成长发育阶段切片：</span>
+                <span className="text-[11px] font-normal text-gray-400">（切换阶段自动切片查看对应时期的 WHO 生长曲线与测量数据）</span>
+              </div>
+              <span className="text-[11px] text-gray-400 font-mono">该宝宝共 {currentBabyGrowthRecords.length} 次测量</span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <button
+                type="button"
+                onClick={() => setBabyGrowthStage("all")}
+                className={`flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  babyGrowthStage === "all"
+                    ? "bg-brand-500 text-white shadow-md shadow-brand-500/20"
+                    : "bg-gray-50 text-gray-600 hover:bg-gray-100 dark:bg-gray-700/60 dark:text-gray-300"
+                }`}
+              >
+                <span>🌟 全部历程</span>
+                <span className={`rounded-full px-1.5 py-0.2 text-[10px] ${babyGrowthStage === "all" ? "bg-white/20 text-white" : "bg-gray-200 text-gray-600 dark:bg-gray-600 dark:text-gray-300"}`}>
+                  {babyGrowthStageCounts.all}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setBabyGrowthStage("infant")}
+                className={`flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  babyGrowthStage === "infant"
+                    ? "bg-amber-500 text-white shadow-md shadow-amber-500/20"
+                    : "bg-gray-50 text-gray-600 hover:bg-amber-50 hover:text-amber-700 dark:bg-gray-700/60 dark:text-gray-300"
+                }`}
+              >
+                <span>🍼 婴儿期 (0~1岁)</span>
+                <span className={`rounded-full px-1.5 py-0.2 text-[10px] ${babyGrowthStage === "infant" ? "bg-white/20 text-white" : "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300"}`}>
+                  {babyGrowthStageCounts.infant}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setBabyGrowthStage("toddler")}
+                className={`flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  babyGrowthStage === "toddler"
+                    ? "bg-blue-500 text-white shadow-md shadow-blue-500/20"
+                    : "bg-gray-50 text-gray-600 hover:bg-blue-50 hover:text-blue-700 dark:bg-gray-700/60 dark:text-gray-300"
+                }`}
+              >
+                <span>🧸 幼儿期 (1~3岁)</span>
+                <span className={`rounded-full px-1.5 py-0.2 text-[10px] ${babyGrowthStage === "toddler" ? "bg-white/20 text-white" : "bg-blue-100 text-blue-800 dark:bg-blue-950 dark:text-blue-300"}`}>
+                  {babyGrowthStageCounts.toddler}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setBabyGrowthStage("preschool")}
+                className={`flex items-center justify-center gap-1.5 py-1.5 px-3 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                  babyGrowthStage === "preschool"
+                    ? "bg-purple-500 text-white shadow-md shadow-purple-500/20"
+                    : "bg-gray-50 text-gray-600 hover:bg-purple-50 hover:text-purple-700 dark:bg-gray-700/60 dark:text-gray-300"
+                }`}
+              >
+                <span>🎒 学龄前 (3岁+)</span>
+                <span className={`rounded-full px-1.5 py-0.2 text-[10px] ${babyGrowthStage === "preschool" ? "bg-white/20 text-white" : "bg-purple-100 text-purple-800 dark:bg-purple-950 dark:text-purple-300"}`}>
+                  {babyGrowthStageCounts.preschool}
+                </span>
+              </button>
+            </div>
+          </div>
+
           <section className="card space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-orange-100/60 pb-2 dark:border-gray-800">
               <div>
                 <div className="flex items-center gap-2">
                   <h2 className="font-semibold text-gray-800 dark:text-gray-100">
-                    WHO 参考生长曲线 (0-2岁)
+                    WHO 参考生长曲线 (0-3岁)
                   </h2>
                   {currentBaby && (
                     <span className="inline-flex items-center gap-1 rounded-full bg-brand-50 px-2.5 py-0.5 text-xs font-bold text-brand-700 border border-brand-200 dark:bg-brand-950/40 dark:text-brand-300">

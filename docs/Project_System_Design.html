@@ -2413,6 +2413,111 @@ apps/core/                                    apps/core/
           </ul>
         </div>
       </section>
+<div class="adr-card">
+      <div class="adr-header">
+        <span class="adr-badge">ADR 10.54</span>
+        <span class="adr-title">全数据库模式 WebDAV 容灾备份、跨引擎双向互导、四道防线防崩与一键应急撤销规范 (v1.89)</span>
+      </div>
+      <div class="adr-body">
+        <p><strong>决策背景</strong>：早期 WebDAV 仅支持 SQLite 单文件物理备份，在共享 PostgreSQL 或独立专属 PostgreSQL 模式下强行备份会因找不到主库文件直接报错阻断，恢复逻辑亦无法将数据还原至 PG；跨模式下缺乏中立数据交换协议，存在数据孤岛与大表 OOM 隐患；且误恢复错误数据后缺乏快速撤销回退的保护机制。</p>
+        <p><strong>核心架构治理</strong>：</p>
+        <ul>
+          <li><strong>模式探测与导出防呆</strong>：新增 <code>get_current_runtime_db_profile()</code> 精准识别 <code>sqlite</code> / <code>pg_shared</code> / <code>pg_dedicated</code>，导出强绑定当前活跃主库，从源头杜绝虚假导出或连接错误；</li>
+          <li><strong>规范自解释命名</strong>：统一备份命名契约 <code>mengya_backup_{timestamp}_{db_mode}_{creator}_{scope}.zip</code>，直观识别模式与范围；</li>
+          <li><strong>中立拓扑流式压缩（低内存、抗 OOM）</strong>：按模型外键依赖拓扑排序，采用 <code>iterator(chunk_size=1000)</code> + <code>gzip</code> 逐表流式生成 <code>database/*.json.gz</code>，内存开销压制在 50MB 以内，彻底根除 OOM；SQLite 模式同步保留物理热快照实现双模兼容；</li>
+          <li><strong>四道防线防崩体系</strong>：第一防线沙箱预检拦截损坏文件；第二防线不可逆前强制生成 1:1 热镜像副本；第三防线原子事务批量导入并提供当前操作员防踢出保护（防止会话失效）；第四防线执行 PostgreSQL Sequence 序列自动重校，根治主键冲突；</li>
+          <li><strong>一键应急撤销恢复（后悔药机制）</strong>：覆盖前自动留存 <code>pre_restore_snapshot_latest</code> 镜像与元数据，页面顶部激活安全横幅，支持管理员界面上一键秒级撤销回退至覆盖前状态；新增专用 API <code>POST /api/admin/backups/rollbacks/revert-latest/</code>；</li>
+          <li><strong>前端体验闭环</strong>：顶部状态栏自适应呈现当前运行模式；备份列表打上色彩模式 Badge；跨模式恢复弹出专属安全转换确认框。</li>
+        </ul>
+      </div>
+    </div>
+
+</div>
+
+      <section id="adr-10-58" class="card mt-6">
+        <div class="flex items-center justify-between border-b pb-3 mb-4">
+          <h3 class="text-xl font-bold text-gray-800">10.58 母婴健康打卡全能互通模板矩阵与中英双语对等架构 (v1.93)</h3>
+          <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">已实施 (Accepted)</span>
+        </div>
+        <div class="space-y-4 text-sm text-gray-600 leading-relaxed">
+          <p><strong>业务背景：</strong>母婴健康中心的妈妈打卡在底层共享同一张数据表，但前期 BMI 与体征模板字段孤岛割裂，用户无法一次性全能导入打卡。同时中英文模板缺少对等的必填与选填规范说明。</p>
+          <p><strong>重构实施：</strong></p>
+          <ul class="list-disc pl-5 space-y-1">
+            <li><strong>12 维全能互通表头：</strong>BMI 模板与血压血糖模板均包含完整的 12 个打卡字段，支持中英双语互通解析；</li>
+            <li><strong>精准必填与条件必填标记：</strong>BMI 模板中日期与体重必填，首次无历史身高时至少填一行身高；血压血糖模板中收缩压/舒张压或血糖为核心项，身高体重为互通选填项；</li>
+            <li><strong>后端严密防呆校验：</strong><code>batch_import</code> 针对任何包含体重/BMI 的导入请求，在无历史身高时严格拦截并要求至少一行身高数据，坚决杜绝默认假定身高。</li>
+          </ul>
+        </div>
+      </section>
+
+      <section id="adr-10-59" class="card mt-6">
+        <div class="flex items-center justify-between border-b pb-3 mb-4">
+          <h3 class="text-xl font-bold text-gray-800">10.59 Nginx 反向代理前置模式自由切换与自定义监听端口架构治理 (v1.94 / ADR 10.55)</h3>
+          <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">已实施 (Accepted)</span>
+        </div>
+        <div class="space-y-4 text-sm text-gray-600 leading-relaxed">
+          <p><strong>业务背景：</strong>系统原有 Nginx 反代配置写死监听全网卡双栈（<code>listen $EXTERNAL_PORT; listen [::]:$EXTERNAL_PORT;</code>），在 Linux 默认 <code>bindv6only=0</code> 内核下易触发 98 端口占用冲突或无 IPv6 致命错误；同时在外层已有网关（1Panel/宝塔/主Nginx/CDN）时无法配置为安全隔离的 <code>127.0.0.1</code> 前置代理模式。</p>
+          <p><strong>重构实施：</strong></p>
+          <ul class="list-disc pl-5 space-y-1">
+            <li><strong>解耦绑定 IP 与外部端口：</strong>抽象为 <code>NGINX_BIND_IP</code> 与 <code>EXTERNAL_PORT</code>；前置代理模式渲染 <code>listen 127.0.0.1:&lt;PORT&gt; ssl;</code>（安全隔离）；标准公网模式渲染稳妥的 <code>listen &lt;PORT&gt; ssl;</code>（根除双栈冲突）；</li>
+            <li><strong>命令行参数解析闭环：</strong><code>run.sh</code> 新增 <code>--local</code> / <code>--front-proxy</code>、<code>--public</code>、<code>--nginx-port &lt;PORT&gt;</code> 与 <code>--bind-ip &lt;IP&gt;</code>，支持与 <code>add_nginx</code> 免重启热重载；自动持久化同步 <code>.env</code>；</li>
+            <li><strong>智能运行状态提示与双版同构：</strong><code>bin/env.sh</code> 自动检测并在前置代理模式下追加友好指引；传统版与 Docker 版同构同步升级。</li>
+          </ul>
+        </div>
+      </section>
+
+      <section id="adr-10-59" class="card mt-6">
+        <div class="flex items-center justify-between border-b pb-3 mb-4">
+          <h3 class="text-xl font-bold text-gray-800">10.59 健康打卡模板字段全覆盖矩阵与历史日期补录逻辑纠偏 (v1.94)</h3>
+          <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">已实施 (Accepted)</span>
+        </div>
+        <div class="space-y-4 text-sm text-gray-600 leading-relaxed">
+          <p><strong>业务背景：</strong>BMI 历史模板与血压血糖体征模板需完整呈现腹围、收缩压、舒张压、脉搏、血糖、测定场景、阶段、孕周等全部基础字段，并按模块场景分别明确专属必填项与互通选填项。此外纠正日期说明文案，明确支持补录历史过往任意日期的健康数据。</p>
+          <p><strong>重构实施：</strong></p>
+          <ul class="list-disc pl-5 space-y-1">
+            <li><strong>字段 100% 完整覆盖：</strong>BMI 模板与体征模板均完整包含 12 维字段，中文与英文表头结构对称；</li>
+            <li><strong>模块化差异约束说明：</strong>BMI 页面严格要求日期、体重与首次身高，体征字段列为互通选填项；体征页面严格要求血压或血糖，身高体重列为互通选填项；</li>
+            <li><strong>历史补录语义纠偏：</strong>统一规范提示语为「格式 YYYY-MM-DD，支持补录历史任意日期（不可填未来日期；每行必填）」，后端严格防呆未来日期。</li>
+          </ul>
+        </div>
+      </section>
+
+      <section id="adr-10-60" class="card mt-6">
+        <div class="flex items-center justify-between border-b pb-3 mb-4">
+          <h3 class="text-xl font-bold text-gray-800">10.60 弹性日期正则自适应与纯数据首行表头误判防御 (v1.95)</h3>
+          <span class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800">已实施 (Accepted)</span>
+        </div>
+        <div class="space-y-4 text-sm text-gray-600 leading-relaxed">
+          <p><strong>缺陷定位：</strong>用户导入如 <code>2026-8-30</code> 等包含单数字月份的日期时，严格双位正则 <code>^\d{4}-\d{2}-\d{2}$</code> 导致校验失败；且首行纯数据被误判为表头导致字段错位。</p>
+          <p><strong>修复方案：</strong></p>
+          <ul class="list-disc pl-5 space-y-1">
+            <li><strong>智能补零自愈：</strong><code>normalizeDate</code> 自动将单数字月/日规范化补齐为双数字标准 ISO 格式（如 <code>2026-8-30</code> ➔ <code>2026-08-30</code>）；</li>
+            <li><strong>首行表头精准断言：</strong>引入 <code>isDateLike</code> 识别任何类日期格式，彻底杜绝无表头纯数据首行被误吞；</li>
+            <li><strong>后端双保险防御：</strong><code>batch_import</code> 增强日期正则提取，全面兼容弹性日期输入。</li>
+          </ul>
+        </div>
+      </section>
+
+    <div class="adr-card">
+      <h3>10.62 健康中心全模块导入与新增时序一致性架构治理 (v1.97)</h3>
+      <p><strong>发布日期：</strong>2026-10-29</p>
+      <p><strong>核心解决：</strong>彻底修复 CSV 模板列数错位与时序矛盾缺陷；落实用户选择「保持 CSV 所填阶段直接导入」时手填孕周 100% 保留入库原则；批量导入统一豁免历史交叉阻断；字段说明默认收起优化篇幅。</p>
+    </div>
+
+
+    <div class="adr-card">
+      <h3>10.63 健康中心全生命周期多阶段平滑共存与视图切片架构重构 (v1.98)</h3>
+      <p><strong>发布日期：</strong>2026-10-29</p>
+      <p><strong>核心解决：</strong>彻底解耦妈妈健康数据与单一状态绑定限制，新增生命周期多阶段视图切片（全部/非孕期备孕/孕期产检/产后恢复）；宝宝生长发育模块新增成长阶段切片（全部/婴儿期/幼儿期/学龄前）；实现图表、列表、统计卡与打卡表单全链路自适应联动。</p>
+    </div>
+
+
+    <div class="adr-card">
+      <h3>10.64 健康中心三层层次化控制台与全生命周期动态模板深度对齐 (v1.99)</h3>
+      <p><strong>发布日期：</strong>2026-10-29</p>
+      <p><strong>核心解决：</strong>重构健康页面为三层金字塔架构（控制台主体操作层、生命周期阶段切片层、监测指标二级导航层）；实现在全部阶段下根据下方打卡模块当前阶段类型动态匹配 CSV 导入模板；特定阶段下表单智能锁定当前阶段消除冗余选项与视界撕裂。</p>
+    </div>
+
 </body>
 
 </html>

@@ -3344,7 +3344,7 @@ class HealthRecordViewSet(viewsets.ModelViewSet):
             target = "mom"
         strategy = request.data.get("conflict_strategy", "skip")  # skip | overwrite
         stage_mode = request.data.get("stage_mode", "keep_csv")  # convert_to_profile | keep_csv
-        allow_cross_stage = bool(request.data.get("allow_cross_stage", False)) or (stage_mode == "keep_csv")
+        allow_cross_stage = bool(request.data.get("allow_cross_stage", False)) or (stage_mode in ("keep_csv", "convert_to_profile"))
         if target not in ("mom", "baby"):
             return Response(
                 {"code": 4001, "message": "target 仅支持 mom（妈妈体重打卡）或 baby（宝宝生长测量）", "data": None},
@@ -3577,22 +3577,30 @@ class HealthRecordViewSet(viewsets.ModelViewSet):
 
                     if stage == "pregnancy":
                         from apps.core.services.gestation_engine import resolve_and_fix_gestational_week
-                        final_wk, final_days, is_fixed, fix_msg = resolve_and_fix_gestational_week(
-                            user=user,
-                            record_date=rec_date,
-                            input_week=_to_float(row.get("week")),
-                            mother=target_mother,
-                            batch_records=records,
-                        )
-                        if final_wk is not None:
-                            gestational_week = final_wk
-                            gestational_days = final_days
-                            if is_fixed:
-                                corrected += 1
-                                fix_explanation = fix_msg
+                        manual_wk = _to_float(row.get("week"))
+                        # 用户明确选择保持 CSV 原样导入，且填写了合理有效孕周（1~44），100% 尊重并保留手填孕周，不强制覆盖
+                        if stage_mode == "keep_csv" and manual_wk is not None and 1 <= manual_wk <= 44:
+                            in_wk = int(manual_wk)
+                            in_days = int(round((manual_wk - in_wk) * 7))
+                            gestational_week = in_wk
+                            gestational_days = max(0, min(6, in_days))
                         else:
-                            _fail("未检测到预产期或有效孕周锚点，无法自动推算孕周，请先在档案中设置预产期或在 CSV 中填写 week（孕周）列")
-                            continue
+                            final_wk, final_days, is_fixed, fix_msg = resolve_and_fix_gestational_week(
+                                user=user,
+                                record_date=rec_date,
+                                input_week=manual_wk,
+                                mother=target_mother,
+                                batch_records=records,
+                            )
+                            if final_wk is not None:
+                                gestational_week = final_wk
+                                gestational_days = final_days
+                                if is_fixed:
+                                    corrected += 1
+                                    fix_explanation = fix_msg
+                            else:
+                                _fail("未检测到预产期或有效孕周锚点，无法自动推算孕周，请先在档案中设置预产期或在 CSV 中填写 week（孕周）列")
+                                continue
 
                     # 校验阶段合理性（按单个妈妈维度隔离拦截冲突行）
                     from apps.core.services.stage_validator import validate_stage_transition
@@ -3829,7 +3837,7 @@ def _build_bmi_timeseries(user, mother_id=None):
             rec_bmi = round(r.weight / ((effective_height / 100.0) ** 2), 2) if (effective_height and effective_height > 0) else None
             cum_gain = round(r.weight - effective_pre_weight, 2) if (effective_pre_weight and effective_pre_weight > 0) else None
             # 阶段标记：新数据显式存 exam_items.stage；历史数据按孕周有无回推
-            stage = items.get("stage") or ("pregnancy" if r.gestational_week else "pregnancy")
+            stage = items.get("stage") or ("pregnancy" if r.gestational_week else "general")
             timeseries_history.append({
                 "id": r.id,
                 "record_date": str(r.record_date),
@@ -4223,7 +4231,7 @@ def _build_vitals_timeseries(user, mother_id=None):
             pulse = items.get("pulse")
             glu = items.get("blood_sugar")
             raw_gtype = items.get("glucose_type", "fasting")
-            stage = items.get("stage") or ("pregnancy" if r.gestational_week else "pregnancy")
+            stage = items.get("stage") or ("pregnancy" if r.gestational_week else "general")
 
             # 兼容既有脏数据中只有单项数值的情况
             has_bp = (sbp is not None and dbp is not None)

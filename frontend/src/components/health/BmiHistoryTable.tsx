@@ -250,21 +250,19 @@ export default function BmiHistoryTable({ records, loading, onDelete, onBatchDel
                           {r.record_date}
                         </td>
                         <td className="px-3 py-2.5 text-gray-600 dark:text-gray-400">
-                          {r.stage === "general"
-                            ? "非孕期"
-                            : r.stage === "postpartum"
-                            ? r.postpartum_months != null
-                              ? `产后 ${r.postpartum_months} 个月`
-                              : "产后恢复"
-                            : r.gestational_week
-                            ? gestationLabel(r.gestational_week, r.gestational_days)
-                            : r.stage === "pregnancy"
-                            ? "孕期"
-                            : r.record_type === "prenatal_exam"
-                            ? r.gestational_week
-                              ? gestationLabel(r.gestational_week, r.gestational_days)
-                              : "孕期"
-                            : "—"}
+                          {r.stage === "general" ? (
+                            <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-950/60 dark:text-emerald-300">
+                              🌿 非孕期/备孕
+                            </span>
+                          ) : r.stage === "postpartum" ? (
+                            <span className="inline-flex items-center gap-0.5 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-700 dark:bg-amber-950/60 dark:text-amber-300">
+                              🤱 {r.postpartum_months != null ? `产后 ${r.postpartum_months} 个月` : "产后恢复"}
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-0.5 rounded-full bg-rose-50 px-2 py-0.5 text-[11px] font-semibold text-rose-700 dark:bg-rose-950/60 dark:text-rose-300">
+                              🤰 {r.gestational_week ? gestationLabel(r.gestational_week, r.gestational_days) : "全孕期"}
+                            </span>
+                          )}
                         </td>
                         <td className="px-3 py-2.5 text-gray-600 dark:text-gray-400">
                           {r.height ?? "—"}

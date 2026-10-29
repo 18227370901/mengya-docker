@@ -102,9 +102,9 @@ def validate_stage_transition(
                         f"但在该孕期内的 {ex_date} 已记录为「产后」恢复期。宝宝尚未分娩，不能在孕期内记录产后。"
                     )
 
-            # 1.3 孕周时序推进与倒流校验：仅对相差小于 300 天的同一胎孕期记录进行时序比对
+            # 1.3 孕周时序推进与倒流校验：仅对相差小于 300 天的同一胎孕期记录进行时序比对（批量导入且用户确认时豁免）
             elif ex["stage"] == "pregnancy" and ex["week"]:
-                if abs((record_date - ex_date).days) <= CYCLE_WINDOW_DAYS:
+                if not allow_cross_stage and abs((record_date - ex_date).days) <= CYCLE_WINDOW_DAYS:
                     ex_week = ex["week"]
                     if record_date > ex_date:
                         if cur_week < ex_week - 1:

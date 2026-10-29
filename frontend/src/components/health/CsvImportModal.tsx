@@ -22,6 +22,7 @@ import { useAuthStore } from "@/store/authStore";
 import type { CsvImportResult } from "@/types/health";
 
 interface CsvImportModalProps {
+  activeStage?: 'pregnancy' | 'postpartum' | 'general';
   isOpen: boolean;
   onClose: () => void;
   /** 保存成功后回调，展示提示文案及可选的归档阶段类型 */
@@ -209,7 +210,7 @@ function matchColumnKey(headerText: string, target: ImportTarget): string | null
   return null;
 }
 
-export default function CsvImportModal({ isOpen, onClose, onImported, initialTarget, motherId, currentMother, latestHeight }: CsvImportModalProps) {
+export default function CsvImportModal({ isOpen, onClose, onImported, initialTarget, motherId, currentMother, latestHeight, activeStage = 'pregnancy' }: CsvImportModalProps) {
   const { user } = useAuthStore();
   const defaultProfileStage = useMemo<"pregnancy" | "postpartum" | "general">(() => {
     if (currentMother) {
@@ -243,7 +244,7 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<CsvImportResult | null>(null);
-  const [showSpecTable, setShowSpecTable] = useState(true);
+  const [showSpecTable, setShowSpecTable] = useState(false);
   // 阶段与当前宝宝档案不一致确认状态
   const [stageMismatchConfirm, setStageMismatchConfirm] = useState<{
     importedStages: string[];
@@ -304,6 +305,8 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
       }
       if (row.stage) {
         row.stage = normalizeStage(row.stage);
+      } else if (isMom && activeStage) {
+        row.stage = activeStage;
       }
 
       // 孕期自动推算辅助标记
@@ -431,56 +434,161 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
           "2026-09-08,92.5,14.00,48.6,follow-up test\n";
       }
     } else if (target === "mom_bmi") {
-      if (lang === "cn") {
-        filename = "妈妈体重与BMI历史导入模板(全能互通·中文表头).csv";
-        content =
-          "日期*,体重(kg)*,身高(cm)*,腹围(cm),收缩压(mmHg),舒张压(mmHg),脉搏(次/分),血糖(mmol/L),测定场景,阶段,孕周,备注\n" +
-          "# 字段规范说明：本模块主要用于妈妈体重与BMI打卡。\n" +
-          "# 【必填项】日期（格式 YYYY-MM-DD，支持补录历史任意日期，不可填未来日期；每行必填）、体重（每行必填）。\n" +
-          "# 【条件必填项】身高：若首次导入且历史无身高，身高项最少需在首行填写，后续行可留空自动顺推继承；若历史已有身高则选填（留空继承历史身高，亦可填新值校准）。\n" +
-          "# 【选填项/体征互通兼顾录入】腹围、收缩压、舒张压、脉搏、血糖、测定场景、阶段、孕周、备注均为选填项。可留空，若填写则同步入库打卡，不填绝不报错。\n" +
-          "# 以#开头的说明行在导入时系统自动忽略。\n" +
-          "2026-09-01,58.20,165.0,86.0,118,76,75,5.20,空腹,孕期,20,首行填身高后续自动顺推继承；同步打卡体征\n" +
-          "2026-09-08,58.80,,87.0,,,,,5.10,空腹,孕期,21,后续行留空自动继承165身高；可单独测血糖\n" +
-          "2026-09-15,59.30,,88.5,120,78,76,,,孕期,22,自动继承身高并精准计算BMI；可单独测血压\n";
+      if (activeStage === "postpartum") {
+        if (lang === "cn") {
+          filename = "妈妈体重与BMI历史导入模板(产后恢复期·中文表头).csv";
+          content =
+            "日期*,体重(kg)*,身高(cm)*,腹围(cm),收缩压(mmHg),舒张压(mmHg),脉搏(次/分),血糖(mmol/L),测定场景,阶段,孕周,备注\n" +
+            "# 字段规范说明：本模块已适配【产后恢复期】妈妈体重与BMI打卡。\n" +
+            "# 【必填项】日期（格式 YYYY-MM-DD，支持补录历史任意日期，不可填未来日期；每行必填）、体重（每行必填）。\n" +
+            "# 【条件必填项】身高：若首次导入且历史无身高，身高项最少需在首行填写，后续行可留空自动顺推继承；若历史已有身高则选填。\n" +
+            "# 【选填项/体征互通】腹围、收缩压、舒张压、脉搏、血糖、测定场景、阶段、备注均为选填项；产后阶段孕周留空即可。\n" +
+            "# 以#开头的说明行在导入时系统自动忽略。\n" +
+            "2026-09-01,62.50,165.0,88.0,115,75,76,5.10,空腹,产后,,产后首月打卡(首行填身高自动继承)\n" +
+            "2026-09-08,61.80,,86.5,,,,5.00,空腹,产后,,产后体重稳步恢复；可同步测血糖\n" +
+            "2026-09-15,61.20,,85.0,118,76,74,,,产后,,产后第2个月复测；血压平稳\n";
+        } else {
+          filename = "mom_bmi_import_template(postpartum).csv";
+          content =
+            "date*,weight*,height*,waist,systolic,diastolic,pulse,blood_sugar,glucose_type,stage,week,note\n" +
+            "# Column specification: Customized for Postpartum Mom Weight and BMI records.\n" +
+            "# Required columns: date (YYYY-MM-DD, supports past dates) and weight are required for every row.\n" +
+            "# Optional/interoperable columns: waist, systolic, diastolic, pulse, blood_sugar, glucose_type, stage, week, note are optional.\n" +
+            "# Lines starting with # are ignored on import.\n" +
+            "2026-09-01,62.50,165.0,88.0,115,75,76,5.10,fasting,postpartum,,postpartum 1st month (auto inherits height)\n" +
+            "2026-09-08,61.80,,86.5,,,,5.00,fasting,postpartum,,weight gradually recovers; log glucose\n" +
+            "2026-09-15,61.20,,85.0,118,76,74,,,postpartum,,postpartum follow-up; normal bp\n";
+        }
+      } else if (activeStage === "general") {
+        if (lang === "cn") {
+          filename = "妈妈体重与BMI历史导入模板(非孕期备孕·中文表头).csv";
+          content =
+            "日期*,体重(kg)*,身高(cm)*,腹围(cm),收缩压(mmHg),舒张压(mmHg),脉搏(次/分),血糖(mmol/L),测定场景,阶段,孕周,备注\n" +
+            "# 字段规范说明：本模块已适配【非孕期/备孕】日常体重与基础代谢监测。\n" +
+            "# 【必填项】日期（格式 YYYY-MM-DD，支持补录历史任意日期，不可填未来日期；每行必填）、体重（每行必填）。\n" +
+            "# 【条件必填项】身高：若首次导入且历史无身高，身高项最少需在首行填写，后续行可留空自动顺推继承；若历史已有身高则选填。\n" +
+            "# 【选填项/体征互通】腹围、收缩压、舒张压、脉搏、血糖、测定场景、阶段、备注均为选填项；非孕期孕周留空即可。\n" +
+            "# 以#开头的说明行在导入时系统自动忽略。\n" +
+            "2026-09-01,55.00,165.0,72.0,112,72,70,4.90,空腹,非孕期,,日常打卡(首行填身高自动继承；健康BMI)\n" +
+            "2026-09-08,55.20,,71.5,,,,4.80,空腹,非孕期,,备孕期体征监测；空腹血糖正常\n" +
+            "2026-09-15,54.90,,71.0,110,70,72,,,非孕期,,常规体重打卡；基础体能良好\n";
+        } else {
+          filename = "mom_bmi_import_template(general).csv";
+          content =
+            "date*,weight*,height*,waist,systolic,diastolic,pulse,blood_sugar,glucose_type,stage,week,note\n" +
+            "# Column specification: Customized for Non-pregnant / Pre-pregnancy Weight & BMI records.\n" +
+            "# Required columns: date (YYYY-MM-DD, supports past dates) and weight are required for every row.\n" +
+            "# Optional/interoperable columns: waist, systolic, diastolic, pulse, blood_sugar, glucose_type, stage, week, note are optional.\n" +
+            "# Lines starting with # are ignored on import.\n" +
+            "2026-09-01,55.00,165.0,72.0,112,72,70,4.90,fasting,general,,routine check-in (auto inherits height; healthy BMI)\n" +
+            "2026-09-08,55.20,,71.5,,,,4.80,fasting,general,,pre-pregnancy vitals check; normal glucose\n" +
+            "2026-09-15,54.90,,71.0,110,70,72,,,general,,regular weight check-in; good condition\n";
+        }
       } else {
-        filename = "mom_bmi_import_template(en).csv";
-        content =
-          "date*,weight*,height*,waist,systolic,diastolic,pulse,blood_sugar,glucose_type,stage,week,note\n" +
-          "# Column specification: This template is for Mom Weight and BMI records.\n" +
-          "# Required columns: date (YYYY-MM-DD, supports past dates, no future dates) and weight are required for every row.\n" +
-          "# Conditional required: height is required on at least one row on first import if no history exists (subsequent rows inherit).\n" +
-          "# Optional/interoperable columns: waist, systolic, diastolic, pulse, blood_sugar, glucose_type, stage, week, note are optional.\n" +
-          "# Lines starting with # are ignored on import.\n" +
-          "2026-09-01,58.20,165.0,86.0,118,76,75,5.20,fasting,pregnancy,20,first row with height inherits; log vitals together\n" +
-          "2026-09-08,58.80,,87.0,,,,,5.10,fasting,pregnancy,21,subsequent rows inherit height; log blood sugar\n" +
-          "2026-09-15,59.30,,88.5,120,78,76,,,pregnancy,22,auto inherits height & computes BMI; log bp\n";
+        if (lang === "cn") {
+          filename = "妈妈体重与BMI历史导入模板(全孕期产检·中文表头).csv";
+          content =
+            "日期*,体重(kg)*,身高(cm)*,腹围(cm),收缩压(mmHg),舒张压(mmHg),脉搏(次/分),血糖(mmol/L),测定场景,阶段,孕周,备注\n" +
+            "# 字段规范说明：本模块已适配【全孕期产检】妈妈体重与增重曲线监测。\n" +
+            "# 【必填项】日期（格式 YYYY-MM-DD，支持补录历史任意日期，不可填未来日期；每行必填）、体重（每行必填）。\n" +
+            "# 【条件必填项】身高：若首次导入且历史无身高，身高项最少需在首行填写，后续行可留空自动顺推继承；若历史已有身高则选填。\n" +
+            "# 【选填项/体征互通】腹围、收缩压、舒张压、脉搏、血糖、测定场景、阶段、孕周、备注均为选填项。孕周可按实际产检填写（1~44周），留空按档案智能推算。\n" +
+            "# 以#开头的说明行在导入时系统自动忽略。\n" +
+            "2026-09-01,58.20,165.0,86.0,118,76,75,5.20,空腹,孕期,20,首行填身高后续自动顺推继承；同步打卡体征\n" +
+            "2026-09-08,58.80,,87.0,,,,5.10,空腹,孕期,21,后续行留空自动继承165身高；可单独测血糖\n" +
+            "2026-09-15,59.30,,88.5,120,78,76,,,孕期,22,自动继承身高并精准计算BMI；可单独测血压\n";
+        } else {
+          filename = "mom_bmi_import_template(pregnancy).csv";
+          content =
+            "date*,weight*,height*,waist,systolic,diastolic,pulse,blood_sugar,glucose_type,stage,week,note\n" +
+            "# Column specification: Customized for Pregnancy Weight and Gain records.\n" +
+            "# Required columns: date (YYYY-MM-DD, supports past dates) and weight are required for every row.\n" +
+            "# Optional/interoperable columns: waist, systolic, diastolic, pulse, blood_sugar, glucose_type, stage, week, note are optional.\n" +
+            "# Lines starting with # are ignored on import.\n" +
+            "2026-09-01,58.20,165.0,86.0,118,76,75,5.20,fasting,pregnancy,20,first row with height inherits; log vitals together\n" +
+            "2026-09-08,58.80,,87.0,,,,5.10,fasting,pregnancy,21,subsequent rows inherit height; log blood sugar\n" +
+            "2026-09-15,59.30,,88.5,120,78,76,,,pregnancy,22,auto inherits height & computes BMI; log bp\n";
+        }
       }
     } else {
-      if (lang === "cn") {
-        filename = "妈妈血压血糖体征导入模板(全能互通·中文表头).csv";
-        content =
-          "日期*,收缩压(mmHg)*,舒张压(mmHg)*,血糖(mmol/L)*,测定场景,脉搏(次/分),身高(cm),体重(kg),腹围(cm),阶段,孕周,备注\n" +
-          "# 字段规范说明：本模块主要用于妈妈血压与血糖生命体征打卡。\n" +
-          "# 【必填/核心项】日期（格式 YYYY-MM-DD，支持补录历史任意日期，不可填未来日期；每行必填）。收缩压与舒张压需成对填写，血压与血糖至少填一组。\n" +
-          "# 【选填项/BMI互通兼顾录入】测定场景、脉搏、身高、体重、腹围、阶段、孕周、备注均为选填项。若在此填写了体重且具备身高，系统自动计算并记录BMI；若不填体重，仅记录体征，完全正常导入。\n" +
-          "# 以#开头的说明行在导入时系统自动忽略。\n" +
-          "2026-09-01,118,76,5.20,空腹,75,165.0,58.20,86.0,孕期,20,全能打卡(首行填身高后续自动继承；同步计算BMI)\n" +
-          "2026-09-08,120,78,,,76,,58.80,87.0,孕期,21,测血压并选填体重(自动继承首行身高并更新BMI)\n" +
-          "2026-09-15,,,5.10,空腹,,,,88.5,孕期,22,单测血糖(体重留空)\n" +
-          "2026-09-22,116,74,,,72,,57.50,,产后,,产后恢复血压与体重\n";
+      if (activeStage === "postpartum") {
+        if (lang === "cn") {
+          filename = "妈妈血压血糖体征导入模板(产后恢复期·中文表头).csv";
+          content =
+            "日期*,收缩压(mmHg)*,舒张压(mmHg)*,血糖(mmol/L)*,测定场景,脉搏(次/分),身高(cm),体重(kg),腹围(cm),阶段,孕周,备注\n" +
+            "# 字段规范说明：本模块已适配【产后恢复期】血压血糖生命体征打卡。\n" +
+            "# 【必填/核心项】日期（格式 YYYY-MM-DD；每行必填）。收缩压与舒张压需成对填写，血压与血糖至少填一组。\n" +
+            "# 【选填项/BMI互通兼顾】测定场景、脉搏、身高、体重、腹围、阶段、备注均为选填项；产后孕周留空即可。\n" +
+            "# 以#开头的说明行在导入时系统自动忽略。\n" +
+            "2026-09-01,118,76,5.10,空腹,75,165.0,62.50,88.0,产后,,产后首月全能打卡(同步计算BMI)\n" +
+            "2026-09-08,120,78,,,76,,61.80,86.5,产后,,测血压并选填体重\n" +
+            "2026-09-15,,,5.00,空腹,,,,85.0,产后,,产后单测血糖\n" +
+            "2026-09-22,116,74,,,72,,61.00,84.5,产后,,产后体征稳定\n";
+        } else {
+          filename = "mom_vitals_import_template(postpartum).csv";
+          content =
+            "date*,systolic*,diastolic*,blood_sugar*,glucose_type,pulse,height,weight,waist,stage,week,note\n" +
+            "# Column specification: Customized for Postpartum Blood Pressure & Glucose records.\n" +
+            "# Required/core columns: date is required for every row. Systolic and diastolic must be paired. At least one of blood pressure or blood_sugar must be provided.\n" +
+            "# Optional/interoperable columns: glucose_type, pulse, height, weight, waist, stage, week, note are optional.\n" +
+            "# Lines starting with # are ignored on import.\n" +
+            "2026-09-01,118,76,5.10,fasting,75,165.0,62.50,88.0,postpartum,,postpartum check-in with BMI\n" +
+            "2026-09-08,120,78,,,76,,61.80,86.5,postpartum,,blood pressure with weight\n" +
+            "2026-09-15,,,5.00,fasting,,,,85.0,postpartum,,blood sugar only\n" +
+            "2026-09-22,116,74,,,72,,61.00,84.5,postpartum,,stable postpartum vitals\n";
+        }
+      } else if (activeStage === "general") {
+        if (lang === "cn") {
+          filename = "妈妈血压血糖体征导入模板(非孕期备孕·中文表头).csv";
+          content =
+            "日期*,收缩压(mmHg)*,舒张压(mmHg)*,血糖(mmol/L)*,测定场景,脉搏(次/分),身高(cm),体重(kg),腹围(cm),阶段,孕周,备注\n" +
+            "# 字段规范说明：本模块已适配【非孕期/备孕】日常血压与血糖监测。\n" +
+            "# 【必填/核心项】日期（格式 YYYY-MM-DD；每行必填）。收缩压与舒张压需成对填写，血压与血糖至少填一组。\n" +
+            "# 【选填项/BMI互通兼顾】测定场景、脉搏、身高、体重、腹围、阶段、备注均为选填项；非孕期孕周留空即可。\n" +
+            "# 以#开头的说明行在导入时系统自动忽略。\n" +
+            "2026-09-01,115,75,4.90,空腹,72,165.0,55.00,72.0,非孕期,,备孕全能打卡(同步计算BMI)\n" +
+            "2026-09-08,118,76,,,74,,55.20,71.5,非孕期,,日常测血压并更新体重\n" +
+            "2026-09-15,,,4.80,空腹,,,,71.0,非孕期,,日常测血糖\n" +
+            "2026-09-22,114,72,,,70,,54.90,70.5,非孕期,,日常健康体征平稳\n";
+        } else {
+          filename = "mom_vitals_import_template(general).csv";
+          content =
+            "date*,systolic*,diastolic*,blood_sugar*,glucose_type,pulse,height,weight,waist,stage,week,note\n" +
+            "# Column specification: Customized for Non-pregnant / Pre-pregnancy Blood Pressure & Glucose records.\n" +
+            "# Required/core columns: date is required for every row. Systolic and diastolic must be paired. At least one of blood pressure or blood_sugar must be provided.\n" +
+            "# Optional/interoperable columns: glucose_type, pulse, height, weight, waist, stage, week, note are optional.\n" +
+            "# Lines starting with # are ignored on import.\n" +
+            "2026-09-01,115,75,4.90,fasting,72,165.0,55.00,72.0,general,,pre-pregnancy full check-in\n" +
+            "2026-09-08,118,76,,,74,,55.20,71.5,general,,bp and weight check-in\n" +
+            "2026-09-15,,,4.80,fasting,,,,71.0,general,,blood sugar check\n" +
+            "2026-09-22,114,72,,,70,,54.90,70.5,general,,normal vitals\n";
+        }
       } else {
-        filename = "mom_vitals_import_template(en).csv";
-        content =
-          "date*,systolic*,diastolic*,blood_sugar*,glucose_type,pulse,height,weight,waist,stage,week,note\n" +
-          "# Column specification: This template is for Mom Blood Pressure & Glucose Vitals records.\n" +
-          "# Required/core columns: date is required for every row (YYYY-MM-DD, supports past dates). Systolic and diastolic must be paired. At least one of blood pressure or blood_sugar must be provided.\n" +
-          "# Optional/interoperable columns: glucose_type, pulse, height, weight, waist, stage, week, note are optional. Filling weight with height auto-calculates BMI.\n" +
-          "# Lines starting with # are ignored on import.\n" +
-          "2026-09-01,118,76,5.20,fasting,75,165.0,58.20,86.0,pregnancy,20,full check-in (height on 1st row auto-inherits & computes BMI)\n" +
-          "2026-09-08,120,78,,,76,,58.80,87.0,pregnancy,21,blood pressure with weight (inherits height & calculates BMI)\n" +
-          "2026-09-15,,,5.10,fasting,,,,88.5,pregnancy,22,blood sugar only (weight blank)\n" +
-          "2026-09-22,116,74,,,72,,57.50,,postpartum,,postpartum recovery bp and weight\n";
+        if (lang === "cn") {
+          filename = "妈妈血压血糖体征导入模板(全孕期产检·中文表头).csv";
+          content =
+            "日期*,收缩压(mmHg)*,舒张压(mmHg)*,血糖(mmol/L)*,测定场景,脉搏(次/分),身高(cm),体重(kg),腹围(cm),阶段,孕周,备注\n" +
+            "# 字段规范说明：本模块已适配【全孕期产检】血压与血糖生命体征打卡。\n" +
+            "# 【必填/核心项】日期（格式 YYYY-MM-DD；每行必填）。收缩压与舒张压需成对填写，血压与血糖至少填一组。\n" +
+            "# 【选填项/BMI互通兼顾】测定场景、脉搏、身高、体重、腹围、阶段、孕周、备注均为选填项。\n" +
+            "# 以#开头的说明行在导入时系统自动忽略。\n" +
+            "2026-09-01,118,76,5.20,空腹,75,165.0,58.20,86.0,孕期,20,全能打卡(首行填身高后续自动继承；同步计算BMI)\n" +
+            "2026-09-08,120,78,,,76,,58.80,87.0,孕期,21,测血压并选填体重(自动继承首行身高并更新BMI)\n" +
+            "2026-09-15,,,5.10,空腹,,,,88.5,孕期,22,单测血糖(体重留空)\n" +
+            "2026-09-22,116,74,,,72,,57.50,89.0,孕期,23,孕23周血压与体重打卡(平稳监测)\n";
+        } else {
+          filename = "mom_vitals_import_template(pregnancy).csv";
+          content =
+            "date*,systolic*,diastolic*,blood_sugar*,glucose_type,pulse,height,weight,waist,stage,week,note\n" +
+            "# Column specification: Customized for Pregnancy Blood Pressure & Glucose records.\n" +
+            "# Required/core columns: date is required for every row. Systolic and diastolic must be paired. At least one of blood pressure or blood_sugar must be provided.\n" +
+            "# Optional/interoperable columns: glucose_type, pulse, height, weight, waist, stage, week, note are optional.\n" +
+            "# Lines starting with # are ignored on import.\n" +
+            "2026-09-01,118,76,5.20,fasting,75,165.0,58.20,86.0,pregnancy,20,full check-in (height on 1st row auto-inherits & computes BMI)\n" +
+            "2026-09-08,120,78,,,76,,58.80,87.0,pregnancy,21,blood pressure with weight (inherits height & calculates BMI)\n" +
+            "2026-09-15,,,5.10,fasting,,,,88.5,pregnancy,22,blood sugar only (weight blank)\n" +
+            "2026-09-22,116,74,,,72,,57.50,89.0,pregnancy,23,week 23 bp and weight check-in\n";
+        }
       }
     }
 
@@ -525,7 +633,7 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
         records: rowsToSubmit,
         mother_id: isMom && motherId ? motherId : undefined,
         stage_mode: mode === "default_profile" ? "convert_to_profile" : "keep_csv",
-        allow_cross_stage: mode === "imported_type",
+        allow_cross_stage: true,
       });
 
       setResult(res);
@@ -536,12 +644,12 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
           mode === "default_profile"
             ? `已按照当前档案类型【${currentMismatch?.defaultProfileLabel || STAGE_LABELS[defaultProfileStage]}】转换并完成导入`
             : currentMismatch
-            ? `已按照您指定的导入类型【${currentMismatch.importedLabel}】完成导入`
+            ? `已按照 CSV 所填阶段【${currentMismatch.importedLabel}】保持原样完成导入`
             : "CSV 导入完成";
         const fixText = res.corrected ? `（系统已智能识别/校正 ${res.corrected} 条孕周）` : "";
         onImported(
           `${modeText}：新增 ${res.created} 条，覆盖 ${res.updated} 条，跳过 ${res.skipped} 条${fixText}`,
-          isMom ? targetStageResolved : undefined
+          mode === "default_profile" ? defaultProfileStage : undefined
         );
         onClose();
       } else {
@@ -651,11 +759,16 @@ export default function CsvImportModal({ isOpen, onClose, onImported, initialTar
           {/* 2. 规范与专属模板下载 */}
           <div className="rounded-2xl border border-orange-100 bg-orange-50/40 p-3.5 dark:border-gray-700 dark:bg-gray-800/60 space-y-2.5">
             <div className="flex flex-wrap items-center justify-between gap-2 border-b border-orange-200/50 pb-2 dark:border-gray-700">
-              <div className="flex items-center gap-1.5 text-xs font-bold text-gray-800 dark:text-gray-200">
+              <div className="flex flex-wrap items-center gap-1.5 text-xs font-bold text-gray-800 dark:text-gray-200">
                 <FileSpreadsheet className="h-4 w-4 text-brand-500 shrink-0" />
                 <span>
                   【表名：{target === "mom_bmi" ? "妈妈体重与 BMI 历史导入表" : target === "mom_vitals" ? "妈妈血压血糖生命体征导入表" : "宝宝生长发育测量导入表"}】
                 </span>
+                {isMom && (
+                  <span className="rounded-md bg-brand-100 px-2 py-0.5 text-[10px] font-semibold text-brand-800 dark:bg-brand-950 dark:text-brand-300">
+                    已按当前视图定制：{activeStage === "pregnancy" ? "全孕期产检" : activeStage === "postpartum" ? "产后恢复期" : "非孕期/备孕"}
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <button
