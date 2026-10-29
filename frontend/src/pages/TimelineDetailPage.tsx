@@ -16,7 +16,7 @@ export default function TimelineDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
-  useEffect(() => {
+  const loadDetail = () => {
     if (!id) {
       setError("缺少文章ID");
       setLoading(false);
@@ -34,6 +34,10 @@ export default function TimelineDetailPage() {
         setError((e as Error).message || "加载失败，请稍后重试");
         setLoading(false);
       });
+  };
+
+  useEffect(() => {
+    loadDetail();
   }, [id]);
 
   if (loading) return <div className="py-20 text-center text-gray-400">加载中…</div>;
@@ -48,7 +52,7 @@ export default function TimelineDetailPage() {
           <p className="text-red-500">{error}</p>
           <button
             className="btn-secondary mt-4"
-            onClick={() => window.location.reload()}
+            onClick={loadDetail}
           >
             重新加载
           </button>

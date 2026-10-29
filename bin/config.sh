@@ -8,6 +8,8 @@ init_default_configs() {
 
     PORT="${PORT:-${EXTERNAL_PORT:-443}}"
     EXTERNAL_PORT="$PORT"
+    # NGINX_BIND_IP: Nginx 外部监听绑定 IP（默认空或 0.0.0.0 表示全网卡公网监听；127.0.0.1 表示前置代理模式）
+    NGINX_BIND_IP="${NGINX_BIND_IP:-}"
     # Docker 版本默认运行在 5174 端口，避免与传统版本默认的 5173 端口冲突
     # 如果环境变量被继承为 5173（例如来自同终端中启动的传统版本环境），且 .env 中未显式锁定为 5173，则自动纠正为 5174
     if [ "$FRONTEND_PORT" = "5173" ] && ! grep -q "^FRONTEND_PORT=" .env 2>/dev/null; then
@@ -60,6 +62,8 @@ init_default_configs() {
 
     CMD=""
     CUSTOM_PORT=""
+    CUSTOM_EXTERNAL_PORT=""
+    CUSTOM_NGINX_BIND_IP=""
     CUSTOM_ADMIN_USER=""
     CUSTOM_ADMIN_PASS=""
     CUSTOM_ADMIN_NICK=""
@@ -174,6 +178,30 @@ while [ $# -gt 0 ]; do
             FORCE_UPDATE_NGINX=1
             shift
             ;;
+        --local|--front-proxy)
+            CUSTOM_NGINX_BIND_IP="127.0.0.1"
+            shift
+            ;;
+        --public)
+            CUSTOM_NGINX_BIND_IP="0.0.0.0"
+            shift
+            ;;
+        --nginx-port|--external-port)
+            CUSTOM_EXTERNAL_PORT="$2"
+            shift 2
+            ;;
+        --nginx-port=*|--external-port=*)
+            CUSTOM_EXTERNAL_PORT="${1#*=}"
+            shift
+            ;;
+        --bind-ip)
+            CUSTOM_NGINX_BIND_IP="$2"
+            shift 2
+            ;;
+        --bind-ip=*)
+            CUSTOM_NGINX_BIND_IP="${1#*=}"
+            shift
+            ;;
         -f|--force)
             FORCE=1
             FORCE_UPDATE_NGINX=1
@@ -235,6 +263,24 @@ if [ -n "$CUSTOM_PORT" ]; then
     FRONTEND_PORT="$CUSTOM_PORT"
     update_env_var "FRONTEND_PORT" "$CUSTOM_PORT"
     echo -e "\033[0;32m[配置] 前端访问端口已设置为: $CUSTOM_PORT (已同步至 .env)\033[0m"
+fi
+
+if [ -n "$CUSTOM_EXTERNAL_PORT" ]; then
+    EXTERNAL_PORT="$CUSTOM_EXTERNAL_PORT"
+    PORT="$CUSTOM_EXTERNAL_PORT"
+    update_env_var "EXTERNAL_PORT" "$CUSTOM_EXTERNAL_PORT"
+    update_env_var "PORT" "$CUSTOM_EXTERNAL_PORT"
+    echo -e "\033[0;32m[配置] Nginx 外部访问端口已设置为: $CUSTOM_EXTERNAL_PORT (已同步至 .env)\033[0m"
+fi
+
+if [ -n "$CUSTOM_NGINX_BIND_IP" ]; then
+    if [ "$CUSTOM_NGINX_BIND_IP" = "0.0.0.0" ]; then
+        NGINX_BIND_IP=""
+    else
+        NGINX_BIND_IP="$CUSTOM_NGINX_BIND_IP"
+    fi
+    update_env_var "NGINX_BIND_IP" "$NGINX_BIND_IP"
+    echo -e "\033[0;32m[配置] Nginx 监听绑定 IP 已设置为: ${NGINX_BIND_IP:-全部公网 (0.0.0.0)} (已同步至 .env)\033[0m"
 fi
 
 if [ -n "$CUSTOM_ADMIN_USER" ]; then
@@ -325,6 +371,7 @@ export_runtime_vars() {
     export ADMIN_NICKNAME
     export SERVER_NAME
     export EXTERNAL_PORT
+    export NGINX_BIND_IP
 
     # 数据库与存储全量运行时变量导出
     export APP_NAME

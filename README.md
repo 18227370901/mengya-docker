@@ -11,7 +11,7 @@
 
 > **面向新一代母婴家庭的全生命周期（备孕、孕期、育儿）健康陪伴、知识百科、消费决策与智能顾问一体化服务平台**。专为云端生产服务器标准 Docker 容器化交付深度定制，支持单阶段纯 Python 极简镜像与开箱即用多数据库模式。
 >
-> 📌 **当前版本**：`v1.88.6` | 📖 **[查看全量版本演化与发布历史 (docs/CHANGELOG.md)](docs/CHANGELOG.md)**
+> 📌 **当前版本**：`v1.94` | 📖 **[查看全量版本演化与发布历史 (docs/CHANGELOG.md)](docs/CHANGELOG.md)**
 
 <!-- 
   【AI 协作与维护规范 - 严禁违背】
@@ -70,7 +70,8 @@
 
 ```bash
 # 1. 启动容器服务 (启动前自动检查环境、就绪探针与 Nginx SSL 反代)
-./run.sh start
+./run.sh start                                 # 默认启动 (端口 5174 / HTTPS 443)
+./run.sh start --nginx-port 3443 --local       # 前置代理模式 (监听 127.0.0.1:3443)
 
 # 2. 命令行直传参数自定义启动 (自动持久化至 .env)
 ./run.sh start -p 5176                         # 自定义宿主机暴露端口为 5176
@@ -106,6 +107,8 @@
 | `-P` | `--password` | `admin123` | 自定义管理员密码（同步写入 `.env`） |
 | `-n` | `--nickname` | `管理员` | 自定义管理员前台展示昵称 |
 | `-d` | `--domain` | `mengya-docker.local` | 自定义 Nginx 反代 SNI 域名 |
+| - | `--nginx-port` | `443` | 自定义 Nginx 对外监听端口（如 3443、8443） |
+| - | `--local` | - | 前置代理模式（仅监听 127.0.0.1 本地回环接口） |
 | `-m` | `--mode` | `dedicated` | 指定数据库模式（`dedicated` / `shared` / `sqlite`） |
 | - | `--reconfig` | - | 重新唤起数据库部署模式交互向导 |
 | `-y` | `--non-interactive` | - | 免交互自动化模式（适合自动化脚本/CI 环境） |

@@ -94,13 +94,19 @@ gen_nginx_config() {
     local CERT_FILE="$NGINX_CERT_DIR/mengya_docker.crt"
     local KEY_FILE="$NGINX_CERT_DIR/mengya_docker.key"
 
+    local listen_addr="$EXTERNAL_PORT"
+    local proxy_mode="公网暴露 (0.0.0.0)"
+    if [ -n "$NGINX_BIND_IP" ] && [ "$NGINX_BIND_IP" != "0.0.0.0" ]; then
+        listen_addr="${NGINX_BIND_IP}:${EXTERNAL_PORT}"
+        proxy_mode="前置代理 (${NGINX_BIND_IP})"
+    fi
+
     local REDIRECT_BLOCK=""
-    if [ "$ENABLE_HTTP_REDIRECT" = "1" ] && [ "$EXTERNAL_PORT" = "443" ]; then
+    if [ "$ENABLE_HTTP_REDIRECT" = "1" ] && [ "$EXTERNAL_PORT" = "443" ] && [ -z "$NGINX_BIND_IP" ]; then
         REDIRECT_BLOCK="
-# HTTP 80 自动重定向到 HTTPS 443（仅匹配 SERVER_NAME: $SERVER_NAME，不干扰其他站点）
+# HTTP 80 自动重定向到 HTTPS 443（精准匹配 SERVER_NAME: $SERVER_NAME，避免影响其他网站）
 server {
     listen 80;
-    listen [::]:80;
     server_name $SERVER_NAME;
 
     return 301 https://\$host\$request_uri;
@@ -113,15 +119,14 @@ server {
     cat > "$TMP_CONF" << EOF
 # ============================================================
 # 萌芽平台 (Docker 版) - 宿主机 Nginx HTTPS (SNI 443) 反向代理配置
-# 配置文件: $NGINX_CONF (独立命名，绝不覆盖传统版 mengya_ssl.conf)
-# 访问端口: $EXTERNAL_PORT (HTTPS 标准端口，通过 SNI 域名识别)
-# 匹配域名: $SERVER_NAME (以 SERVER_NAME 配置为准，与传统版隔离)
-# 后端反代: http://127.0.0.1:$FRONTEND_PORT (Docker 映射端口)
+# 配置文件: $NGINX_CONF (独立于传统版，避免覆盖传统版 mengya_ssl.conf)
+# 监听地址: $listen_addr (模式: $proxy_mode)
+# 匹配域名: $SERVER_NAME (以 SERVER_NAME 配置为准，可与传统版共存)
+# 后端服务: http://127.0.0.1:$FRONTEND_PORT (Docker 映射端口)
 # ============================================================
 ${REDIRECT_BLOCK}
 server {
-    listen $EXTERNAL_PORT ssl;
-    listen [::]:$EXTERNAL_PORT ssl;
+    listen $listen_addr ssl;
     server_name $SERVER_NAME;
 
     # 独立 SSL 证书与私钥 (物理绝对路径，保障 Nginx 稳定加载)
@@ -188,7 +193,7 @@ EOF
         do_update="y"
     elif [ "$is_same" = "1" ]; then
         rm -f "$TMP_CONF"
-        echo -e "  \033[1;32m✅ [配置一致] 宿主机 Nginx 反代配置与当前环境（域名: $SERVER_NAME，端口: $EXTERNAL_PORT）完全匹配，无需更新。\033[0m"
+        echo -e "  \033[1;32m✅ [配置一致] 宿主机 Nginx 反代配置与当前环境（域名: $SERVER_NAME，监听: $listen_addr，模式: $proxy_mode）完全匹配，无需更新。\033[0m"
         echo "  SSL 证书路径:         $CERT_FILE"
         echo "  SNI 匹配域名:         $SERVER_NAME (以 SERVER_NAME 为准，主域名: $MAIN_DOMAIN)"
         echo "  外部访问端口:         $EXTERNAL_PORT"
@@ -199,7 +204,7 @@ EOF
         echo -e "\033[1;33m[提示] 检测到已存在 Nginx 配置文件与当前环境配置（如域名/端口/规则）不一致:\033[0m"
         echo "       配置文件路径: $NGINX_CONF"
         echo "       当前目标域名: $SERVER_NAME (主域名: $MAIN_DOMAIN)"
-        echo "       当前监听端口: $EXTERNAL_PORT"
+        echo "       当前监听地址: $listen_addr (模式: $proxy_mode)"
         echo -e "\033[1;31m[注意] 若选择覆盖，将根据当前配置更新，原有旧配置将自动备份为 .bak_时间戳 快照！\033[0m"
 
         local choice="n"

@@ -116,7 +116,7 @@ export default function HomePage() {
     return (
       <div className="card py-12 text-center">
         <p className="text-red-500">{error}</p>
-        <button className="btn-secondary mt-4" onClick={() => window.location.reload()}>
+        <button className="btn-secondary mt-4" onClick={() => fetchHomeData(false)}>
           重新加载
         </button>
       </div>
@@ -273,7 +273,7 @@ export default function HomePage() {
         )}
       </section>
       )}
-      <SetStageModal isOpen={showStageModal} onClose={() => setShowStageModal(false)} onSuccess={fetchHomeData} />
+      <SetStageModal isOpen={showStageModal} onClose={() => setShowStageModal(false)} onSuccess={(msg) => { showToast(typeof msg === "string" ? msg : "宝宝档案已保存成功"); fetchHomeData(); }} />
       {toast && (
         <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 rounded-xl bg-gray-900/90 px-4 py-2.5 text-sm text-white shadow-lg backdrop-blur-sm transition animate-fade-in">
           <CheckCircle2 className="h-4 w-4 text-pink-400" />

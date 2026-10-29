@@ -179,12 +179,20 @@ export default function KnowledgeAdminPage() {
 
   /* ===== 单条状态开关（v1.88.1 支持多开关列：必读 + 启用等） ===== */
   const handleToggleStatus = async (item: any, sw: KbStatusSwitch) => {
+    const next = item[sw.field] === sw.onValue ? sw.offValue : sw.onValue;
+    const prevVal = item[sw.field];
+    // 乐观局部更新当前行字段，无刷新无骨架闪烁
+    setItems((prev) =>
+      prev.map((it) => (it.id === item.id ? { ...it, [sw.field]: next } : it))
+    );
     try {
-      const next = item[sw.field] === sw.onValue ? sw.offValue : sw.onValue;
       await sw.toggleApi(item.id, next);
       showToast(next === sw.onValue ? `已${sw.labels[0]}该条目` : `已${sw.labels[1]}该条目`);
-      load();
     } catch (err: any) {
+      // 失败回滚
+      setItems((prev) =>
+        prev.map((it) => (it.id === item.id ? { ...it, [sw.field]: prevVal } : it))
+      );
       showToast(errMessage(err, "操作失败"));
     }
   };
@@ -266,10 +274,20 @@ export default function KnowledgeAdminPage() {
         if (f.type === "checkbox") v = !!v;
         payload[f.key] = v;
       }
-      await activeModule.saveApi(editingItem?.id ?? null, payload);
+      const savedResult = await activeModule.saveApi(editingItem?.id ?? null, payload);
       showToast(editingItem ? "保存成功" : "新增成功");
       setFormOpen(false);
-      load();
+      if (editingItem) {
+        // 编辑场景就地局部更新，避免全表重新拉取
+        const updatedItem = (savedResult && typeof savedResult === "object" && (savedResult as any).id)
+          ? savedResult
+          : { ...editingItem, ...payload };
+        setItems((prev) =>
+          prev.map((it) => (it.id === editingItem.id ? { ...it, ...updatedItem } : it))
+        );
+      } else {
+        load();
+      }
     } catch (err: any) {
       showToast(errMessage(err, "保存失败"));
     } finally {

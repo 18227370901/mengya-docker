@@ -140,11 +140,19 @@ export default function DailyTipsManagePage() {
   };
 
   const handleToggleActive = async (item: DailyTipItem) => {
+    const nextActive = !item.is_active;
+    // 乐观局部更新当前贴士状态
+    setTips((prev) =>
+      prev.map((t) => (t.id === item.id ? { ...t, is_active: nextActive } : t))
+    );
     try {
-      await dailyTipsApi.updateTip(item.id, { is_active: !item.is_active });
-      showToast(`已${!item.is_active ? "启用" : "停用"}该贴士`);
-      loadData();
+      await dailyTipsApi.updateTip(item.id, { is_active: nextActive });
+      showToast(`已${nextActive ? "启用" : "停用"}该贴士`);
     } catch (err: any) {
+      // 失败回滚
+      setTips((prev) =>
+        prev.map((t) => (t.id === item.id ? { ...t, is_active: item.is_active } : t))
+      );
       showToast(err?.response?.data?.message || "操作失败");
     }
   };
@@ -232,7 +240,7 @@ export default function DailyTipsManagePage() {
     setSubmitting(true);
     try {
       if (editingItem) {
-        await dailyTipsApi.updateTip(editingItem.id, {
+        const updated = await dailyTipsApi.updateTip(editingItem.id, {
           title: formTitle.trim(),
           content: formContent.trim(),
           tag: formTag.trim(),
@@ -241,6 +249,11 @@ export default function DailyTipsManagePage() {
           is_active: formActive,
         });
         showToast("贴士更新成功");
+        setEditModalOpen(false);
+        // 局部更新匹配条目，避免整表 loading 重拉与滚动重置
+        setTips((prev) =>
+          prev.map((t) => (t.id === editingItem.id ? { ...t, ...updated } : t))
+        );
       } else {
         await dailyTipsApi.createTip({
           title: formTitle.trim(),
@@ -251,9 +264,9 @@ export default function DailyTipsManagePage() {
           is_active: formActive,
         });
         showToast("新贴士已创建");
+        setEditModalOpen(false);
+        loadData();
       }
-      setEditModalOpen(false);
-      loadData();
     } catch (err: any) {
       showToast(err?.response?.data?.message || "保存失败");
     } finally {

@@ -2,7 +2,7 @@ import api from "./client";
 import type { WebdavConfig, WebdavBackupItem, ScheduledTaskItem, TaskExecutionLog, RollbackInfo } from "@/types/backup";
 
 export const backupApi = {
-  /** 获取 WebDAV 配置 */
+  /** 获取 WebDAV 配置与当前系统数据库运行模式 */
   getConfig: () => api.get<{ code: number; message: string; data: WebdavConfig }>("/admin/backups/config/").then((r) => r.data.data),
 
   /** 保存 WebDAV 配置 */
@@ -36,12 +36,13 @@ export const backupApi = {
     return url;
   },
 
-  /** 下载离线备份（Blob 方式，携带 JWT 认证头，防浏览器弹窗拦截与凭据失效） */
   /** 从 WebDAV 远端下载指定备份文件至本地（Blob 方式，携带 JWT） */
   downloadRemoteBackupBlob: (filename: string) => {
     const url = `/admin/backups/download-remote/?filename=${encodeURIComponent(filename)}`;
     return api.get(url, { responseType: "blob", timeout: 180000 });
   },
+
+  /** 下载本地快照包（Blob 方式，携带 JWT） */
   downloadLocalBackupBlob: (type: "full" | "db", password?: string) => {
     let url = `/admin/backups/download-local/?type=${type}`;
     if (password) url += `&password=${encodeURIComponent(password)}`;
@@ -85,4 +86,8 @@ export const backupApi = {
   /** 手动修剪或清理历史回滚快照（保留最新 N 份） */
   cleanRollbacks: (keepCount?: number) =>
     api.post<{ code: number; message: string; data: RollbackInfo }>("/admin/backups/rollbacks/clean/", { keep_count: keepCount }).then((r) => r.data),
+
+  /** 一键应急撤销回退接口：快速回退至最近一次覆盖导入前的状态 */
+  revertLatest: () =>
+    api.post<{ code: number; message: string; data: any }>("/admin/backups/rollbacks/revert-latest/").then((r) => r.data),
 };

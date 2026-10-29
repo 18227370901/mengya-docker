@@ -14,7 +14,7 @@ export default function BrandDetailPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const loadDetail = () => {
     if (!id) return;
     setLoading(true);
     setBrandError("");
@@ -29,6 +29,10 @@ export default function BrandDetailPage() {
         setProducts(p);
       })
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadDetail();
   }, [id]);
 
   if (loading) {
@@ -44,7 +48,7 @@ export default function BrandDetailPage() {
           <button className="btn-secondary" onClick={() => navigate("/brands")}>
             返回品牌列表
           </button>
-          <button className="btn-primary" onClick={() => window.location.reload()}>
+          <button className="btn-primary" onClick={loadDetail}>
             重新加载
           </button>
         </div>

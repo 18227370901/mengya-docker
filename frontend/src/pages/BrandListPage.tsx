@@ -10,12 +10,18 @@ export default function BrandListPage() {
   const [error, setError] = useState("");
   const [keyword, setKeyword] = useState("");
 
-  useEffect(() => {
+  const loadBrands = () => {
+    setLoading(true);
+    setError("");
     brandApi
       .list()
       .then((data) => setBrands(data))
       .catch((e) => setError((e as Error).message || "加载失败"))
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadBrands();
   }, []);
 
   const filtered = keyword.trim()
@@ -49,7 +55,7 @@ export default function BrandListPage() {
       ) : error ? (
         <div className="card py-12 text-center">
           <p className="text-red-500">{error}</p>
-          <button className="btn-secondary mt-4" onClick={() => window.location.reload()}>
+          <button className="btn-secondary mt-4" onClick={loadBrands}>
             重新加载
           </button>
         </div>

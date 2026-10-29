@@ -133,7 +133,7 @@ export default function ManualBackupCard({ config, onBackupSuccess, showToast }:
                   <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-medium text-sky-700">精简</span>
                 </div>
                 <p className="mt-1 text-[11px] text-gray-500 leading-relaxed">
-                  使用 SQLite 原生在线原子热备 API，完整导出所有关系表数据与历史记录 (.db)
+                  流式导出当前数据库模式 ({config?.current_db_profile?.mode_label || '当前主库'}) 的所有核心关系表数据 (.zip)
                 </p>
               </div>
             </button>

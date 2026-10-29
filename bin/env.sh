@@ -92,11 +92,16 @@ print_access_urls() {
         domain_count=$((domain_count + 1))
     done
 
+    local proxy_tip=""
+    if [ -n "$NGINX_BIND_IP" ] && [ "$NGINX_BIND_IP" != "0.0.0.0" ]; then
+        proxy_tip=" (前置代理模式: 仅监听 ${NGINX_BIND_IP}:${port:-443}，请经由上层前置网关访问)"
+    fi
+
     if [ "$domain_count" -le 1 ]; then
         local single_domain="$domains"
-        echo "  ${label}: https://${single_domain}${port_suffix}/ (HTTPS ${port:-443} SNI 入口，与传统版共存零冲突)"
+        echo "  ${label}: https://${single_domain}${port_suffix}/ (HTTPS ${port:-443} SNI 入口)${proxy_tip}"
     else
-        echo "  ${label} (已配置 $domain_count 个 SNI 域名，均可通过 HTTPS ${port:-443} 访问):"
+        echo "  ${label} (已配置 $domain_count 个 SNI 域名，均可通过 HTTPS ${port:-443} 访问)${proxy_tip}:"
         local idx=1
         for d in $domains; do
             if [ "$idx" -eq 1 ]; then

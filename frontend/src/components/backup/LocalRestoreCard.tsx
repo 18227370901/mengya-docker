@@ -138,7 +138,7 @@ export default function LocalRestoreCard({ showToast }: Props) {
                   <span>点击选择电脑中的系统备份文件 (.zip 或 .db)</span>
                 )}
               </div>
-              <p className="text-[11px] text-gray-400">支持全量快照压缩包 (.zip) 或 SQLite 原生数据库文件 (.db)</p>
+              <p className="text-[11px] text-gray-400">支持跨引擎全量/纯数据快照包 (.zip) 或历史 SQLite 原生文件 (.db)，系统自动执行格式转换与自增序列重校</p>
             </label>
           </div>
 

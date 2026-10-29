@@ -699,6 +699,7 @@ export default function HealthPage() {
         onClose={() => setShowImport(false)}
         motherId={currentMother?.id}
         currentMother={currentMother}
+        latestHeight={latestMomHeight}
         onImported={(hint, resolvedStage) => {
           showToast(hint);
           if (resolvedStage) {

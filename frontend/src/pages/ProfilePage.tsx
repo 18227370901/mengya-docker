@@ -1024,7 +1024,7 @@ export default function ProfilePage() {
           </div>
         </div>
       )}
-      <SetStageModal isOpen={showStageModal} onClose={() => setShowStageModal(false)} onSuccess={() => { authApi.babies().then(setBabies).catch(() => {}); }} />
+      <SetStageModal isOpen={showStageModal} onClose={() => setShowStageModal(false)} onSuccess={(msg) => { showToast(typeof msg === "string" ? msg : "宝宝档案已保存成功"); authApi.babies().then(setBabies).catch(() => {}); }} />
     </div>
   );
 }

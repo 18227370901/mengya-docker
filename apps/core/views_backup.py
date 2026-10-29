@@ -53,6 +53,7 @@ class AdminBackupConfigView(APIView):
             return denied
 
         cfg = BackupConfig.get_config()
+        db_profile = backup_service.get_current_runtime_db_profile()
         return Response({
             "code": 0,
             "message": "success",
@@ -70,6 +71,7 @@ class AdminBackupConfigView(APIView):
                 "last_backup_time": cfg.last_backup_time.strftime("%Y-%m-%d %H:%M:%S") if cfg.last_backup_time else None,
                 "last_status": cfg.last_status,
                 "has_pyzipper": True,
+                "current_db_profile": db_profile,
             },
         })
 
@@ -134,6 +136,7 @@ class AdminBackupConfigView(APIView):
                 "last_backup_time": cfg.last_backup_time.strftime("%Y-%m-%d %H:%M:%S") if cfg.last_backup_time else None,
                 "last_status": cfg.last_status,
                 "has_pyzipper": True,
+                "current_db_profile": db_profile,
             },
         })
 
@@ -221,14 +224,14 @@ class AdminBackupUploadView(APIView):
         creator = getattr(request.user, "nickname", None) or getattr(request.user, "phone", "admin")
 
         try:
+            scope = "db" if backup_type == "db_backup" else "full"
+            remote_name = backup_service.generate_backup_filename(creator_name=creator, backup_type=scope)
+            local_file = str(temp_dir / remote_name)
+
             if backup_type == "db_backup":
-                remote_name = f"mengya_backup_{timestamp_str}_{creator}_db.db"
-                local_file = str(temp_dir / remote_name)
                 ok, msg = backup_service.create_database_snapshot(local_file)
                 meta = {}
             else:
-                remote_name = f"mengya_backup_{timestamp_str}_{creator}_full.zip"
-                local_file = str(temp_dir / remote_name)
                 ok, msg, meta = backup_service.create_full_snapshot_package(
                     local_file,
                     encrypt_password=encrypt_pwd,
@@ -413,16 +416,15 @@ class AdminBackupDownloadLocalView(APIView):
         temp_dir = Path(settings.BASE_DIR) / ".temp"
         temp_dir.mkdir(parents=True, exist_ok=True)
 
+        scope = "db" if backup_type == "db" else "full"
+        filename = backup_service.generate_backup_filename(creator_name=creator, backup_type=scope)
+        filepath = str(temp_dir / filename)
+        content_type = "application/zip"
+
         if backup_type == "db":
-            filename = f"mengya_backup_{timestamp_str}_{creator}_db.db"
-            filepath = str(temp_dir / filename)
             ok, msg = backup_service.create_database_snapshot(filepath)
-            content_type = "application/x-sqlite3"
         else:
-            filename = f"mengya_backup_{timestamp_str}_{creator}_full.zip"
-            filepath = str(temp_dir / filename)
             ok, msg, _ = backup_service.create_full_snapshot_package(filepath, encrypt_password=pwd, creator_name=creator)
-            content_type = "application/zip"
 
         if not ok:
             return Response({"code": 5008, "message": f"生成本地备份失败: {msg}", "data": None}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
@@ -775,3 +777,31 @@ class AdminBackupRollbackCleanView(APIView):
             "message": f"成功清理 {removed_count} 份历史快照，当前保留最新 {new_info['count']} 份！",
             "data": new_info,
         })
+
+
+class AdminBackupRevertLatestView(APIView):
+    """一键应急撤销恢复接口：快速回退至最近一次数据覆盖导入前的状态"""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        denied = _check_admin_permission(request)
+        if denied:
+            return denied
+
+        operator = getattr(request.user, "nickname", None) or getattr(request.user, "phone", "admin")
+        ok, msg, summary = backup_service.revert_to_pre_restore_latest(operator_name=operator)
+        if not ok:
+            return Response({"code": 5009, "message": msg, "data": None}, status=status.HTTP_400_BAD_REQUEST)
+
+        audit(
+            request,
+            action="backup_restore",
+            action_label="一键撤销恢复",
+            target_type="backup",
+            target_id="pre_restore_snapshot_latest",
+            target_name="应急回退",
+            detail=f"{operator} 触发了一键紧急撤销，数据库已成功秒级回滚至导入前状态",
+        )
+
+        return Response({"code": 0, "message": msg, "data": summary})

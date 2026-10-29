@@ -56,7 +56,16 @@ export default function ShoppingListDetailPage() {
     setToggleError("");
     try {
       await shoppingApi.toggleCheck(Number(id), itemId);
-      load();
+      // 局部更新清单内对应项目勾选状态，零闪烁
+      setList((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          items: prev.items.map((it) =>
+            it.id === itemId ? { ...it, is_checked: !it.is_checked } : it
+          ),
+        };
+      });
     } catch (e) {
       setToggleError((e as Error).message || "操作失败，请稍后重试");
     } finally {
@@ -68,8 +77,17 @@ export default function ShoppingListDetailPage() {
     setSavingStatus(item.id);
     setToggleError("");
     try {
-      await shoppingApi.updateItem(Number(id), item.id, { purchase_status: status });
-      load();
+      const updated = await shoppingApi.updateItem(Number(id), item.id, { purchase_status: status });
+      // 局部更新状态与字段
+      setList((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          items: prev.items.map((it) =>
+            it.id === item.id ? { ...it, ...updated, purchase_status: status } : it
+          ),
+        };
+      });
     } catch (e) {
       setToggleError((e as Error).message || "更新失败");
     } finally {
@@ -109,9 +127,20 @@ export default function ShoppingListDetailPage() {
       };
       if (editForm.unit_price !== "") payload.unit_price = editForm.unit_price;
       if (editForm.total_price !== "") payload.total_price = editForm.total_price;
-      await shoppingApi.updateItem(Number(id), editing.id, payload);
+      const updated = await shoppingApi.updateItem(Number(id), editing.id, payload);
       setEditing(null);
-      load();
+      // 局部就地更新编辑项，保持视图稳定
+      setList((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          items: prev.items.map((it) =>
+            it.id === editing.id
+              ? { ...it, ...updated, ...payload, quantity: Number(payload.quantity || 1) }
+              : it
+          ),
+        };
+      });
     } catch (e) {
       setEditError((e as Error).message || "保存失败，请稍后重试");
     } finally {

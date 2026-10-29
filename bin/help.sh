@@ -27,6 +27,10 @@ show_cli_help() {
         echo "  -P, --password <PASS>        自定义超级管理员登录密码（默认 admin123）"
         echo "  -n, --nickname <NAME>        自定义管理员昵称（默认 管理员）"
         echo "  -d, --domain <DOMAIN>        自定义绑定的 SNI 域名（默认 mengya-docker.local）"
+        echo "  --local, --front-proxy       前置代理模式: 仅监听 127.0.0.1 (等价 NGINX_BIND_IP=127.0.0.1)
+  --public                     公网暴露模式: 监听全部公网 0.0.0.0 (等价 NGINX_BIND_IP=\"\")
+  --nginx-port <PORT>          自定义 Nginx 对外监听端口 (默认 443，可指定如 3443、8443)
+  --bind-ip <IP>               自定义 Nginx 监听绑定的 IP (默认: 空，表示全网卡监听)"
         echo "  -b, --build                  启动时强制重新构建容器镜像（构建后自动清理旧残留层）"
         echo "  --no-cache                   构建时禁用缓存并彻底重新编译镜像"
         echo "  --db-image <IMAGE>           指定数据库镜像（如 pgvector/pgvector:pg18 或 postgres:15-alpine）"

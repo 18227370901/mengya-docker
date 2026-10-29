@@ -317,13 +317,19 @@ export default function ProductAdminPage() {
     };
     try {
       if (editingId) {
-        await productApi.update(editingId, payload);
+        const updated = await productApi.update(editingId, payload);
+        setShowForm(false);
+        showToast("保存成功");
+        // 局部更新当前商品行，保留用户滚动条与分页状态
+        setProducts((prev) =>
+          prev.map((p) => (p.id === editingId ? { ...p, ...payload, ...updated } : p))
+        );
       } else {
         await productApi.create(payload);
+        setShowForm(false);
+        showToast("保存成功");
+        load();
       }
-      setShowForm(false);
-      showToast("保存成功");
-      load();
     } catch {
       showToast("保存失败，请重试");
     } finally {
@@ -339,11 +345,19 @@ export default function ProductAdminPage() {
   };
 
   const toggleActive = async (p: Product) => {
+    const nextActive = !p.is_active;
+    // 乐观局部更新，零闪烁不重拉分页
+    setProducts((prev) =>
+      prev.map((item) => (item.id === p.id ? { ...item, is_active: nextActive } : item))
+    );
     try {
-      await productApi.update(p.id, { is_active: !p.is_active });
-      showToast(p.is_active === false ? "已上架" : "已暂存");
-      load();
+      await productApi.update(p.id, { is_active: nextActive });
+      showToast(nextActive ? "已上架" : "已暂存");
     } catch (err) {
+      // 失败自动回滚
+      setProducts((prev) =>
+        prev.map((item) => (item.id === p.id ? { ...item, is_active: p.is_active } : item))
+      );
       showToast(err instanceof Error ? err.message : "操作失败");
     }
   };
@@ -516,13 +530,19 @@ export default function ProductAdminPage() {
         is_active: brandForm.is_active,
       };
       if (brandForm.id) {
-        await brandApi.update(brandForm.id, payload);
+        const updated = await brandApi.update(brandForm.id, payload);
+        setBrandEditing(false);
+        showToast("品牌保存成功");
+        // 局部更新当前品牌行，避免全量重新加载
+        setBrands((prev) =>
+          prev.map((b) => (b.id === brandForm.id ? { ...b, ...payload, ...updated } : b))
+        );
       } else {
         await brandApi.create(payload);
+        setBrandEditing(false);
+        showToast("品牌保存成功");
+        loadBrands();
       }
-      setBrandEditing(false);
-      showToast("品牌保存成功");
-      loadBrands();
     } catch (err: any) {
       showToast(err?.response?.data?.message || "品牌保存失败");
     } finally {

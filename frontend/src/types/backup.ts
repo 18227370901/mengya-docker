@@ -1,3 +1,13 @@
+/** 运行时数据库环境摘要 */
+export interface DbProfile {
+  engine: "sqlite" | "postgresql";
+  db_mode: "sqlite" | "pg_shared" | "pg_dedicated";
+  mode_label: string;
+  db_name: string;
+  is_postgres: boolean;
+  summary: string;
+}
+
 /** WebDAV 配置数据结构 */
 export interface WebdavConfig {
   webdav_url: string;
@@ -13,6 +23,7 @@ export interface WebdavConfig {
   last_backup_time: string | null;
   last_status: string;
   has_pyzipper: boolean;
+  current_db_profile?: DbProfile;
 }
 
 /** WebDAV 远端备份文件项 */
@@ -59,6 +70,8 @@ export interface RestoreSummary {
   rollback_snapshot_path?: string;
   tables_restored: number;
   total_records_restored: number;
+  current_runtime_engine?: string;
+  current_runtime_mode?: string;
   manifest?: Record<string, any>;
   config_snapshot?: Record<string, any>;
 }
@@ -72,6 +85,20 @@ export interface RollbackSnapshotItem {
   modified_time: string;
 }
 
+/** 最近一次覆盖前留存的应急元数据 */
+export interface LatestRevertMeta {
+  created_at: string;
+  timestamp: number;
+  operator: string;
+  incoming_filename: string;
+  db_mode: string;
+  db_engine: string;
+  snapshot_filename: string;
+  latest_file: string;
+  total_tables: number;
+  total_records: number;
+}
+
 /** 安全回滚快照汇总 */
 export interface RollbackInfo {
   count: number;
@@ -79,4 +106,6 @@ export interface RollbackInfo {
   total_size_human: string;
   max_copies: number;
   snapshots: RollbackSnapshotItem[];
+  latest_revert_available?: boolean;
+  latest_revert_meta?: LatestRevertMeta | null;
 }

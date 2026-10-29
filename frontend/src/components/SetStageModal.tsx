@@ -7,7 +7,7 @@ import { useAuthStore } from "@/store/authStore";
 interface SetStageModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess?: () => void;
+  onSuccess?: (msg?: string) => void;
 }
 
 export default function SetStageModal({ isOpen, onClose, onSuccess }: SetStageModalProps) {
@@ -20,6 +20,7 @@ export default function SetStageModal({ isOpen, onClose, onSuccess }: SetStageMo
   const [birthday, setBirthday] = useState(user?.baby_birthday || "");
   const [babyName, setBabyName] = useState("");
   const [gender, setGender] = useState("secret");
+  const [existingBabyId, setExistingBabyId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -34,9 +35,31 @@ export default function SetStageModal({ isOpen, onClose, onSuccess }: SetStageMo
       setTab(isPreg ? "pregnant" : (currentUser?.baby_birthday ? "born" : "pregnant"));
       setDueDate(currentUser?.due_date || "");
       setBirthday(currentUser?.baby_birthday || "");
-      setBabyName("");
-      setGender("secret");
       setError("");
+
+      // 实时获取默认宝宝档案并回显姓名与性别，杜绝退出重进后被重置为空白
+      authApi
+        .babies()
+        .then((list) => {
+          if (Array.isArray(list) && list.length > 0) {
+            const pri = list.find((b) => b.is_primary) || list[0];
+            setExistingBabyId(pri.id);
+            setBabyName(pri.name || "");
+            const g = (pri.gender || "").toLowerCase();
+            if (g === "boy" || g === "male") setGender("boy");
+            else if (g === "girl" || g === "female") setGender("girl");
+            else setGender("secret");
+          } else {
+            setExistingBabyId(null);
+            setBabyName("");
+            setGender("secret");
+          }
+        })
+        .catch(() => {
+          setExistingBabyId(null);
+          setBabyName("");
+          setGender("secret");
+        });
     }
     prevIsOpenRef.current = isOpen;
   }, [isOpen]);
@@ -119,15 +142,24 @@ export default function SetStageModal({ isOpen, onClose, onSuccess }: SetStageMo
           baby_birthday: null as any,
         });
         if (babyName.trim()) {
-          try {
-            await authApi.createBaby({
+          if (existingBabyId) {
+            await authApi.updateBaby(existingBabyId, {
               name: babyName.trim(),
               gender: gender === "secret" ? "unknown" : gender,
               birthday: dueDate,
               is_born: false,
               is_primary: true,
             });
-          } catch {}
+          } else {
+            const created = await authApi.createBaby({
+              name: babyName.trim(),
+              gender: gender === "secret" ? "unknown" : gender,
+              birthday: dueDate,
+              is_born: false,
+              is_primary: true,
+            });
+            setExistingBabyId(created.id);
+          }
         }
       } else {
         await authApi.updateMe({
@@ -135,17 +167,24 @@ export default function SetStageModal({ isOpen, onClose, onSuccess }: SetStageMo
           is_pregnant: false,
           due_date: null as any,
         });
-        // 如果输入了宝宝姓名，同时创建宝宝档案
         if (babyName.trim()) {
-          try {
-            await authApi.createBaby({
+          if (existingBabyId) {
+            await authApi.updateBaby(existingBabyId, {
               name: babyName.trim(),
+              gender: gender === "secret" ? "unknown" : gender,
               birthday,
-              gender,
+              is_born: true,
               is_primary: true,
             });
-          } catch {
-            // 忽略宝宝档案重复或非致命错误
+          } else {
+            const created = await authApi.createBaby({
+              name: babyName.trim(),
+              birthday,
+              gender: gender === "secret" ? "unknown" : gender,
+              is_born: true,
+              is_primary: true,
+            });
+            setExistingBabyId(created.id);
           }
         }
       }
@@ -154,10 +193,10 @@ export default function SetStageModal({ isOpen, onClose, onSuccess }: SetStageMo
       try {
         window.dispatchEvent(new CustomEvent("stageChanged"));
       } catch {}
-      onSuccess?.();
+      onSuccess?.("宝宝档案已保存成功");
       onClose();
-    } catch (err) {
-      setError((err as Error).message || "保存失败，请稍后重试");
+    } catch (err: any) {
+      setError(err?.response?.data?.message || err?.message || "保存失败，请稍后重试");
     } finally {
       setSaving(false);
     }

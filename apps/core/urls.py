@@ -72,6 +72,7 @@ urlpatterns = [
     path("admin/backups/tasks/<int:pk>/logs/", views_backup.AdminScheduledTaskLogsView.as_view(), name="admin-backup-task-logs"),
     path("admin/backups/rollbacks/", views_backup.AdminBackupRollbackListView.as_view(), name="admin-backup-rollbacks"),
     path("admin/backups/rollbacks/clean/", views_backup.AdminBackupRollbackCleanView.as_view(), name="admin-backup-rollbacks-clean"),
+    path("admin/backups/rollbacks/revert-latest/", views_backup.AdminBackupRevertLatestView.as_view(), name="admin-backup-rollbacks-revert-latest"),
     path("ai/chat/", views.ai_chat, name="ai-chat"),
     path("ai/compare/", views.ai_compare, name="ai-compare"),
     path("ai/history/", views.ai_history, name="ai-history"),

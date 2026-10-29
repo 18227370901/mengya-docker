@@ -3090,7 +3090,9 @@ class HealthRecordViewSet(viewsets.ModelViewSet):
         from django.utils import timezone
 
         records = request.data.get("records") or []
-        target = request.data.get("target", "mom")  # mom | mom_bmi | mom_vitals | baby
+        raw_target = request.data.get("target", "mom")
+        is_bmi_target = (raw_target == "mom_bmi")
+        target = raw_target
         if target in ("mom_bmi", "mom_vitals"):
             target = "mom"
         strategy = request.data.get("conflict_strategy", "skip")  # skip | overwrite
@@ -3144,6 +3146,50 @@ class HealthRecordViewSet(viewsets.ModelViewSet):
             if last_mom and isinstance(last_mom.exam_items, dict)
             else None
         )
+
+        # 检查本次 CSV 批量记录中是否包含任何有效身高
+        def _parse_row_h(r):
+            v = r.get("height")
+            if v is None or str(v).strip() == "":
+                return None
+            try:
+                return round(float(str(v).strip()), 2)
+            except (TypeError, ValueError):
+                return None
+
+        first_valid_csv_height = None
+        for r in records:
+            hv = _parse_row_h(r)
+            if hv is not None and MOM_RANGE["height"][0] <= hv <= MOM_RANGE["height"][1]:
+                first_valid_csv_height = hv
+                break
+
+        has_any_csv_height = (first_valid_csv_height is not None)
+
+        # 判断用户当前是否已有历史身高记录
+        has_history_height = (inherit_height is not None and inherit_height > 0)
+        if not has_history_height:
+            hist_rec = HealthRecord.objects.filter(user=user, record_type="prenatal_exam", height__isnull=False, height__gt=0).first()
+            if hist_rec and hist_rec.height:
+                has_history_height = True
+                inherit_height = hist_rec.height
+
+        # 若包含体重数据或为明确的 BMI 批量导入，且首次导入（历史从未记录过身高），必须校验最少有一行填写了身高信息
+        has_any_csv_weight = any(r.get("weight") is not None and str(r.get("weight")).strip() != "" for r in records)
+        needs_height_check = is_bmi_target or (target == "mom" and has_any_csv_weight)
+        if needs_height_check and not has_history_height and not has_any_csv_height:
+            return Response(
+                {
+                    "code": 4005,
+                    "message": "首次导入含体重或BMI的数据必须提供身高（请在 CSV 表格中至少有一行填写「身高」，例如 165，后续行将自动顺推继承），因计算 BMI 必须具备真实身高参数，严禁默认推算。",
+                    "data": None,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        # 初始运行身高：优先历史真实身高；首次导入时取 CSV 中首个有效身高作为前向顺推与后向回填基准
+        running_height = inherit_height or first_valid_csv_height
+        running_pre_weight = inherit_pre_weight
 
         for idx, row in enumerate(records, start=1):
             def _fail(reason):
@@ -3229,13 +3275,21 @@ class HealthRecordViewSet(viewsets.ModelViewSet):
                             _fail(f"体重数值无效（合理防呆范围 {MOM_RANGE['weight'][0]}~{MOM_RANGE['weight'][1]} kg）")
                             continue
 
-                    height = _to_float(row.get("height")) or inherit_height
+                    row_h = _to_float(row.get("height"))
+                    if row_h is not None:
+                        if MOM_RANGE["height"][0] <= row_h <= MOM_RANGE["height"][1]:
+                            running_height = row_h
+                        else:
+                            _fail(f"身高数值超出合理防呆范围（{MOM_RANGE['height'][0]}~{MOM_RANGE['height'][1]} cm）")
+                            continue
+
+                    effective_height = running_height
+                    height = effective_height
+
                     waist = _to_float(row.get("waist"))
                     if waist is not None and not (MOM_RANGE["waist"][0] <= waist <= MOM_RANGE["waist"][1]):
                         _fail("腹围数值超出防呆范围")
                         continue
-                    if height is not None and not (MOM_RANGE["height"][0] <= height <= MOM_RANGE["height"][1]):
-                        height = inherit_height
                     stage_raw = str(row.get("stage") or "").strip().lower()
                     stage_map = {
                         "pregnancy": "pregnancy", "孕期": "pregnancy", "全孕期": "pregnancy", "怀孕中": "pregnancy", "孕": "pregnancy",
