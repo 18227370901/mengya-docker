@@ -1,5 +1,5 @@
 import { Fragment, useMemo, useState } from "react";
-import { ClipboardList, Trash2, ChevronDown, ChevronUp, FileText, Sparkles } from "lucide-react";
+import { ClipboardList, Trash2, ChevronDown, ChevronUp, FileText, Sparkles, Edit3 } from "lucide-react";
 import type { BmiTimeSeriesRecord } from "@/types/health";
 import { gestationLabel } from "@/utils/gestation";
 import { useAuthStore } from "@/store/authStore";
@@ -14,6 +14,8 @@ interface BmiHistoryTableProps {
   /** v1.57：批量删除（后端单事务批量接口） */
   onBatchDelete: (ids: number[]) => Promise<void> | void;
   deletingId?: number | null;
+  /** v2.00：单条编辑打卡明细（调出统一打卡弹窗回填修改） */
+  onEdit?: (record: BmiTimeSeriesRecord) => void;
 }
 
 /** 达标状态徽章渲染 */
@@ -42,9 +44,10 @@ function GainStatusBadge({ status }: { status?: string | null }) {
   );
 }
 
-export default function BmiHistoryTable({ records, loading, onDelete, onBatchDelete, deletingId }: BmiHistoryTableProps) {
+export default function BmiHistoryTable({ records, loading, onDelete, onBatchDelete, deletingId, onEdit }: BmiHistoryTableProps) {
   const { hasPermission } = useAuthStore();
   const canDelete = hasPermission("health_record_delete");
+  const canEdit = hasPermission("health_record_update");
   // v1.57：单条删除确认 / 批量删除确认 / 批删执行中
   const [confirmId, setConfirmId] = useState<number | null>(null);
   const [batchConfirm, setBatchConfirm] = useState(false);
@@ -316,18 +319,33 @@ export default function BmiHistoryTable({ records, loading, onDelete, onBatchDel
                         </td>
                         {canDelete && (
                           <td className="px-3 py-2.5 text-right">
-                            {isDeleting ? (
-                              <span className="text-[11px] text-gray-400">删除中…</span>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => setConfirmId(r.id)}
-                                className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium text-gray-400 transition hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/40"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                                删除
-                              </button>
-                            )}
+                            <div className="flex items-center justify-end gap-1">
+                              {canEdit && onEdit && (
+                                <button
+                                  type="button"
+                                  onClick={() => onEdit(r)}
+                                  className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium text-gray-400 transition hover:bg-brand-50 hover:text-brand-600 dark:hover:bg-gray-700 cursor-pointer"
+                                  title={`编辑 ${r.record_date} 体重与BMI记录`}
+                                >
+                                  <Edit3 className="h-3.5 w-3.5" />
+                                  编辑
+                                </button>
+                              )}
+                              {canDelete && (
+                                isDeleting ? (
+                                  <span className="text-[11px] text-gray-400">删除中…</span>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => setConfirmId(r.id)}
+                                    className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-medium text-gray-400 transition hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-950/40 cursor-pointer"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                    删除
+                                  </button>
+                                )
+                              )}
+                            </div>
                           </td>
                         )}
                       </tr>

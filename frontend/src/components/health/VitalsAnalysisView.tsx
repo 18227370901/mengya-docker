@@ -29,6 +29,7 @@ import VitalsHistoryTable from "./VitalsHistoryTable";
 const STORAGE_KEY = "mengya_latest_vitals_analysis";
 
 interface VitalsAnalysisViewProps {
+  onEditRecord?: (record: VitalsTimeSeriesRecord) => void;
   refreshTrigger?: number;
   onRecordChanged?: () => void;
   stageType?: PregnancyStage;

@@ -2518,6 +2518,20 @@ apps/core/                                    apps/core/
       <p><strong>核心解决：</strong>重构健康页面为三层金字塔架构（控制台主体操作层、生命周期阶段切片层、监测指标二级导航层）；实现在全部阶段下根据下方打卡模块当前阶段类型动态匹配 CSV 导入模板；特定阶段下表单智能锁定当前阶段消除冗余选项与视界撕裂。</p>
     </div>
 
+
+<section class="adr-card" id="adr-10-65">
+  <h2>10.65 ADR 10.65：健康中心全模块数据表格可编辑（Edit）赋能与打卡弹窗回显联动规范 (v2.00)</h2>
+  <div class="adr-meta"><span class="badge">Version: v2.00</span><span class="badge">Date: 2026-10-29</span><span class="badge status-accepted">Accepted</span></div>
+  <h3>10.65.1 背景与业务痛点</h3>
+  <p>健康中心历史记录表格长期仅支持勾选和删除，缺乏便捷编辑修改渠道。用户修正历史指标必须先删后录，体验割裂。</p>
+  <h3>10.65.2 架构决策与设计规范</h3>
+  <ul>
+    <li><strong>全表格统一操作列</strong>：宝宝生长表、体重/BMI 明细表、血压/血糖明细表统一集成 <code>Edit3</code> 语义化编辑按钮，严格遵循 <code>health_record_update</code> 权限；</li>
+    <li><strong>三层事件透传体系</strong>：表格 ➔ 分析看板 ➔ 页面路由层，统一派发 <code>onEditRecord</code>；</li>
+    <li><strong>智能模态联动与聚焦</strong>：通过 <code>openCheckIn</code> 回显历史实体并自动聚焦对应指标录入卡片（<code>bmi</code> / <code>vitals</code>）。</li>
+  </ul>
+</section>
+
 </body>
 
 </html>

@@ -2,6 +2,7 @@ import { useState, useMemo } from "react";
 import {
   ClipboardList,
   Trash2,
+  Edit3,
   ChevronDown,
   ChevronUp,
   HeartPulse,
@@ -19,6 +20,7 @@ import PaginationBar, { useListPagination } from "@/components/ui/PaginationBar"
 interface VitalsHistoryTableProps {
   records: VitalsTimeSeriesRecord[];
   loading?: boolean;
+  onEdit?: (record: VitalsTimeSeriesRecord) => void;
   onDelete: (id: number) => Promise<void> | void;
   onBatchDelete?: (ids: number[]) => Promise<void> | void;
   onViewAi?: (record: VitalsTimeSeriesRecord) => void;
@@ -27,11 +29,13 @@ interface VitalsHistoryTableProps {
 export default function VitalsHistoryTable({
   records,
   loading = false,
+  onEdit,
   onDelete,
   onBatchDelete,
   onViewAi,
 }: VitalsHistoryTableProps) {
   const { hasPermission } = useAuthStore();
+  const canEdit = hasPermission("health_record_update");
   const canDelete = hasPermission("health_record_delete");
 
   const [expandedId, setExpandedId] = useState<number | null>(null);
@@ -326,6 +330,17 @@ export default function VitalsHistoryTable({
                     {/* 操作列 */}
                     <td className="py-3 px-2 text-right">
                       <div className="flex items-center justify-end gap-1.5">
+                        {canEdit && (
+                          <button
+                            type="button"
+                            onClick={() => onEdit?.(rec)}
+                            title="编辑单条记录"
+                            className="rounded-lg p-1 text-gray-400 hover:bg-emerald-50 hover:text-emerald-600 dark:hover:bg-emerald-950/40"
+                          >
+                            <Edit3 className="h-4 w-4" />
+                          </button>
+                        )}
+
                         {rec.ai_analysis && (
                           <button
                             type="button"

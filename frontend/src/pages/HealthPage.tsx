@@ -1310,7 +1310,7 @@ export default function HealthPage() {
                       <th className="px-3 py-2 font-medium">身高 (cm)</th>
                       <th className="px-3 py-2 font-medium">体重 (kg)</th>
                       <th className="px-3 py-2 font-medium">头围 (cm)</th>
-                      {hasPermission("health_record_delete") && <th className="px-3 py-2 font-medium">操作</th>}
+                      <th className="px-3 py-2 font-medium">操作</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1341,13 +1341,30 @@ export default function HealthPage() {
                         <td className="px-3 py-2 text-gray-600 dark:text-gray-400">{r.height ?? "—"}</td>
                         <td className="px-3 py-2 text-gray-600 dark:text-gray-400">{r.weight ?? "—"}</td>
                         <td className="px-3 py-2 text-gray-600 dark:text-gray-400">{r.head_circumference ?? "—"}</td>
-                        {hasPermission("health_record_delete") && (
-                          <td className="px-3 py-2">
-                            <button className="text-gray-300 hover:text-red-500" onClick={() => setConfirmId(r.id)}>
-                              <Trash2 className="h-4 w-4" />
-                            </button>
-                          </td>
-                        )}
+                        <td className="px-3 py-2">
+                          <div className="flex items-center gap-2">
+                            {hasPermission("health_record_update") && (
+                              <button
+                                type="button"
+                                className="text-gray-400 hover:text-brand-600 transition p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700"
+                                onClick={() => openCheckIn(r.record_date, "baby", r.baby, r, "bmi")}
+                                title={`编辑 ${r.record_date} 生长测量记录`}
+                              >
+                                <Edit3 className="h-4 w-4" />
+                              </button>
+                            )}
+                            {hasPermission("health_record_delete") && (
+                              <button
+                                type="button"
+                                className="text-gray-400 hover:text-red-500 transition p-1 rounded hover:bg-red-50 dark:hover:bg-gray-700"
+                                onClick={() => setConfirmId(r.id)}
+                                title={`删除 ${r.record_date} 测量记录`}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            )}
+                          </div>
+                        </td>
                       </tr>
                     ))}
                   </tbody>

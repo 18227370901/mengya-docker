@@ -17,6 +17,7 @@ import ConfirmDialog from "@/components/ui/ConfirmDialog";
 const STORAGE_KEY = "mengya_latest_bmi_analysis";
 
 interface BmiAnalysisViewProps {
+  onEditRecord?: (record: BmiTimeSeriesRecord) => void;
   /** v1.59：外部刷新触发令牌（健康打卡弹窗/CSV导入/外层变动时联动刷新） */
   refreshTrigger?: number;
   /** v1.59：内部变更回调（分析打卡/删除/批量删除后通知外层刷新 HealthPage.records） */

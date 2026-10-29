@@ -6,6 +6,23 @@
 
 ---
 
+## 2026-10-29 最新更新说明（v2.00 版本）：健康中心全模块表格可编辑功能落地与打卡弹窗数据回显联动
+
+### 核心变更概览
+1. **健康中心全模块数据表格可编辑（Edit）赋能**：
+   - **宝宝生长记录表 (`HealthPage.tsx`)**：在每行操作列引入 `Edit3` 按钮，基于 `health_record_update` 权限控制；点击后调用 `openCheckIn`，自动唤起一体化健康打卡弹窗并无缝回显宝宝身长、体重、头围及记录日期；
+   - **深度体重/BMI 历史记录表 (`BmiHistoryTable.tsx`)**：新增 `onEdit` 回调与操作列编辑按钮，点击可触发记录编辑；
+   - **血压/血糖体征历史记录表 (`VitalsHistoryTable.tsx`)**：新增 `onEdit` 回调与操作列编辑按钮，支持单条血压血糖记录快速进入编辑状态。
+2. **看板组件与页面层事件透传联动**：
+   - **`BmiAnalysisView.tsx`**：新增 `onEditRecord` 属性，将底层表格编辑事件无缝透传至顶层页面；
+   - **`VitalsAnalysisView.tsx`**：新增 `onEditRecord` 属性，将血压血糖表格编辑事件透传至顶层页面；
+   - **`HealthPage.tsx`**：新增 `handleEditBmiRecord` 与 `handleEditVitalsRecord` 处理函数，精准匹配已有主记录或无缝回显时序切片实体，智能推导阶段类型并携带 `focusModule` 唤起打卡弹窗，实现开箱即用的就地修改与保存刷新。
+3. **双端构建验证与单进程服务自愈**：
+   - 传统版与 Docker 版均通过 `python tools/build_frontend.py` 完整构建并更新静态资源（templates 与 static）；
+   - 传统版通过 `run.ps1 restart` 重启一体化单进程服务并验证就绪（PID: 24152，端口 5173）。
+
+---
+
 ## 2026-10-29 最新更新说明（v1.99 版本）：健康中心层次化控制台重构与全生命周期动态模板深度对齐
 
 ### 核心变更概览
