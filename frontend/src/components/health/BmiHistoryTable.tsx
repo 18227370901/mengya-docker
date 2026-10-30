@@ -351,7 +351,7 @@ export default function BmiHistoryTable({ records, loading, onDelete, onBatchDel
                       </tr>
                       {isExpanded && hasDetails && (
                         <tr className="border-b border-orange-100/60 bg-orange-50/30 dark:border-gray-800/80 dark:bg-gray-800/40">
-                          <td colSpan={(canDelete || (canEdit && !!onEdit)) ? 11 : 10} className="px-4 py-3">
+                          <td colSpan={(canDelete || (canEdit && !!onEdit)) ? 12 : 11} className="px-4 py-3">
                             <div className="space-y-2 rounded-xl border border-orange-100/80 bg-white p-3 shadow-2xs dark:border-gray-800 dark:bg-gray-900">
                               <div className="flex items-center gap-2 text-xs font-semibold text-gray-700 dark:text-gray-200">
                                 <FileText className="h-3.5 w-3.5 text-brand-500" />
