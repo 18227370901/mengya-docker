@@ -587,11 +587,30 @@ export default function HealthChartsBoard({
         backgroundColor: isDark ? "#1e293b" : "#ffffff",
         borderColor: axisLineColor,
         textStyle: { color: isDark ? "#f1f5f9" : "#1e293b" },
-        formatter: "{b}: {c} 次 ({d}%)",
+        formatter: (params: any) => {
+          if (!params || !params.data) return "";
+          return `<div style="font-size:12px;padding:2px;">
+            <div style="font-weight:bold;margin-bottom:4px;color:${isDark ? "#f1f5f9" : "#1e293b"};">${params.marker} ${params.name}</div>
+            <div style="display:flex;justify-content:space-between;gap:12px;color:${isDark ? "#cbd5e1" : "#475569"};">
+              <span>记录条数:</span>
+              <span style="font-weight:700;color:#f97316;">${params.value} 条</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;gap:12px;color:${isDark ? "#cbd5e1" : "#475569"};">
+              <span>构成占比:</span>
+              <span style="font-weight:700;">${params.percent}%</span>
+            </div>
+          </div>`;
+        },
       },
       legend: {
-        bottom: 0,
+        type: "scroll",
+        bottom: 4,
+        left: "center",
+        itemGap: 12,
+        itemWidth: 10,
+        itemHeight: 10,
         textStyle: { color: axisLabelColor, fontSize: 11 },
+        pageTextStyle: { color: axisLabelColor },
       },
       graphic: [
         {
@@ -608,9 +627,9 @@ export default function HealthChartsBoard({
         {
           type: "text",
           left: "center",
-          top: "49%",
+          top: "48%",
           style: {
-            text: "全期健康档案",
+            text: "健康档案",
             fontSize: 11,
             fill: axisLabelColor,
           },
@@ -620,21 +639,57 @@ export default function HealthChartsBoard({
         {
           name: "记录构成",
           type: "pie",
-          radius: ["42%", "68%"],
+          radius: ["36%", "56%"],
           center: ["50%", "45%"],
-          avoidLabelOverlap: false,
+          avoidLabelOverlap: true,
           itemStyle: {
             borderRadius: 6,
             borderColor: isDark ? "#1f2937" : "#fff",
             borderWidth: 2,
           },
-          label: { show: false },
+          label: {
+            show: true,
+            position: "outside",
+            formatter: (params: any) => {
+              if (params.name === "暂无记录") return params.name;
+              return `{name|${params.name}}\n{stat|${params.percent}% (${params.value}条)}`;
+            },
+            rich: {
+              name: {
+                fontSize: 11,
+                fontWeight: 600,
+                color: isDark ? "#e2e8f0" : "#334155",
+                lineHeight: 16,
+              },
+              stat: {
+                fontSize: 10,
+                color: isDark ? "#94a3b8" : "#64748b",
+                lineHeight: 14,
+              },
+            },
+            distanceToLabelLine: 4,
+          },
+          labelLine: {
+            show: true,
+            length: 12,
+            length2: 14,
+            smooth: true,
+            lineStyle: {
+              color: isDark ? "#475569" : "#cbd5e1",
+              width: 1,
+            },
+          },
+          labelLayout: {
+            hideOverlap: true,
+            moveOverlap: "shiftY",
+          },
           emphasis: {
+            scale: true,
+            scaleSize: 5,
             label: {
               show: true,
-              fontSize: 12,
+              fontSize: 11,
               fontWeight: "bold",
-              color: isDark ? "#f1f5f9" : "#1e293b",
             },
           },
           data: pieData.length > 0 ? pieData : [{ value: 1, name: "暂无记录", itemStyle: { color: "#cbd5e1" } }],

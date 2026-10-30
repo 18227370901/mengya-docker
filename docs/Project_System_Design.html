@@ -2559,6 +2559,19 @@ apps/core/                                    apps/core/
   </ul>
 </section>
 
+
+<section class="adr-card" id="adr-10-68">
+  <h2>10.68 ADR 10.68：生命体征编辑全链路贯通与记录类型饼图富文本防重叠设计规范 (v2.03)</h2>
+  <div class="adr-meta"><span class="badge">Version: v2.03</span><span class="badge">Date: 2026-10-30</span><span class="badge status-accepted">Accepted</span></div>
+  <h3>10.68.1 背景与业务痛点</h3>
+  <p>生命体征表编辑按钮无响应；饼图单调留白过大且缺乏引导标签。</p>
+  <h3>10.68.2 架构决策与设计规范</h3>
+  <ul>
+    <li><strong>生命体征编辑透传贯通</strong>：VitalsAnalysisView 解构并传递 <code>onEditRecord</code>，唤起打卡弹窗；</li>
+    <li><strong>饼图富文本与双重防重叠</strong>：启用外侧平滑引导折线与双行富文本说明，通过 <code>labelLayout.hideOverlap</code> 与 <code>shiftY</code> 绝不产生文字与扇区重叠。</li>
+  </ul>
+</section>
+
 </body>
 
 </html>

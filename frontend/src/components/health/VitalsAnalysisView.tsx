@@ -44,6 +44,7 @@ interface VitalsAnalysisViewProps {
 }
 
 export default function VitalsAnalysisView({
+  onEditRecord,
   refreshTrigger,
   onRecordChanged,
   stageType = "pregnancy",
@@ -412,6 +413,7 @@ export default function VitalsAnalysisView({
       <VitalsHistoryTable
         records={displayedTimeseries}
         loading={historyLoading}
+        onEdit={onEditRecord}
         onDelete={handleDelete}
         onBatchDelete={handleBatchDelete}
         onViewAi={handleViewAiFromRecord}
