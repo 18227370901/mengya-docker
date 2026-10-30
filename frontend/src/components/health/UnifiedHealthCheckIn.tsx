@@ -1514,51 +1514,53 @@ export default function UnifiedHealthCheckIn({
                 </div>
 
                 <div className="grid grid-cols-3 gap-3">
-                  <div>
-                    <label className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-                      <span>身长/身高 (cm)</span>
-                      <span className="text-[10px] text-gray-400">【至少填一项】</span>
+                  <div className="flex flex-col justify-between">
+                    <label className="flex min-h-[1.75rem] items-center justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
+                      <span>身长 (cm)</span>
+                      <span className="text-[10px] text-gray-400">【必填一项】</span>
                     </label>
                     <div>
                       <input
                         type="number"
                         step="0.1"
                         className="input"
-                        placeholder={babyHeight ? `已录入: ${babyHeight} cm` : "例如 75.0"}
+                        placeholder={babyHeight ? `已录: ${babyHeight}cm` : "例 75.0"}
                         value={babyHeight}
                         onChange={(e) => setBabyHeight(e.target.value)}
                       />
                     </div>
                   </div>
-                  <div>
-                    <label className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-                      <span>实测体重 (kg)</span>
-                      <span className="text-[10px] text-gray-400">【至少填一项】</span>
+                  <div className="flex flex-col justify-between">
+                    <label className="flex min-h-[1.75rem] items-center justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
+                      <span>体重 (kg)</span>
+                      <span className="text-[10px] text-gray-400">【必填一项】</span>
                     </label>
                     <div>
                       <input
                         type="number"
                         step="0.1"
                         className="input"
-                        placeholder={babyWeight ? `已录入: ${babyWeight} kg` : "例如 9.8"}
+                        placeholder={babyWeight ? `已录: ${babyWeight}kg` : "例 9.8"}
                         value={babyWeight}
                         onChange={(e) => setBabyWeight(e.target.value)}
                       />
                     </div>
                   </div>
-                  <div>
-                    <label className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
-                      <span>宝宝头围 (cm)</span>
-                      <span className="text-[10px] text-gray-400">【选填/至少填一项】</span>
+                  <div className="flex flex-col justify-between">
+                    <label className="flex min-h-[1.75rem] items-center justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
+                      <span>头围 (cm)</span>
+                      <span className="text-[10px] text-gray-400">【选填】</span>
                     </label>
-                    <input
-                      type="number"
-                      step="0.1"
-                      className="input"
-                      placeholder={babyHead ? `已录入: ${babyHead} cm` : "头围"}
-                      value={babyHead}
-                      onChange={(e) => setBabyHead(e.target.value)}
-                    />
+                    <div>
+                      <input
+                        type="number"
+                        step="0.1"
+                        className="input"
+                        placeholder={babyHead ? `已录: ${babyHead}cm` : "例 45.0"}
+                        value={babyHead}
+                        onChange={(e) => setBabyHead(e.target.value)}
+                      />
+                    </div>
                   </div>
                 </div>
                 {/* v1.57 宝宝数值软提示：仅警示不限制录入（用户可录入特殊医学场景数据） */}
@@ -1591,10 +1593,22 @@ export default function UnifiedHealthCheckIn({
             />
           </div>
 
+          {conflict && (
+            <div className="flex items-center justify-between gap-2 rounded-xl bg-amber-50 p-2.5 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300 border border-amber-200 dark:border-amber-900/50">
+              <span className="font-medium">⚠️ 检测到当日已存在记录，是否覆盖？</span>
+              <button
+                type="button"
+                onClick={handleOverwrite}
+                disabled={saving}
+                className="inline-flex items-center gap-1 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-700 disabled:opacity-60 cursor-pointer shadow-xs"
+              >
+                {saving && <Loader2 className="h-3 w-3 animate-spin" />}
+                确认覆盖当日记录
+              </button>
+            </div>
+          )}
+
           <div className="flex items-center justify-end gap-2 border-t border-gray-100 pt-4 dark:border-gray-700">
-            <button type="button" onClick={onClose} className="btn-secondary text-xs" disabled={saving}>
-              取消
-            </button>
             <button type="submit" className="btn-primary gap-1.5 text-xs shadow-md shadow-brand-500/20" disabled={saving}>
               {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
               保存打卡

@@ -363,6 +363,52 @@ export default function HealthPage() {
   };
 
   /** 打开健康打卡弹窗：记录类型与打卡宝宝根据当前子页面与激活宝宝自动联动匹配 */
+  const handleEditBmiRecord = (record: any) => {
+    const existing = records.find(r => r.id === record.id || (r.record_date === record.record_date && !r.baby));
+    let mode: "mom_pregnancy" | "mom_postpartum" | "mom_general" = "mom_general";
+    if (record.stage === "pregnancy" || record.gestational_week != null || (existing && existing.gestational_week != null)) {
+      mode = "mom_pregnancy";
+    } else if (record.stage === "postpartum" || (existing && existing.stage_type === "postpartum")) {
+      mode = "mom_postpartum";
+    }
+    const targetRec = existing || {
+      id: record.id,
+      record_date: record.record_date,
+      weight_kg: record.weight_kg,
+      height_cm: record.height_cm,
+      bmi: record.bmi,
+      gestational_week: record.gestational_week,
+      mom_systolic_bp: record.mom_systolic_bp,
+      mom_diastolic_bp: record.mom_diastolic_bp,
+      mom_blood_glucose: record.mom_blood_glucose,
+      baby: null,
+    };
+    openCheckIn(record.record_date, mode, null, targetRec as any, "bmi");
+  };
+
+  const handleEditVitalsRecord = (record: any) => {
+    const existing = records.find(r => r.id === record.id || (r.record_date === record.record_date && !r.baby));
+    let mode: "mom_pregnancy" | "mom_postpartum" | "mom_general" = "mom_general";
+    if (record.stage === "pregnancy" || record.gestational_week != null || (existing && existing.gestational_week != null)) {
+      mode = "mom_pregnancy";
+    } else if (record.stage === "postpartum" || (existing && existing.stage_type === "postpartum")) {
+      mode = "mom_postpartum";
+    }
+    const targetRec = existing || {
+      id: record.id,
+      record_date: record.record_date,
+      weight_kg: record.weight_kg,
+      height_cm: record.height_cm,
+      bmi: record.bmi,
+      gestational_week: record.gestational_week,
+      mom_systolic_bp: record.mom_systolic_bp,
+      mom_diastolic_bp: record.mom_diastolic_bp,
+      mom_blood_glucose: record.mom_blood_glucose,
+      baby: null,
+    };
+    openCheckIn(record.record_date, mode, null, targetRec as any, "vitals");
+  };
+
   const openCheckIn = (
     date?: string,
     targetMode?: "mom_pregnancy" | "mom_postpartum" | "mom_general" | "baby",
@@ -977,6 +1023,7 @@ export default function HealthPage() {
           {momSubTab === "bmi" ? (
             <BmiAnalysisView
               refreshTrigger={refreshTick}
+              onEditRecord={handleEditBmiRecord}
               onRecordChanged={load}
               externalAnalysisResult={latestAnalysisResult}
               stageType={bmiStageType}
@@ -991,6 +1038,7 @@ export default function HealthPage() {
           ) : (
             <VitalsAnalysisView
               refreshTrigger={refreshTick}
+              onEditRecord={handleEditVitalsRecord}
               onRecordChanged={load}
               stageType={bmiStageType}
               onStageTypeChange={(newSt) => setBmiStageType(newSt)}
@@ -1329,7 +1377,9 @@ export default function HealthPage() {
                       <th className="px-3 py-2 font-medium">身高 (cm)</th>
                       <th className="px-3 py-2 font-medium">体重 (kg)</th>
                       <th className="px-3 py-2 font-medium">头围 (cm)</th>
-                      <th className="px-3 py-2 font-medium">操作</th>
+                      <th className="px-3 py-2 font-medium">测量月龄</th>
+                      <th className="px-3 py-2 font-medium">备注备忘</th>
+                      <th className="px-3 py-2 font-medium text-right">操作</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1360,8 +1410,18 @@ export default function HealthPage() {
                         <td className="px-3 py-2 text-gray-600 dark:text-gray-400">{r.height ?? "—"}</td>
                         <td className="px-3 py-2 text-gray-600 dark:text-gray-400">{r.weight ?? "—"}</td>
                         <td className="px-3 py-2 text-gray-600 dark:text-gray-400">{r.head_circumference ?? "—"}</td>
-                        <td className="px-3 py-2">
-                          <div className="flex items-center gap-2">
+                        <td className="px-3 py-2 text-gray-600 dark:text-gray-400 text-xs">
+                          {formatBabyAgeAtRecord(r)}
+                        </td>
+                        <td className="px-3 py-2 text-gray-500 dark:text-gray-400 max-w-[160px] truncate" title={r.note || r.notes || ""}>
+                          {r.note || r.notes ? (
+                            <span className="text-xs">{r.note || r.notes}</span>
+                          ) : (
+                            <span className="text-gray-300 dark:text-gray-600">—</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <div className="flex items-center justify-end gap-2">
                             {hasPermission("health_record_update") && (
                               <button
                                 type="button"
