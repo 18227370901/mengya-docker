@@ -16,6 +16,11 @@ import {
   CheckSquare,
   Square,
   MinusSquare,
+  Filter,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  RotateCcw,
 } from "lucide-react";
 import { platformApi } from "@/api/platform";
 import { ThirdPartyPlatform } from "@/types/platform";
@@ -33,6 +38,57 @@ const PAGE_SIZE_OPTIONS: PageSizeOption[] = [
 ];
 
 const STORAGE_KEY = "mengya_platform_manage_page_size";
+
+export type SortField =
+  | "sort_order_asc"
+  | "sort_order_desc"
+  | "created_at_desc"
+  | "created_at_asc"
+  | "name_asc"
+  | "name_desc"
+  | "resources_desc";
+
+const SORT_OPTIONS: { value: SortField; label: string }[] = [
+  { value: "sort_order_asc", label: "权重升序 (默认)" },
+  { value: "sort_order_desc", label: "权重降序 (大到小)" },
+  { value: "created_at_desc", label: "创建时间 (最新优先)" },
+  { value: "created_at_asc", label: "创建时间 (最早优先)" },
+  { value: "name_asc", label: "名称升序 (A-Z)" },
+  { value: "name_desc", label: "名称降序 (Z-A)" },
+  { value: "resources_desc", label: "子资源数量最多" },
+];
+
+const CATEGORY_OPTIONS = [
+  { value: "", label: "全部分类" },
+  { value: "parenting", label: "育儿早教" },
+  { value: "health", label: "母婴健康" },
+  { value: "learning", label: "启蒙学习" },
+  { value: "tools", label: "实用工具" },
+  { value: "entertainment", label: "影音娱乐" },
+  { value: "other", label: "其他资源" },
+];
+
+const AGE_GROUP_OPTIONS = [
+  { value: "", label: "全部年龄段" },
+  { value: "prenatal", label: "孕产阶段" },
+  { value: "infant", label: "0-1岁婴儿" },
+  { value: "toddler", label: "1-3岁幼儿" },
+  { value: "preschool", label: "3-6岁学前" },
+  { value: "school_age", label: "6岁以上学龄" },
+];
+
+const STATUS_OPTIONS = [
+  { value: "", label: "全部状态" },
+  { value: "enabled", label: "仅已启用" },
+  { value: "disabled", label: "仅已停用" },
+];
+
+const VISIBILITY_OPTIONS = [
+  { value: "", label: "全部可见范围" },
+  { value: "all", label: "全员普通用户" },
+  { value: "restricted", label: "指定白名单" },
+];
+
 
 function TablePlatformLogo({ name, logoUrl }: { name: string; logoUrl?: string }) {
   const [failed, setFailed] = useState(false);
@@ -60,6 +116,13 @@ export default function PlatformManagePage() {
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
   const [keyword, setKeyword] = useState("");
+
+  // 常规快速筛选与排序状态
+  const [statusFilter, setStatusFilter] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [ageGroupFilter, setAgeGroupFilter] = useState("");
+  const [visibilityFilter, setVisibilityFilter] = useState("");
+  const [sortField, setSortField] = useState<SortField>("sort_order_asc");
 
   // 分页状态
   const [page, setPage] = useState(1);
@@ -116,17 +179,73 @@ export default function PlatformManagePage() {
     } catch {}
   };
 
-  // 客户端模糊搜索（不区分大小写：名称、描述、访问地址）
+  // 常规快速筛选与多维排序联动计算
   const filteredPlatforms = useMemo(() => {
+    let list = platforms;
+
+    if (statusFilter === "enabled") {
+      list = list.filter((p) => p.is_enabled);
+    } else if (statusFilter === "disabled") {
+      list = list.filter((p) => !p.is_enabled);
+    }
+
+    if (categoryFilter) {
+      list = list.filter((p) => p.category === categoryFilter);
+    }
+
+    if (ageGroupFilter) {
+      list = list.filter((p) => p.age_group === ageGroupFilter || p.age_group === "all");
+    }
+
+    if (visibilityFilter) {
+      list = list.filter((p) => p.visibility_type === visibilityFilter);
+    }
+
     const kw = keyword.trim().toLowerCase();
-    if (!kw) return platforms;
-    return platforms.filter(
-      (p) =>
-        (p.name || "").toLowerCase().includes(kw) ||
-        (p.description || "").toLowerCase().includes(kw) ||
-        (p.url || "").toLowerCase().includes(kw)
-    );
-  }, [platforms, keyword]);
+    if (kw) {
+      list = list.filter(
+        (p) =>
+          (p.name || "").toLowerCase().includes(kw) ||
+          (p.description || "").toLowerCase().includes(kw) ||
+          (p.url || "").toLowerCase().includes(kw)
+      );
+    }
+
+    return [...list].sort((a, b) => {
+      switch (sortField) {
+        case "sort_order_asc":
+          return (a.sort_order ?? 0) - (b.sort_order ?? 0) || a.id - b.id;
+        case "sort_order_desc":
+          return (b.sort_order ?? 0) - (a.sort_order ?? 0) || b.id - a.id;
+        case "created_at_desc":
+          return new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime();
+        case "created_at_asc":
+          return new Date(a.created_at || 0).getTime() - new Date(b.created_at || 0).getTime();
+        case "name_asc":
+          return (a.name || "").localeCompare(b.name || "", "zh-CN");
+        case "name_desc":
+          return (b.name || "").localeCompare(a.name || "", "zh-CN");
+        case "resources_desc":
+          return (b.resources?.length || 0) - (a.resources?.length || 0) || a.id - b.id;
+        default:
+          return 0;
+      }
+    });
+  }, [platforms, keyword, statusFilter, categoryFilter, ageGroupFilter, visibilityFilter, sortField]);
+
+  const hasActiveFilters = Boolean(
+    statusFilter || categoryFilter || ageGroupFilter || visibilityFilter || keyword.trim() || sortField !== "sort_order_asc"
+  );
+
+  const handleResetFilters = () => {
+    setStatusFilter("");
+    setCategoryFilter("");
+    setAgeGroupFilter("");
+    setVisibilityFilter("");
+    setKeyword("");
+    setSortField("sort_order_asc");
+    setPage(1);
+  };
 
   // 计算当前分页数据
   const total = filteredPlatforms.length;
@@ -273,30 +392,163 @@ export default function PlatformManagePage() {
         </div>
       </div>
 
-      {/* 搜索与工具栏 */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between rounded-xl bg-white p-3 shadow-sm border border-gray-100">
-        <div className="relative w-full max-w-md">
-          <input
-            type="text"
-            value={keyword}
+      {/* 快速筛选与多维排序工具栏 */}
+      <div className="rounded-2xl border border-gray-100 bg-white p-3.5 shadow-sm space-y-3">
+        {/* 第一行：搜索框 + 排序下拉 + 状态总数与重置 */}
+        <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
+          <div className="relative flex-1 max-w-md">
+            <input
+              type="text"
+              value={keyword}
+              onChange={(e) => {
+                setKeyword(e.target.value);
+                setPage(1);
+              }}
+              onKeyDown={(e) => e.key === "Enter" && loadPlatforms()}
+              placeholder="搜索平台名称、描述或访问地址..."
+              className="w-full rounded-xl border border-gray-200 py-2 pl-8 pr-8 text-xs focus:border-purple-500 focus:outline-none focus:ring-1 focus:ring-purple-200"
+            />
+            <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-gray-400" />
+            {keyword && (
+              <button
+                onClick={() => {
+                  setKeyword("");
+                  setPage(1);
+                }}
+                className="absolute right-2.5 top-2.5 text-gray-400 hover:text-gray-600"
+                title="清空搜索词"
+              >
+                <XCircle className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            {/* 多维排序下拉 */}
+            <div className="flex items-center gap-1.5 rounded-xl border border-gray-200 bg-gray-50/60 px-2 py-1 text-xs">
+              <ArrowUpDown className="h-3.5 w-3.5 text-gray-500" />
+              <select
+                value={sortField}
+                onChange={(e) => {
+                  setSortField(e.target.value as SortField);
+                  setPage(1);
+                }}
+                className="bg-transparent text-xs text-gray-700 outline-none cursor-pointer"
+                title="选择列表排序方式"
+              >
+                {SORT_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* 一键重置全部筛选与排序 */}
+            {hasActiveFilters && (
+              <button
+                onClick={handleResetFilters}
+                className="inline-flex items-center gap-1 rounded-xl bg-purple-50 px-2.5 py-1.5 text-xs font-medium text-purple-600 hover:bg-purple-100 transition"
+                title="重置所有筛选与排序条件"
+              >
+                <RotateCcw className="h-3 w-3" />
+                重置
+              </button>
+            )}
+
+            <button
+              onClick={loadPlatforms}
+              className="rounded-xl border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50 transition"
+            >
+              刷新
+            </button>
+          </div>
+        </div>
+
+        {/* 第二行：分类、年龄段、状态、可见性下拉快速筛选条 */}
+        <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-gray-100 text-xs">
+          <div className="flex items-center gap-1 text-gray-400 font-medium">
+            <Filter className="h-3 w-3" />
+            <span>筛选:</span>
+          </div>
+
+          {/* 状态筛选 */}
+          <select
+            value={statusFilter}
             onChange={(e) => {
-              setKeyword(e.target.value);
+              setStatusFilter(e.target.value);
               setPage(1);
             }}
-            onKeyDown={(e) => e.key === "Enter" && loadPlatforms()}
-            placeholder="搜索平台名称、描述或访问地址..."
-            className="w-full rounded-lg border border-gray-200 py-1.5 pl-8 pr-3 text-xs focus:border-purple-500 focus:outline-none"
-          />
-          <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-gray-400" />
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-400">共 {total} 个平台</span>
-          <button
-            onClick={loadPlatforms}
-            className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50 transition"
+            className={`rounded-lg border px-2 py-1 outline-none transition cursor-pointer text-xs ${
+              statusFilter ? "border-purple-400 bg-purple-50/50 text-purple-700 font-medium" : "border-gray-200 text-gray-600 bg-white"
+            }`}
           >
-            刷新
-          </button>
+            {STATUS_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+
+          {/* 分类筛选 */}
+          <select
+            value={categoryFilter}
+            onChange={(e) => {
+              setCategoryFilter(e.target.value);
+              setPage(1);
+            }}
+            className={`rounded-lg border px-2 py-1 outline-none transition cursor-pointer text-xs ${
+              categoryFilter ? "border-purple-400 bg-purple-50/50 text-purple-700 font-medium" : "border-gray-200 text-gray-600 bg-white"
+            }`}
+          >
+            {CATEGORY_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+
+          {/* 年龄段筛选 */}
+          <select
+            value={ageGroupFilter}
+            onChange={(e) => {
+              setAgeGroupFilter(e.target.value);
+              setPage(1);
+            }}
+            className={`rounded-lg border px-2 py-1 outline-none transition cursor-pointer text-xs ${
+              ageGroupFilter ? "border-purple-400 bg-purple-50/50 text-purple-700 font-medium" : "border-gray-200 text-gray-600 bg-white"
+            }`}
+          >
+            {AGE_GROUP_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+
+          {/* 可见性范围筛选 */}
+          <select
+            value={visibilityFilter}
+            onChange={(e) => {
+              setVisibilityFilter(e.target.value);
+              setPage(1);
+            }}
+            className={`rounded-lg border px-2 py-1 outline-none transition cursor-pointer text-xs ${
+              visibilityFilter ? "border-purple-400 bg-purple-50/50 text-purple-700 font-medium" : "border-gray-200 text-gray-600 bg-white"
+            }`}
+          >
+            {VISIBILITY_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+
+          {/* 结果统计标签 */}
+          <span className="ml-auto text-[11px] text-gray-400">
+            共 <strong className="text-gray-700">{total}</strong> 条匹配平台
+            {platforms.length !== total && ` (总计 ${platforms.length} 条)`}
+          </span>
         </div>
       </div>
 
@@ -375,7 +627,7 @@ export default function PlatformManagePage() {
         <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs text-gray-600">
-              <thead className="bg-gray-50/75 border-b border-gray-100 text-[11px] font-semibold text-gray-500">
+              <thead className="bg-gray-50/75 border-b border-gray-100 text-[11px] font-semibold text-gray-500 select-none">
                 <tr>
                   <th className="py-3 px-3 w-10 text-center">
                     <input
@@ -389,11 +641,63 @@ export default function PlatformManagePage() {
                       title={isCurrentPageAllSelected ? "取消全选当前页" : "全选当前页"}
                     />
                   </th>
-                  <th className="py-3 px-3">平台信息</th>
+                  <th
+                    className="py-3 px-3 cursor-pointer hover:text-purple-600 transition"
+                    onClick={() => {
+                      setSortField((prev) => (prev === "name_asc" ? "name_desc" : "name_asc"));
+                      setPage(1);
+                    }}
+                    title="点击按平台名称 (A-Z / Z-A) 快速排序"
+                  >
+                    <div className="flex items-center gap-1">
+                      <span>平台信息</span>
+                      {sortField === "name_asc" ? (
+                        <ArrowUp className="h-3 w-3 text-purple-600" />
+                      ) : sortField === "name_desc" ? (
+                        <ArrowDown className="h-3 w-3 text-purple-600" />
+                      ) : (
+                        <ArrowUpDown className="h-3 w-3 text-gray-300" />
+                      )}
+                    </div>
+                  </th>
                   <th className="py-3 px-3">分类与阶段</th>
                   <th className="py-3 px-3">可见性范围</th>
-                  <th className="py-3 px-3">子资源数</th>
-                  <th className="py-3 px-3">排序</th>
+                  <th
+                    className="py-3 px-3 cursor-pointer hover:text-purple-600 transition"
+                    onClick={() => {
+                      setSortField((prev) => (prev === "resources_desc" ? "sort_order_asc" : "resources_desc"));
+                      setPage(1);
+                    }}
+                    title="点击按子资源入口数量多到少排序"
+                  >
+                    <div className="flex items-center gap-1">
+                      <span>子资源数</span>
+                      {sortField === "resources_desc" ? (
+                        <ArrowDown className="h-3 w-3 text-purple-600" />
+                      ) : (
+                        <ArrowUpDown className="h-3 w-3 text-gray-300" />
+                      )}
+                    </div>
+                  </th>
+                  <th
+                    className="py-3 px-3 cursor-pointer hover:text-purple-600 transition"
+                    onClick={() => {
+                      setSortField((prev) => (prev === "sort_order_asc" ? "sort_order_desc" : "sort_order_asc"));
+                      setPage(1);
+                    }}
+                    title="点击切换排序权重升序/降序"
+                  >
+                    <div className="flex items-center gap-1">
+                      <span>排序</span>
+                      {sortField === "sort_order_asc" ? (
+                        <ArrowUp className="h-3 w-3 text-purple-600" />
+                      ) : sortField === "sort_order_desc" ? (
+                        <ArrowDown className="h-3 w-3 text-purple-600" />
+                      ) : (
+                        <ArrowUpDown className="h-3 w-3 text-gray-300" />
+                      )}
+                    </div>
+                  </th>
                   <th className="py-3 px-3">状态</th>
                   <th className="py-3 px-4 text-right">操作</th>
                 </tr>
