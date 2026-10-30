@@ -219,6 +219,7 @@ export default function BmiHistoryTable({ records, loading, onDelete, onBatchDel
                   <th className="px-3 py-2.5 font-semibold">腹围 (cm)</th>
                   <th className="px-3 py-2.5 font-semibold">增量 (Δ kg)</th>
                   <th className="px-3 py-2.5 font-semibold">达标状态</th>
+                  <th className="px-3 py-2.5 font-semibold max-w-[160px]">备注备忘</th>
                   <th className="w-16 px-2 py-2.5 text-center font-semibold">明细</th>
                   {(canDelete || (canEdit && !!onEdit)) && <th className="px-3 py-2.5 text-right font-semibold">操作</th>}
                 </tr>
@@ -301,6 +302,13 @@ export default function BmiHistoryTable({ records, loading, onDelete, onBatchDel
                         </td>
                         <td className="px-3 py-2.5">
                           <GainStatusBadge status={r.gain_status} />
+                        </td>
+                        <td className="px-3 py-2.5 text-gray-500 dark:text-gray-400 max-w-[160px] truncate" title={r.note || ""}>
+                          {r.note ? (
+                            <span className="text-xs">{r.note}</span>
+                          ) : (
+                            <span className="text-gray-300 dark:text-gray-600">—</span>
+                          )}
                         </td>
                         <td className="px-2 py-2.5 text-center">
                           {hasDetails ? (
