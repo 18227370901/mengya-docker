@@ -38,6 +38,7 @@ export default function BmiAnalysisView({
   refreshTrigger,
   onRecordChanged,
   externalAnalysisResult,
+  onEditRecord,
   stageType,
   onStageTypeChange,
   stageFilter = "all",
@@ -359,6 +360,7 @@ export default function BmiAnalysisView({
       <BmiHistoryTable
         records={displayedTimeseries}
         loading={historyLoading}
+        onEdit={onEditRecord}
         onDelete={handleDeleteRecord}
         onBatchDelete={handleBatchDeleteRecords}
         deletingId={deletingId}

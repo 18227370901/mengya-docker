@@ -220,7 +220,7 @@ export default function BmiHistoryTable({ records, loading, onDelete, onBatchDel
                   <th className="px-3 py-2.5 font-semibold">增量 (Δ kg)</th>
                   <th className="px-3 py-2.5 font-semibold">达标状态</th>
                   <th className="w-16 px-2 py-2.5 text-center font-semibold">明细</th>
-                  {canDelete && <th className="px-3 py-2.5 text-right font-semibold">操作</th>}
+                  {(canDelete || (canEdit && !!onEdit)) && <th className="px-3 py-2.5 text-right font-semibold">操作</th>}
                 </tr>
               </thead>
               <tbody>
@@ -317,7 +317,7 @@ export default function BmiHistoryTable({ records, loading, onDelete, onBatchDel
                             <span className="text-gray-300 dark:text-gray-600">—</span>
                           )}
                         </td>
-                        {canDelete && (
+                        {(canDelete || (canEdit && !!onEdit)) && (
                           <td className="px-3 py-2.5 text-right">
                             <div className="flex items-center justify-end gap-1">
                               {canEdit && onEdit && (
@@ -351,7 +351,7 @@ export default function BmiHistoryTable({ records, loading, onDelete, onBatchDel
                       </tr>
                       {isExpanded && hasDetails && (
                         <tr className="border-b border-orange-100/60 bg-orange-50/30 dark:border-gray-800/80 dark:bg-gray-800/40">
-                          <td colSpan={canDelete ? 11 : 10} className="px-4 py-3">
+                          <td colSpan={(canDelete || (canEdit && !!onEdit)) ? 11 : 10} className="px-4 py-3">
                             <div className="space-y-2 rounded-xl border border-orange-100/80 bg-white p-3 shadow-2xs dark:border-gray-800 dark:bg-gray-900">
                               <div className="flex items-center gap-2 text-xs font-semibold text-gray-700 dark:text-gray-200">
                                 <FileText className="h-3.5 w-3.5 text-brand-500" />

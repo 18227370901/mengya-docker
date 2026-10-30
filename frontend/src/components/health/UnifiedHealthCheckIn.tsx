@@ -104,6 +104,7 @@ export default function UnifiedHealthCheckIn({
   allRecords,
   initialFocusModule,
 }: UnifiedHealthCheckInProps) {
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const effectiveAllowedModes = useMemo(() => {
     if (allowedModes && allowedModes.length > 0) return allowedModes;
     return ['mom_pregnancy', 'mom_postpartum', 'mom_general', 'baby'] as CheckInMode[];
@@ -216,6 +217,12 @@ export default function UnifiedHealthCheckIn({
     momPayload?: BmiAnalysisInput;
     babyPayload?: Partial<HealthRecord>;
   }>(null);
+  // 当触发覆盖冲突提示时，自动平滑滚动到顶部，确保用户第一时间看见确认卡片
+  useEffect(() => {
+    if (conflict && scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, [conflict]);
 // todayStr managed above
 
   // 打开/关闭/切换关键维度时重置冲突覆盖态，确保绝不无故预先展示覆盖确认框
@@ -762,7 +769,7 @@ export default function UnifiedHealthCheckIn({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
-      <div className="relative max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl transition-all dark:bg-gray-800 dark:text-gray-100">
+      <div ref={scrollContainerRef} className="relative max-h-[90vh] w-full max-w-xl overflow-y-auto rounded-2xl bg-white p-6 shadow-2xl transition-all dark:bg-gray-800 dark:text-gray-100">
         <button
           onClick={onClose}
           className="absolute right-4 top-4 rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 dark:hover:bg-gray-700 dark:hover:text-gray-200"

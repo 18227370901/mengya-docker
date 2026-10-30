@@ -565,6 +565,27 @@ export default function HealthPage() {
     return growthRecords.filter((r) => !r.baby || r.baby === currentBaby.id);
   }, [growthRecords, currentBaby]);
 
+  const formatBabyAgeAtRecord = (r: HealthRecord): string => {
+    let days = r.baby_age_days;
+    if (days == null && currentBaby?.birthday && r.record_date) {
+      const diff = new Date(r.record_date).getTime() - new Date(currentBaby.birthday).getTime();
+      if (diff >= 0) {
+        days = Math.floor(diff / 86400000);
+      }
+    }
+    if (days == null || days < 0) return "—";
+    if (days === 0) return "出生当天";
+    if (days < 30) return `${days}天`;
+    const months = Math.floor(days / 30.44);
+    const remainDays = Math.floor(days % 30.44);
+    if (months < 12) {
+      return remainDays > 0 ? `${months}月${remainDays}天` : `${months}个月`;
+    }
+    const years = Math.floor(months / 12);
+    const remM = months % 12;
+    return remM > 0 ? `${years}岁${remM}月` : `${years}岁`;
+  };
+
   const getBabyRecordMonthAge = (r: HealthRecord): number | null => {
     if (r.baby_age_days != null && r.baby_age_days >= 0) {
       return r.baby_age_days / 30.44;
@@ -1270,13 +1291,11 @@ export default function HealthPage() {
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-gray-100 pb-2 dark:border-gray-800">
                 <div className="flex items-center gap-2">
                   <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-100">
-                    【{currentBaby?.name || "宝宝"}】历史测量记录 ({currentBabyGrowthRecords.length})
+                    【{currentBaby?.name || "宝宝"}】历史测量记录
                   </h3>
-                  {currentBaby && (
-                    <span className="rounded-md bg-orange-100/80 px-2 py-0.5 text-xs font-medium text-orange-700 dark:bg-orange-950 dark:text-orange-300">
-                      专属档案：{currentBaby.name}
-                    </span>
-                  )}
+                  <span className="rounded-md bg-orange-100/80 px-2 py-0.5 text-xs font-medium text-orange-700 dark:bg-orange-950 dark:text-orange-300">
+                    共 {currentBabyGrowthRecords.length} 次测量
+                  </span>
                   {hasPermission("health_record_delete") && (
                     <label className="flex cursor-pointer items-center gap-1.5 text-[11px] text-gray-400">
                       <input

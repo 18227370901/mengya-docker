@@ -2532,6 +2532,20 @@ apps/core/                                    apps/core/
   </ul>
 </section>
 
+
+<section class="adr-card" id="adr-10-66">
+  <h2>10.66 ADR 10.66：健康中心全模块表格展示完备度治理、打卡排版水平对齐与覆盖视口自动定位规范 (v2.01)</h2>
+  <div class="adr-meta"><span class="badge">Version: v2.01</span><span class="badge">Date: 2026-10-30</span><span class="badge status-accepted">Accepted</span></div>
+  <h3>10.66.1 背景与业务痛点</h3>
+  <p>妈妈历史BMI表参数透传缺失致编辑隐藏；宝宝测量表漏显月龄与备忘；头围输入框排版高低错位；覆盖提示弹窗滚动条未自愈。</p>
+  <h3>10.66.2 架构决策与设计规范</h3>
+  <ul>
+    <li><strong>表格透传与权限完备</strong>：解构并向底部历史明细传递 <code>onEditRecord</code>，完善操作列权限渲染；</li>
+    <li><strong>成长记录全指标展示</strong>：消除抬头硬编码括号，列表补全测量月龄与备注备忘；</li>
+    <li><strong>栅格水平对齐与双重视口自愈</strong>：统一测量输入框水平基准线；冲突时自动置顶滚动并提供底部快捷覆盖条。</li>
+  </ul>
+</section>
+
 </body>
 
 </html>
