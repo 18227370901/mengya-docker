@@ -393,7 +393,7 @@ export default function BmiTimeSeriesBoard({ records, loading }: BmiTimeSeriesBo
               return `<b>${rec.record_date}${rec.gestational_week ? ` · ${gestationLabel(rec.gestational_week, rec.gestational_days)}` : rec.stage === "postpartum" ? " · 产后" : ""}</b><br/>较上次变化：<b>${val > 0 ? "+" : ""}${val} kg</b><br/>${verdict}`;
             },
           },
-          grid: { top: 30, right: 40, bottom: 45, left: 45 },
+          grid: { top: 30, right: 85, bottom: 45, left: 45 },
           xAxis: {
             type: "category",
             data: deltaLabels,
@@ -416,7 +416,7 @@ export default function BmiTimeSeriesBoard({ records, loading }: BmiTimeSeriesBo
               markLine: {
                 symbol: "none",
                 data: [
-                  { yAxis: 0.9, lineStyle: { color: "#ef4444", type: "dashed" }, label: { formatter: "超标阈值 0.9kg", color: "#ef4444", fontSize: 10 } },
+                  { yAxis: 0.9, lineStyle: { color: "#ef4444", type: "dashed" }, label: { formatter: "超标阈值 0.9kg", position: "insideEndTop", distance: 4, color: "#ef4444", fontSize: 10, fontWeight: "bold" } },
                   { yAxis: 0, lineStyle: { color: axisLabelColor } },
                 ],
               },

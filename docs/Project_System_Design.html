@@ -2585,6 +2585,20 @@ apps/core/                                    apps/core/
   </ul>
 </section>
 
+
+<section class="adr-card" id="adr-10-70">
+  <h2>10.70 ADR 10.70：增量时序看板边距自愈、长文本智能摘要悬停展开与重启全员强制下线规范 (v2.05)</h2>
+  <div class="adr-meta"><span class="badge">Version: v2.05</span><span class="badge">Date: 2026-10-30</span><span class="badge status-accepted">Accepted</span></div>
+  <h3>10.70.1 背景与业务痛点</h3>
+  <p>增量阈值文字切边；长备注需繁琐展开详情；run.ps1 缺失重启注销 Token 流程。</p>
+  <h3>10.70.2 架构决策与设计规范</h3>
+  <ul>
+    <li><strong>图表边距自愈与标签定位</strong>：right 边距提升至 85px，解决切边；</li>
+    <li><strong>长备注智能悬停展开</strong>：<code>line-clamp-2</code> 与 <code>hover:line-clamp-none</code> 极速预览；</li>
+    <li><strong>运维脚本全平台对齐</strong>：<code>run.ps1</code> 重启强制调用 <code>invalidate_tokens</code>，保障安全。</li>
+  </ul>
+</section>
+
 </body>
 
 </html>
