@@ -28,6 +28,10 @@
    - 深度集成 `FavoriteButton` 响应式红心收藏与「我的收藏中心」统一聚合管理；
    - 研发可视化用户穿梭选择器 `UserSelectPicker.tsx`（单选/多选/全选/反选/清空/搜索），取代手动手敲 ID；
    - 移除个人中心重复冗余的中转站卡片，优化页面导航动线。
+6. **智能字符编码嗅探与防爬自愈提取**：
+   - **智能字符编码嗅探**：实现多级编码嗅探函数 detect_html_encoding，优先匹配 HTML 前 4KB 的 <meta charset> 与 <meta http-equiv> 声明，次选 Header 显式编码，再试探 UTF-8 与 GB18030 无损解码，杜绝 requests 默认 ISO-8859-1 解码导致的中文乱码（如 bigjpgcn.com 等站点）；
+   - **防爬与 WAF 挑战自愈**：针对 Cloudflare 403 挑战页（如 Just a moment...）或反爬站点（如 Pixabay、Pexels 等），捕获非 200 响应并激活域名推导（infer_name_from_domain）与根路径 /favicon.ico 兜底补全，保证配置回填高可用。
+
 5. **双端构建验证与自动化安全测试**：
    - 前端通过 `tools/build_frontend.py` 完成生产构建与静态同步；
    - 自动化越权访问（BOLA/IDOR）、SSRF 穿透测试全部 100% 通过；

@@ -14,6 +14,7 @@ import socket
 import urllib.parse
 from html.parser import HTMLParser
 import requests
+import re
 
 
 # 默认限制
@@ -183,6 +184,42 @@ class MetaHTMLParser(HTMLParser):
 
 
 
+
+def detect_html_encoding(content_bytes: bytes, response_encoding: str = None) -> str:
+    sample = bytes(content_bytes[:4096])
+    charset_match = re.search(rb'<meta[^>]+charset=[\x22\x27]?([a-zA-Z0-9_\-]+)', sample, re.IGNORECASE)
+    if charset_match:
+        declared = charset_match.group(1).decode("ascii", errors="ignore").lower().strip()
+        if declared in ("gb2312", "gbk", "gb18030"):
+            return "gb18030"
+        if declared in ("utf-8", "utf8"):
+            return "utf-8"
+        if declared in ("big5", "shift_jis", "euc-jp", "iso-8859-1", "windows-1252"):
+            return declared
+    http_equiv_match = re.search(rb'content=[\x22\x27][^\x22\x27]*charset=([a-zA-Z0-9_\-]+)', sample, re.IGNORECASE)
+    if http_equiv_match:
+        declared = http_equiv_match.group(1).decode("ascii", errors="ignore").lower().strip()
+        if declared in ("gb2312", "gbk", "gb18030"):
+            return "gb18030"
+        if declared in ("utf-8", "utf8"):
+            return "utf-8"
+        if declared:
+            return declared
+    if response_encoding and response_encoding.lower() not in ("iso-8859-1", "ascii"):
+        return response_encoding
+    try:
+        content_bytes.decode("utf-8")
+        return "utf-8"
+    except UnicodeDecodeError:
+        pass
+    try:
+        content_bytes.decode("gb18030")
+        return "gb18030"
+    except UnicodeDecodeError:
+        pass
+    return "utf-8"
+
+
 def infer_name_from_domain(url: str) -> str:
     """从 URL 主机名智能派生平台名称"""
     try:
@@ -329,7 +366,7 @@ def fetch_platform_metadata(url: str) -> dict:
                     break
 
         # 编码检测与解码
-        encoding = response.encoding or "utf-8"
+        encoding = detect_html_encoding(content_bytes, response.encoding)
         try:
             html_text = content_bytes.decode(encoding, errors="replace")
         except Exception:

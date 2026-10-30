@@ -2468,7 +2468,8 @@ apps/core/                                    apps/core/
     <li><strong>三方平台与多入口分层聚合模型</strong>：引入 <code>ThirdPartyPlatform</code> 与 <code>ThirdPartyPlatformResource</code> 结构，覆盖分类、年龄段、排序与多级授权；</li>
     <li><strong>SSRF 零信任防护爬虫</strong>：多重拦截内网、回环、保留及云厂商元数据（169.254.169.254）地址，受控重定向与流式防 OOM；</li>
     <li><strong>全局权限树与容灾备份深度联动</strong>：纳入 <code>menu_third_party_hub</code>、<code>menu_admin_platforms</code> 权限管控与 <code>CORE_BACKUP_MODELS</code> 容灾拓扑。</li>
-  </ul>
+      <li><strong>智能字符编码嗅探与防爬自愈</strong>：多级编码嗅探（<code>detect_html_encoding</code>）彻底杜绝 requests 默认 ISO-8859-1 中文乱码（如 bigjpgcn.com）；WAF/反爬拦截捕获与域名智能推导自愈保障配置回填高可用。</li>
+</ul>
 </section>
 
 </body>

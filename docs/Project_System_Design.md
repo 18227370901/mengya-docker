@@ -2568,6 +2568,8 @@ flowchart TD
    - **循环受控重定向**：最多允许 2 跳重定向，每一跳重定向目标强制重新执行完整 SSRF 检查；
    - **防 OOM 与内容过滤**：校验 `Content-Type` 需为网页类型，流式读取响应体并强制截断于 512KB；
    - **标准库 HTML 解析与相对路径修正**：采用 Python 标准库 `html.parser.HTMLParser` 解析 `<title>`、`og:title`、`description`、`favicon` / `apple-touch-icon`，使用 `urllib.parse.urljoin()` 自动转为合法绝对 URL。
+   - **智能字符编码嗅探与乱码自愈**：实现多级智能编码嗅探函数 detect_html_encoding，优先扫描 HTML 前 4KB 的 <meta charset> 与 <meta http-equiv> 声明，次选 Header 显式声明，再试探 UTF-8 与 GB18030 无损解码，彻底根治 requests 默认 ISO-8859-1 解码导致网页中文变成乱码（Mojibake，如 bigjpgcn.com 等站点）的缺陷；
+   - **防爬防护与 WAF 挑战自愈提取**：对于 Cloudflare 403 挑战页（如 Just a moment...）或反爬拦截站点（如 Pixabay、Pexels 等），捕获非 200 响应并降级激活域名推导机制（infer_name_from_domain）与根路径 /favicon.ico 补全，确保前端一键配置体验优雅顺畅，永不因反爬拦截抛出中断异常。
 3. **系统联动与权限一致性准则**：
    - **权限字典树**：在 `apps/core/utils/permissions.py` 中挂载 `menu_third_party_hub`（中转站前台，普通用户默认关闭）、`menu_admin_platforms`（管理菜单，默认管理员可见）与 `platform_manage_edit`（增删改权限）；未授权用户默认不可见；获权普通用户仅具备只读查看权限，增删改接口层强制 403 拦截；
    - **WebDAV 容灾备份**：在 `CORE_BACKUP_MODELS` 全量挂载 `ThirdPartyPlatform` 与 `ThirdPartyPlatformResource`，保证全量快照与一键回退覆盖；
