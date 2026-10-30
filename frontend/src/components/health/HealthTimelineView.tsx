@@ -141,8 +141,9 @@ export default function HealthTimelineView({
 
   return (
     <div className="space-y-5">
-      {/* 顶部宏观统计卡片栏 */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      {/* 顶部宏观统计卡片栏（在 charts 图表模式下自动移入看板下方统合展示，避免重复与页面过长） */}
+      {viewMode !== "charts" && (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <div className="card space-y-1 p-4">
           <span className="text-xs text-gray-400">健康档案总数</span>
           <div className="flex items-baseline gap-1.5">
@@ -181,6 +182,7 @@ export default function HealthTimelineView({
           <p className="text-[11px] text-gray-400">计划免疫与防病接种</p>
         </div>
       </div>
+      )}
 
       {/* 控制工具条：标题 + 视图模式切换器 */}
       <div className="card flex flex-wrap items-center justify-between gap-3 p-4">

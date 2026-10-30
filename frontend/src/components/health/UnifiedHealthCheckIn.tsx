@@ -1139,16 +1139,16 @@ export default function UnifiedHealthCheckIn({
                   <>
                     {/* BMI 模式：核心录入体重与身高 */}
                     <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                      <div>
-                        <label className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
+                      <div className="flex flex-col justify-between">
+                        <label className="flex min-h-[1.75rem] items-center justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
                           <span className="flex items-center gap-1">
                             <span>身高 (cm)</span>
                             {!initialHeight && !height ? <span className="font-bold text-red-500">*</span> : null}
                           </span>
                           {height || initialHeight ? (
-                            <span className="text-[10px] text-emerald-600 dark:text-emerald-400">【已带入历史值】</span>
+                            <span className="text-[10px] text-emerald-600 dark:text-emerald-400">【已带入】</span>
                           ) : (
-                            <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400">【首次必填·之后自动继承】</span>
+                            <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400">【首次必填】</span>
                           )}
                         </label>
                         <div>
@@ -1165,12 +1165,14 @@ export default function UnifiedHealthCheckIn({
                           />
                         </div>
                       </div>
-                      <div>
-                        <label className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
-                          <span>本次实测体重 (kg)</span>
-                          <span className="text-red-500 font-bold">*</span>
+                      <div className="flex flex-col justify-between">
+                        <label className="flex min-h-[1.75rem] items-center justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
+                          <span className="flex items-center gap-1">
+                            <span>实测体重 (kg)</span>
+                            <span className="text-red-500 font-bold">*</span>
+                          </span>
                           <span className="rounded-full bg-rose-50 px-1.5 py-0.2 text-[10px] font-bold text-rose-600 dark:bg-rose-950/40 dark:text-rose-400">
-                            【核心必填项】
+                            【必填项】
                           </span>
                         </label>
                         <div>
@@ -1187,23 +1189,25 @@ export default function UnifiedHealthCheckIn({
                           />
                         </div>
                       </div>
-                      <div>
-                        <label className="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400">
+                      <div className="flex flex-col justify-between">
+                        <label className="flex min-h-[1.75rem] items-center justify-between text-xs text-gray-500 dark:text-gray-400 mb-1">
                           <span>腹围 (cm)</span>
                           <span className="rounded-full bg-gray-100 px-1.5 py-0.2 text-[10px] font-medium text-gray-500 dark:bg-gray-700 dark:text-gray-400">
                             【选填项】
                           </span>
                         </label>
-                        <input
-                          type="number"
-                          step="0.1"
-                          min={30}
-                          max={200}
-                          className="input"
-                          placeholder="例如 86.0"
-                          value={waist}
-                          onChange={(e) => setWaist(e.target.value)}
-                        />
+                        <div>
+                          <input
+                            type="number"
+                            step="0.1"
+                            min={30}
+                            max={200}
+                            className="input"
+                            placeholder="例如 86.0"
+                            value={waist}
+                            onChange={(e) => setWaist(e.target.value)}
+                          />
+                        </div>
                       </div>
                     </div>
 

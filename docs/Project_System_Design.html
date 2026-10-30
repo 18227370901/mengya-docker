@@ -2546,6 +2546,19 @@ apps/core/                                    apps/core/
   </ul>
 </section>
 
+
+<section class="adr-card" id="adr-10-67">
+  <h2>10.67 ADR 10.67：健康中心全表单水平线物理级对齐与图表统计看板去重聚焦规范 (v2.02)</h2>
+  <div class="adr-meta"><span class="badge">Version: v2.02</span><span class="badge">Date: 2026-10-30</span><span class="badge status-accepted">Accepted</span></div>
+  <h3>10.67.1 背景与业务痛点</h3>
+  <p>妈妈打卡表单在多列布局下基准线高低错位；时间轴图表看板上下存在重复统计卡片致使页面过长。</p>
+  <h3>10.67.2 架构决策与设计规范</h3>
+  <ul>
+    <li><strong>输入框网格物理齐平</strong>：统一 flex 容器与 label 最小高度，保证所有并排输入框水平线绝对对齐；</li>
+    <li><strong>图表看板去重与无损统合</strong>：图表视图自动隐去顶部统计卡片，并将全部业务维度统合于下方看板，零信息遗漏。</li>
+  </ul>
+</section>
+
 </body>
 
 </html>
