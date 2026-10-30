@@ -17,6 +17,7 @@ DEFAULT_USER_PERMISSIONS = {
     "menu_favorites": True,         # 我的收藏（菜单入口）
     "menu_notifications": True,     # 消息通知
     "menu_weather": True,           # 天气预报 / 万年历
+    "menu_third_party_hub": False,  # 三方中转站（聚合工具箱前台，默认普通用户不可见，授权后可见）
 
     # v1.88.1 我的收藏中心功能（CRUD）：从商品组独立，统一管控全部类型收藏
     "favorite_view": True,          # 查：查看收藏中心（分类/搜索/分页）
@@ -105,6 +106,9 @@ DEFAULT_USER_PERMISSIONS = {
     "menu_admin_audit_logs": False,         # 审计安全日志菜单
     "audit_log_view": False,                # 查阅全平台安全审计流水
     "audit_log_clean": False,               # 清理历史审计日志
+
+    "menu_admin_platforms": False,          # 三方平台接入管理菜单（仅管理员默认可见）
+    "platform_manage_edit": False,          # 平台与子资源增删改与一键抓取配置（需管理员身份）
 }
 
 # 父子关联映射表：子权限 key -> 其直接父权限 key（支持多级继承联动）
@@ -141,6 +145,9 @@ PERMISSION_PARENT_MAP = {
     "ai_session_rename": "menu_ai_assistant",
     "ai_session_delete": "menu_ai_assistant",
     "ai_fetch_models": "menu_ai_assistant",
+
+    # 三方平台模块：menu_admin_platforms -> platform_manage_edit
+    "platform_manage_edit": "menu_admin_platforms",
 }
 
 # 衍生直接子节点表：父权限 key -> [子权限 key, ...]
@@ -207,6 +214,7 @@ PERMISSION_DEFINITIONS = [
             {"key": "menu_encyclopedia", "name": "幼儿百科", "desc": "幼儿身体与认知趣味科普", "parent_key": None},
             {"key": "menu_notifications", "name": "消息通知", "desc": "系统提醒与关怀通知中心", "parent_key": None},
             {"key": "menu_weather", "name": "天气预报/万年历", "desc": "实时天气、15天预报、空气质量与黄历班休", "parent_key": None},
+            {"key": "menu_third_party_hub", "name": "三方中转站", "desc": "聚合三方精选网站与工具箱导航", "parent_key": None},
         ],
     },
     {
@@ -365,6 +373,15 @@ PERMISSION_DEFINITIONS = [
             {"key": "user_manage_edit", "name": "编辑用户资料 (改)", "desc": "修改用户昵称、角色及密码重置", "parent_key": "menu_admin_users"},
             {"key": "user_manage_freeze", "name": "冻结/解冻账号 (改)", "desc": "冻结违规账号或解冻受限用户", "parent_key": "menu_admin_users"},
             {"key": "permission_manage", "name": "权限管控与风控 (高危)", "desc": "定制单用户权限、保存全局权限模板与调整风控熔断阈值", "parent_key": "menu_admin_users"},
+        ],
+    },
+    {
+        "group_key": "admin_platforms",
+        "group_name": "三方平台接入管理",
+        "description": "三方网站中转站、子资源入口管理与一键抓取（仅管理员，普通用户即使赋权配置菜单也仅只读访问）",
+        "permissions": [
+            {"key": "menu_admin_platforms", "name": "三方平台接入管理菜单", "desc": "进入三方平台接入与中转配置管理页面", "parent_key": None},
+            {"key": "platform_manage_edit", "name": "平台与资源编辑 (增/改/删)", "desc": "新增平台、修改配置、维护子资源入口及一键抓取解析", "parent_key": "menu_admin_platforms"},
         ],
     },
     {

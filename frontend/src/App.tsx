@@ -118,6 +118,8 @@ import AuditLogPage from "./pages/AuditLogPage";
 import DailyTipsManagePage from "./pages/DailyTipsManagePage";
 import AdminServiceConfigPage from "./pages/AdminServiceConfigPage";
 import AdminBackupPage from "./pages/AdminBackupPage";
+import ThirdPartyHubPage from "./pages/ThirdPartyHubPage";
+import PlatformManagePage from "./pages/PlatformManagePage";
 import KnowledgeAdminPage from "./pages/KnowledgeAdminPage";
 import BrandListPage from "./pages/BrandListPage";
 import BrandDetailPage from "./pages/BrandDetailPage";
@@ -182,6 +184,8 @@ export default function App() {
         />
         <Route path="/admin/service-config" element={<AdminGuard perm="menu_admin_service_config"><AdminServiceConfigPage /></AdminGuard>} />
         <Route path="/admin/backups" element={<AdminGuard perm="menu_admin_backups"><AdminBackupPage /></AdminGuard>} />
+          <Route path="/admin/platforms" element={<AdminGuard perm="menu_admin_platforms"><PlatformManagePage /></AdminGuard>} />
+          <Route path="/platforms" element={<PermissionGuard perm="menu_third_party_hub" label="三方中转站"><ThirdPartyHubPage /></PermissionGuard>} />
         <Route path="/brands" element={<BrandListPage />} />
         <Route path="/brands/:id" element={<BrandDetailPage />} />
         <Route path="/fetal-stories" element={<PermissionGuard perm="menu_fetal_stories" label="胎教故事"><FetalStoryPage /></PermissionGuard>} />

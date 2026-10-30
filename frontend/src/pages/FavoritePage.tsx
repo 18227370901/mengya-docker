@@ -10,6 +10,7 @@ import {
   BookOpen,
   Check,
   ChefHat,
+  Compass,
   ExternalLink,
   Heart,
   ListChecks,
@@ -36,6 +37,7 @@ const TYPE_ORDER: { key: string; label: string; icon: typeof Heart; color: strin
   { key: "encyclopedia", label: "幼儿百科", icon: MessageCircleQuestion, color: "bg-violet-50 text-violet-500", link: () => `/kids-encyclopedia` },
   { key: "shopping_list", label: "清单", icon: ShoppingBag, color: "bg-green-50 text-green-500", link: (id) => `/shopping-list/${id}` },
   { key: "comparison", label: "对比", icon: ListChecks, color: "bg-amber-50 text-amber-500", link: () => `/compare` },
+  { key: "platform", label: "三方中转", icon: Compass, color: "bg-purple-50 text-purple-600", link: () => `/platforms` },
 ];
 
 const TYPE_META: Record<string, (typeof TYPE_ORDER)[number]> = Object.fromEntries(

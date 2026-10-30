@@ -542,7 +542,7 @@ class FavoriteSerializer(serializers.ModelSerializer):
         """v1.88.1 收藏类型中文名（收藏中心分类 Tab 用）"""
         labels = {
             "product": "商品", "timeline": "孕育知识", "shopping_list": "清单",
-            "comparison": "对比", "fetal_story": "胎教故事", "recipe": "孕期食谱", "encyclopedia": "幼儿百科",
+            "comparison": "对比", "fetal_story": "胎教故事", "recipe": "孕期食谱", "encyclopedia": "幼儿百科", "platform": "三方中转",
         }
         return labels.get(obj.favorite_type, obj.favorite_type)
 
@@ -568,6 +568,10 @@ class FavoriteSerializer(serializers.ModelSerializer):
                 from apps.core.models.shopping import ShoppingList
                 sl = ShoppingList.objects.filter(id=obj.object_id).first()
                 return sl.name if sl else ""
+            if obj.favorite_type == "platform":
+                from apps.core.models.platform import ThirdPartyPlatform
+                pl = ThirdPartyPlatform.objects.filter(id=obj.object_id, is_active=True).first()
+                return pl.name if pl else ""
         except Exception:
             pass
         return ""
@@ -590,6 +594,10 @@ class FavoriteSerializer(serializers.ModelSerializer):
             if obj.favorite_type == "encyclopedia":
                 e = KidsEncyclopedia.objects.filter(id=obj.object_id).first()
                 return (e.cover_image if e else "") or ""
+            if obj.favorite_type == "platform":
+                from apps.core.models.platform import ThirdPartyPlatform
+                pl = ThirdPartyPlatform.objects.filter(id=obj.object_id, is_active=True).first()
+                return (pl.logo_url if pl else "") or ""
         except Exception:
             pass
         return ""
@@ -609,6 +617,9 @@ class FavoriteSerializer(serializers.ModelSerializer):
         if obj.favorite_type == "shopping_list":
             from apps.core.models.shopping import ShoppingList
             return ShoppingList.objects.filter(id=obj.object_id).exists()
+        if obj.favorite_type == "platform":
+            from apps.core.models.platform import ThirdPartyPlatform
+            return ThirdPartyPlatform.objects.filter(id=obj.object_id, is_active=True).exists()
         # comparison 对比类无固定对象，默认有效
         return True
 

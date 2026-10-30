@@ -19,7 +19,8 @@ export type FavoriteType =
   | "recipe"
   | "encyclopedia"
   | "shopping_list"
-  | "comparison";
+  | "comparison"
+  | "platform";
 
 interface FavoriteButtonProps {
   /** 收藏对象 ID */

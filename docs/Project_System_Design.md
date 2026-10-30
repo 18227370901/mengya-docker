@@ -2548,3 +2548,35 @@ flowchart TD
    - 表格长文本列采用 line-clamp-2 弹性摘要，结合 hover:line-clamp-none 悬浮全量就地展开，极大提升表格快速回溯体验。
 3. **全平台运维脚本安全一致性准则**：
    - run.ps1 与 run.sh/env.sh 保持绝对一致的启动步骤，在数据库迁移与确保管理员后，强制执行 invalidate_tokens，杜绝服务重启后旧 Token 幽灵存活。
+
+## 10.71 ADR 10.71：三方平台接入中转站架构、SSRF 零信任安全防护与资源级细粒度权限管控规范 (v2.06)
+
+### 10.71.1 背景与业务痛点
+1. **外部优质资源分散**：育儿、母婴健康、早期启蒙等工具平台散落，缺乏统一聚合入口与工具箱；
+2. **服务端请求伪造（SSRF）高危隐患**：一键获取外部平台元数据若未进行严格校验，可能导致攻击者利用服务器发起内网嗅探、云厂商元数据服务（169.254.169.254）窃密及回环端口攻击；
+3. **权限体系割裂与越权风险**：外部平台可能包含特定深层路径或敏感管理页面，若仅停留在外链展示，无法做到细粒度的用户授权与行为追溯；
+4. **灾备断层**：新增业务配置表若未接入统一 WebDAV 拓扑备份，灾难恢复时会导致关键外部平台配置丢失。
+
+### 10.71.2 架构决策与设计规范
+1. **三方平台与二级子资源分层模型规范**：
+   - 主平台表 `ThirdPartyPlatform` 统管网站基本信息、分类（parenting/health/learning/tools/entertainment/other）、适用年龄段（prenatal/infant/toddler/preschool/school_age/all）、可见性范围模式（all/restricted）及白名单用户列表；
+   - 子资源表 `ThirdPartyPlatformResource` 聚合该平台下的细分入口，支持子路径与独立 URL、专属图标、排序及资源级访问规则（inherit/restricted）；
+   - 严格继承 `BaseModel` 并引入 `is_active` 软删除机制，删除主平台时级联软删除旗下所有子资源。
+2. **SSRF 零信任安全爬虫规范 (`platform_meta_service.py`)**：
+   - **协议网闸**：强制仅允许 `http` 与 `https` 协议；
+   - **DNS 解析与 IP 多层防火墙**：通过 `socket.getaddrinfo()` 解析目标域名的所有 A/AAAA 记录，使用 `ipaddress` 库严格阻断回环（`127.0.0.0/8`, `::1`）、私有私网（`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`）、链路本地及云元数据（`169.254.0.0/16`）、运营商保留（`100.64.0.0/10`）等；
+   - **循环受控重定向**：最多允许 2 跳重定向，每一跳重定向目标强制重新执行完整 SSRF 检查；
+   - **防 OOM 与内容过滤**：校验 `Content-Type` 需为网页类型，流式读取响应体并强制截断于 512KB；
+   - **标准库 HTML 解析与相对路径修正**：采用 Python 标准库 `html.parser.HTMLParser` 解析 `<title>`、`og:title`、`description`、`favicon` / `apple-touch-icon`，使用 `urllib.parse.urljoin()` 自动转为合法绝对 URL。
+3. **系统联动与权限一致性准则**：
+   - **权限字典树**：在 `apps/core/utils/permissions.py` 中挂载 `menu_third_party_hub`（中转站前台，普通用户默认关闭）、`menu_admin_platforms`（管理菜单，默认管理员可见）与 `platform_manage_edit`（增删改权限）；未授权用户默认不可见；获权普通用户仅具备只读查看权限，增删改接口层强制 403 拦截；
+   - **WebDAV 容灾备份**：在 `CORE_BACKUP_MODELS` 全量挂载 `ThirdPartyPlatform` 与 `ThirdPartyPlatformResource`，保证全量快照与一键回退覆盖；
+   - **全流程安全审计**：新增 8 类平台与子资源操作审计动作，用户点击直达时记录平台与资源级行为流水。
+
+4. **可视化用户授权穿梭选择器规范 (`UserSelectPicker.tsx`)**：
+   - 彻底废除手动手敲用户 ID 易错交互，构建专属穿梭选择器，提供昵称/手机号实时搜索、一键全选、反选与清空快捷操作；
+   - 展现用户头像、角色身份徽章及脱敏手机号，统一服务于平台级与资源级白名单授权。
+5. **前台展示分页与收藏中心统一规范**：
+   - 中转站卡片流全面引入标准 `LightPagination` 轻量分页组件（支持 6/9/18/全部 自由切换及偏好记忆）；
+   - `UserFavorite` 收藏模型扩展 `platform` 类型，前台卡片挂载 `FavoriteButton` 响应式红心收藏，并无缝纳入「我的收藏中心」统一检索、直达与批量管理；
+   - 精简个人中心常用快捷卡片，消除顶栏与卡片入口重复冗余。

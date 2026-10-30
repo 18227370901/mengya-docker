@@ -64,6 +64,15 @@ class AuditLog(models.Model):
         # 系统运维
         ("audit_delete", "删除审计日志"),
         ("audit_retention", "设置日志保留天数"),
+        # 三方平台接入与中转站
+        ("platform_create", "新增三方平台配置"),
+        ("platform_update", "编辑三方平台配置"),
+        ("platform_delete", "删除三方平台配置"),
+        ("platform_fetch_meta", "一键解析三方平台信息"),
+        ("platform_resource_create", "新增平台子资源"),
+        ("platform_resource_update", "编辑平台子资源"),
+        ("platform_resource_delete", "删除平台子资源"),
+        ("platform_access", "访问三方平台或资源"),
     ]
 
     user = models.ForeignKey(

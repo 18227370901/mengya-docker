@@ -12,6 +12,7 @@ class UserFavorite(models.Model):
         ("fetal_story", "胎教故事"),
         ("recipe", "孕期食谱"),
         ("encyclopedia", "幼儿百科"),
+        ("platform", "三方中转站"),
     ]
 
     user = models.ForeignKey("User", on_delete=models.CASCADE, related_name="favorites", verbose_name="用户")

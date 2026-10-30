@@ -67,6 +67,8 @@ CORE_BACKUP_MODELS = [
     ("core", "InviteLink"),
     ("core", "DailyTip"),
     ("core", "FetalStory"),
+    ("core", "ThirdPartyPlatform"),
+    ("core", "ThirdPartyPlatformResource"),
 ]
 
 

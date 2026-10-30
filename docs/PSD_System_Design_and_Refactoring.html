@@ -2457,6 +2457,20 @@ apps/core/                                    apps/core/
           </ul>
         </div>
       </section>
+
+<section class="adr-card" id="adr-10-71">
+  <h2>10.71 ADR 10.71：三方平台接入中转站架构、SSRF 零信任安全防护与资源级细粒度权限管控规范 (v2.06)</h2>
+  <div class="adr-meta"><span class="badge">Version: v2.06</span><span class="badge">Date: 2026-10-30</span><span class="badge status-accepted">Accepted</span></div>
+  <h3>10.71.1 背景与业务痛点</h3>
+  <p>外部优质工具与平台散落缺乏统一聚合入口；一键解析外链存在高危 SSRF 渗透与内网探测隐患；资源级访问缺乏细粒度控制与灾备覆盖。</p>
+  <h3>10.71.2 架构决策与设计规范</h3>
+  <ul>
+    <li><strong>三方平台与多入口分层聚合模型</strong>：引入 <code>ThirdPartyPlatform</code> 与 <code>ThirdPartyPlatformResource</code> 结构，覆盖分类、年龄段、排序与多级授权；</li>
+    <li><strong>SSRF 零信任防护爬虫</strong>：多重拦截内网、回环、保留及云厂商元数据（169.254.169.254）地址，受控重定向与流式防 OOM；</li>
+    <li><strong>全局权限树与容灾备份深度联动</strong>：纳入 <code>menu_third_party_hub</code>、<code>menu_admin_platforms</code> 权限管控与 <code>CORE_BACKUP_MODELS</code> 容灾拓扑。</li>
+  </ul>
+</section>
+
 </body>
 
 </html>

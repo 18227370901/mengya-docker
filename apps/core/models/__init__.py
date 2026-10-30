@@ -19,6 +19,7 @@ from .system import SystemSetting, InviteLink
 from .daily_tip import DailyTip
 from .fetal_story import FetalStory
 from .backup import BackupConfig, ScheduledBackupTask, ScheduledTaskExecutionLog
+from .platform import ThirdPartyPlatform, ThirdPartyPlatformResource
 
 __all__ = [
     "User",
@@ -47,5 +48,7 @@ __all__ = [
     "BackupConfig",
     "ScheduledBackupTask",
     "ScheduledTaskExecutionLog",
+    "ThirdPartyPlatform",
+    "ThirdPartyPlatformResource",
     "ROLE_CHOICES",
 ]

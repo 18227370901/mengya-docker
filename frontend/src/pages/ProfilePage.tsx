@@ -1,7 +1,7 @@
 import SetStageModal from "@/components/SetStageModal";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Bot, Baby, Bell, BookOpen, Edit3, Eye, EyeOff, Heart, HeartOff, HeartPulse, KeyRound, LogOut, Moon, Network, Package, Plus, Settings, ShieldCheck, Sun, Trash2, UserCheck, Users, ClipboardList, X, Loader2, Sparkles, CloudUpload } from "lucide-react";
+import { Bot, Baby, Bell, BookOpen, Edit3, Eye, EyeOff, Heart, HeartOff, HeartPulse, KeyRound, LogOut, Moon, Network, Package, Plus, Settings, ShieldCheck, Sun, Trash2, UserCheck, Users, ClipboardList, X, Loader2, Sparkles, CloudUpload, Share2, Compass } from "lucide-react";
 import { useThemeStore } from "@/store/themeStore";
 import { authApi } from "@/api/auth";
 import { useAuthStore } from "@/store/authStore";
@@ -617,7 +617,7 @@ export default function ProfilePage() {
             </div>
           </button>
         )}
-        {(user?.is_staff || hasPermission("menu_favorites")) && (
+          {(user?.is_staff || hasPermission("menu_favorites")) && (
           <button className="card flex items-center gap-3 hover:shadow-md transition cursor-pointer" onClick={() => navigate("/favorites")}>
             <div className="rounded-xl bg-brand-50 p-2.5">
               <HeartOff className="h-5 w-5 text-brand-500" />
@@ -797,6 +797,7 @@ export default function ProfilePage() {
         hasPermission("menu_admin_registration") ||
         hasPermission("menu_admin_daily_tips") ||
         hasPermission("menu_admin_service_config") ||
+          hasPermission("menu_admin_platforms") ||
         hasPermission("menu_admin_backups") ||
         hasPermission("menu_admin_kb_timeline") ||
         hasPermission("menu_admin_kb_stories") ||
@@ -859,6 +860,16 @@ export default function ProfilePage() {
                 <span className="text-[10px] text-gray-400">今日小锦囊/展示设置</span>
               </button>
             )}
+            {(user?.is_staff || hasPermission("menu_admin_platforms")) && (
+                <button
+                  className="flex flex-col items-center gap-1.5 rounded-xl border border-gray-100 py-4 hover:border-brand-200 hover:bg-brand-50/50 transition"
+                  onClick={() => navigate("/admin/platforms")}
+                >
+                  <Share2 className="h-5 w-5 text-purple-500" />
+                  <span className="text-xs font-medium text-gray-600">三方平台接入</span>
+                  <span className="text-[10px] text-gray-400">中转站与子资源配置</span>
+                </button>
+              )}
             {(user?.is_staff || hasPermission("menu_admin_service_config")) && (
               <button
                 className="flex flex-col items-center gap-1.5 rounded-xl border border-gray-100 py-4 hover:border-brand-200 hover:bg-brand-50/50 transition"
