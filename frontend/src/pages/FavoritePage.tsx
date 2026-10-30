@@ -27,6 +27,7 @@ import api from "@/api/client";
 import { favoriteApi } from "@/api/catalog";
 import { useFavoriteStore } from "@/store/favoriteStore";
 import type { ApiResponse, FavoriteItem } from "@/types";
+import LightPagination, { PageSizeOption } from "@/components/ui/LightPagination";
 
 /** 收藏类型元数据：分类 Tab 顺序、图标、跳转 */
 const TYPE_ORDER: { key: string; label: string; icon: typeof Heart; color: string; link: (id: number) => string }[] = [
@@ -44,7 +45,14 @@ const TYPE_META: Record<string, (typeof TYPE_ORDER)[number]> = Object.fromEntrie
   TYPE_ORDER.map((t) => [t.key, t])
 );
 
-const PAGE_SIZE = 8;
+const FAVORITE_PAGE_SIZE_OPTIONS: PageSizeOption[] = [
+  { value: 8, label: "8 条/页" },
+  { value: 16, label: "16 条/页" },
+  { value: 32, label: "32 条/页" },
+  { value: -1, label: "全部" },
+];
+
+const FAVORITE_PAGE_SIZE_STORAGE_KEY = "mengya_favorites_page_size";
 
 export default function FavoritePage() {
   const navigate = useNavigate();
@@ -59,6 +67,23 @@ export default function FavoritePage() {
   const [validityFilter, setValidityFilter] = useState<"all" | "valid" | "invalid">("all");
   /** 客户端分页 */
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem(FAVORITE_PAGE_SIZE_STORAGE_KEY);
+      const parsed = saved ? parseInt(saved, 10) : 8;
+      return [8, 16, 32, -1].includes(parsed) ? parsed : 8;
+    } catch {
+      return 8;
+    }
+  });
+
+  const handlePageSizeChange = (size: number) => {
+    setPageSize(size);
+    setPage(1);
+    try {
+      localStorage.setItem(FAVORITE_PAGE_SIZE_STORAGE_KEY, String(size));
+    } catch {}
+  };
   /** 多选（当前筛选范围跨页保持） */
   const [selectedIds, setSelectedIds] = useState<number[]>([]);
   /** 批量删除中 */
@@ -105,12 +130,13 @@ export default function FavoritePage() {
     return list;
   }, [favorites, activeType, searchTerm, validityFilter]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const isAll = pageSize === -1;
+  const totalPages = isAll ? 1 : Math.max(1, Math.ceil(filtered.length / pageSize));
   const currentPage = Math.min(page, totalPages);
-  const pagedItems = useMemo(
-    () => filtered.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE),
-    [filtered, currentPage]
-  );
+  const pagedItems = useMemo(() => {
+    if (isAll) return filtered;
+    return filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+  }, [filtered, currentPage, pageSize, isAll]);
 
   // 切换筛选条件时回到第 1 页并清空勾选
   useEffect(() => {
@@ -483,30 +509,19 @@ export default function FavoritePage() {
             })}
           </div>
 
-          {/* 分页 */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between pt-2 text-xs text-gray-400">
-              <span>
-                第 {currentPage}/{totalPages} 页 · 每页 {PAGE_SIZE} 条
-              </span>
-              <div className="flex items-center gap-1.5">
-                <button
-                  className="rounded-lg border border-gray-200 px-2.5 py-1 text-gray-500 transition hover:bg-gray-50 disabled:opacity-30"
-                  onClick={() => setPage(currentPage - 1)}
-                  disabled={currentPage <= 1}
-                >
-                  上一页
-                </button>
-                <button
-                  className="rounded-lg border border-gray-200 px-2.5 py-1 text-gray-500 transition hover:bg-gray-50 disabled:opacity-30"
-                  onClick={() => setPage(currentPage + 1)}
-                  disabled={currentPage >= totalPages}
-                >
-                  下一页
-                </button>
-              </div>
-            </div>
-          )}
+          {/* 标准轻量化分页 */}
+          <div className="pt-2">
+            <LightPagination
+              page={currentPage}
+              totalPages={totalPages}
+              total={filtered.length}
+              pageSize={pageSize}
+              sizeOptions={FAVORITE_PAGE_SIZE_OPTIONS}
+              onPageChange={(p) => setPage(p)}
+              onPageSizeChange={handlePageSizeChange}
+              unitLabel="条收藏"
+            />
+          </div>
         </>
       )}
 

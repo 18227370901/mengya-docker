@@ -145,7 +145,7 @@ class PlatformListView(APIView):
         if age_group:
             qs = qs.filter(Q(age_group=age_group) | Q(age_group="all"))
         if keyword:
-            qs = qs.filter(Q(name__icontains=keyword) | Q(description__icontains=keyword))
+            qs = qs.filter(Q(name__icontains=keyword) | Q(description__icontains=keyword) | Q(url__icontains=keyword))
 
         platforms = list(qs.order_by("sort_order", "id"))
         p_ids = [p.id for p in platforms]
@@ -474,3 +474,111 @@ class PlatformUserOptionsView(APIView):
             )
         )
         return Response({"code": 0, "message": "success", "data": users})
+
+class PlatformCheckUrlView(APIView):
+    """精准检查 URL 访问地址是否已存在重复项（完全精确匹配）"""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        url = request.query_params.get("url", "").strip()
+        exclude_id = request.query_params.get("exclude_id", "").strip()
+        if not url:
+            return Response({"code": 0, "message": "success", "data": {"exists": False}})
+
+        qs = ThirdPartyPlatform.objects.filter(is_active=True, url=url)
+        if exclude_id and exclude_id.isdigit():
+            qs = qs.exclude(id=int(exclude_id))
+
+        dup = qs.order_by("id").first()
+        if dup:
+            return Response({
+                "code": 0,
+                "message": "success",
+                "data": {
+                    "exists": True,
+                    "duplicate": {
+                        "id": dup.id,
+                        "name": dup.name,
+                        "url": dup.url,
+                    }
+                }
+            })
+        return Response({"code": 0, "message": "success", "data": {"exists": False}})
+
+
+class PlatformBatchActionView(APIView):
+    """第三方平台批量操作（启用/停用/删除）"""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if not _is_admin(request.user):
+            return Response(
+                {"code": 4003, "message": "只有系统管理员可执行批量操作", "data": None},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        action = request.data.get("action", "").strip()
+        ids = request.data.get("ids", [])
+        if not isinstance(ids, list) or not ids:
+            return Response(
+                {"code": 4000, "message": "请选择要操作的平台数据项", "data": None},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        platforms = ThirdPartyPlatform.objects.filter(id__in=ids, is_active=True)
+        count = platforms.count()
+        if count == 0:
+            return Response(
+                {"code": 4004, "message": "未找到有效的平台数据", "data": None},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        ids_text = ",".join(str(p.id) for p in platforms)
+        names_text = "、".join(p.name for p in platforms[:5])
+        if count > 5:
+            names_text += f" 等 {count} 个平台"
+
+        if action == "delete":
+            platforms.update(is_active=False)
+            ThirdPartyPlatformResource.objects.filter(platform_id__in=ids, is_active=True).update(is_active=False)
+            audit(
+                request,
+                action="platform_batch_delete",
+                action_label="批量删除第三方平台",
+                target_type="ThirdPartyPlatform",
+                target_id=ids_text[:255],
+                detail=f"批量删除 {count} 个平台（{names_text}）及其关联子资源",
+            )
+            return Response({"code": 0, "message": f"成功批量删除 {count} 个平台", "data": None})
+
+        elif action == "enable":
+            platforms.update(is_enabled=True)
+            audit(
+                request,
+                action="platform_batch_enable",
+                action_label="批量启用第三方平台",
+                target_type="ThirdPartyPlatform",
+                target_id=ids_text[:255],
+                detail=f"批量启用 {count} 个平台（{names_text}）",
+            )
+            return Response({"code": 0, "message": f"成功批量启用 {count} 个平台", "data": None})
+
+        elif action == "disable":
+            platforms.update(is_enabled=False)
+            audit(
+                request,
+                action="platform_batch_disable",
+                action_label="批量停用第三方平台",
+                target_type="ThirdPartyPlatform",
+                target_id=ids_text[:255],
+                detail=f"批量停用 {count} 个平台（{names_text}）",
+            )
+            return Response({"code": 0, "message": f"成功批量停用 {count} 个平台", "data": None})
+
+        return Response(
+            {"code": 4000, "message": "未知的批量操作类型", "data": None},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+

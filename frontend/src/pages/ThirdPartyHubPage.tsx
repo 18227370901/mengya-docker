@@ -198,7 +198,7 @@ export default function ThirdPartyHubPage() {
               type="text"
               value={searchKeyword}
               onChange={(e) => setSearchKeyword(e.target.value)}
-              placeholder="搜索平台名称、功能或描述..."
+              placeholder="搜索平台名称、描述或访问地址..."
               className="w-full rounded-xl border-0 bg-white/95 px-4 py-2.5 pl-10 text-sm text-gray-800 placeholder-gray-400 shadow-sm focus:ring-2 focus:ring-amber-300"
             />
             <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />

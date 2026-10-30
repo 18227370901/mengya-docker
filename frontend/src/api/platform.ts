@@ -33,6 +33,12 @@ export const platformApi = {
   deleteResource: (resourceId: number) =>
     api.delete<{ code: number; message: string; data: null }>(`/platforms/resources/${resourceId}/`),
 
+  checkUrl: (url: string, excludeId?: number) =>
+    api.get<{ code: number; message: string; data: { exists: boolean; duplicate?: { id: number; name: string; url: string } } }>("/platforms/check-url/", {
+      params: { url, exclude_id: excludeId },
+    }),
+  batchAction: (action: "enable" | "disable" | "delete", ids: number[]) =>
+    api.post<{ code: number; message: string; data: null }>("/platforms/batch/", { action, ids }),
   logAccess: (platformId: number, resourceId?: number) =>
     api.post<{ code: number; message: string; data: null }>(`/platforms/${platformId}/access/`, { resource_id: resourceId }),
 };

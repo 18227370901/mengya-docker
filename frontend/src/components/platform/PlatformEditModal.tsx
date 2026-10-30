@@ -4,7 +4,7 @@ import {
   PlatformMetaFetchResult,
 } from "@/types/platform";
 import { platformApi } from "@/api/platform";
-import { Sparkles, X } from "lucide-react";
+import { Sparkles, X, AlertTriangle } from "lucide-react";
 import { UserSelectPicker } from "./UserSelectPicker";
 
 interface Props {
@@ -42,6 +42,32 @@ export const PlatformEditModal: React.FC<Props> = ({
   } | null>(null);
   const [saving, setSaving] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [duplicateInfo, setDuplicateInfo] = useState<{ id: number; name: string; url: string } | null>(null);
+  const [checkingUrl, setCheckingUrl] = useState(false);
+
+  React.useEffect(() => {
+    const trimmed = url.trim();
+    if (!trimmed) {
+      setDuplicateInfo(null);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      try {
+        setCheckingUrl(true);
+        const res = await platformApi.checkUrl(trimmed, initialData?.id);
+        if (res.data.data?.exists && res.data.data.duplicate) {
+          setDuplicateInfo(res.data.data.duplicate);
+        } else {
+          setDuplicateInfo(null);
+        }
+      } catch {
+        // 忽略网络抖动
+      } finally {
+        setCheckingUrl(false);
+      }
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [url, initialData?.id]);
 
   const handleFetchMeta = async () => {
     if (!url.trim()) {
@@ -79,6 +105,15 @@ export const PlatformEditModal: React.FC<Props> = ({
     if (!name.trim() || !url.trim()) {
       setErrorMsg("平台名称和访问地址为必填项");
       return;
+    }
+
+    if (duplicateInfo) {
+      const confirmDup = window.confirm(
+        `【访问地址重复提示】\n系统中已存在完全相同访问地址的平台：「${duplicateInfo.name}」\n地址：${duplicateInfo.url}\n\n确定要继续保存该重复项吗？`
+      );
+      if (!confirmDup) {
+        return;
+      }
     }
 
     const tags = tagsStr
@@ -162,6 +197,17 @@ export const PlatformEditModal: React.FC<Props> = ({
                 {fetchingMeta ? "抓取中..." : "一键获取配置"}
               </button>
             </div>
+            {duplicateInfo && (
+              <div className="mt-2 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-2.5 text-xs text-amber-800">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
+                <div className="flex-1 leading-relaxed">
+                  <span className="font-semibold">⚠️ 访问地址重复录入提示：</span>
+                  <span>
+                    系统中已存在完全相同访问地址的平台「<strong className="text-amber-900 font-bold">{duplicateInfo.name}</strong>」（ID: #{duplicateInfo.id}），请核对是否重复录入。
+                  </span>
+                </div>
+              </div>
+            )}
             {metaFeedback && (
               <p
                 className={`mt-1.5 text-xs ${
