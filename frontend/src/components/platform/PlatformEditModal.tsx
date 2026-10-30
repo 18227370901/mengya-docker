@@ -54,10 +54,10 @@ export const PlatformEditModal: React.FC<Props> = ({
       const res = await platformApi.fetchMeta(url.trim());
       const data: PlatformMetaFetchResult = res.data.data;
       if (data.success) {
-        if (data.name && !name) setName(data.name);
+        if (data.name) setName(data.name);
         if (data.description && !description) setDescription(data.description);
         if (data.logo_url) setLogoUrl(data.logo_url);
-        setMetaFeedback({ success: true, msg: "一键获取配置成功，已自动回填" });
+        setMetaFeedback({ success: true, msg: data.message || "一键获取配置成功，已自动回填" });
       } else {
         setMetaFeedback({
           success: false,

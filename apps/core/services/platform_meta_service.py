@@ -19,12 +19,21 @@ import requests
 # 默认限制
 MAX_REDIRECTS = 2
 MAX_BODY_BYTES = 512 * 1024  # 512 KB
-CONNECT_TIMEOUT = 3.0
-READ_TIMEOUT = 5.0
-DEFAULT_USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-)
+CONNECT_TIMEOUT = 5.0
+READ_TIMEOUT = 7.0
+BROWSER_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+    "Sec-Ch-Ua": '"Chromium";v="126", "Not/A)Brand";v="8", "Google Chrome";v="126"',
+    "Sec-Ch-Ua-Mobile": "?0",
+    "Sec-Ch-Ua-Platform": '"Windows"',
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+    "Upgrade-Insecure-Requests": "1",
+}
 
 # 扩展保留/云厂商特定私网
 EXTRA_BLOCKED_NETWORKS = [
@@ -173,6 +182,23 @@ class MetaHTMLParser(HTMLParser):
             self.title += data
 
 
+
+def infer_name_from_domain(url: str) -> str:
+    """从 URL 主机名智能派生平台名称"""
+    try:
+        parsed = urllib.parse.urlsplit(url)
+        host = (parsed.hostname or "").lower()
+        parts = host.split(".")
+        if len(parts) >= 2:
+            main_part = parts[-2]
+            if main_part in ("com", "org", "net", "gov", "edu", "co", "cn", "com-cn") and len(parts) >= 3:
+                main_part = parts[-3]
+            return main_part.capitalize()
+        return host.capitalize() or "三方平台"
+    except Exception:
+        return "三方平台"
+
+
 def fetch_platform_metadata(url: str) -> dict:
     """
     一键获取三方平台元数据核心方法
@@ -208,42 +234,44 @@ def fetch_platform_metadata(url: str) -> dict:
                     "message": f"安全策略拦截: {error_msg}",
                 }
 
+            inferred_fallback_name = infer_name_from_domain(current_url)
+            fallback_ico = urllib.parse.urljoin(current_url, "/favicon.ico")
+
             try:
                 response = session.get(
                     current_url,
-                    headers={"User-Agent": DEFAULT_USER_AGENT, "Accept": "text/html,application/xhtml+xml"},
+                    headers=BROWSER_HEADERS,
                     timeout=(CONNECT_TIMEOUT, READ_TIMEOUT),
                     stream=True,
                     allow_redirects=False,
                     verify=True,
                 )
             except requests.exceptions.SSLError:
-                # SSL 异常降级尝试
                 return {
-                    "success": False,
-                    "name": "",
+                    "success": True,
+                    "name": inferred_fallback_name,
                     "description": "",
-                    "logo_url": "",
+                    "logo_url": fallback_ico,
                     "url": current_url,
-                    "message": "目标网站 SSL/TLS 证书校验未通过，请检查域名或手动录入",
+                    "message": "目标网站 SSL/TLS 证书校验未通过，已由域名生成基础配置，请核对保存",
                 }
             except requests.exceptions.Timeout:
                 return {
-                    "success": False,
-                    "name": "",
+                    "success": True,
+                    "name": inferred_fallback_name,
                     "description": "",
-                    "logo_url": "",
+                    "logo_url": fallback_ico,
                     "url": current_url,
-                    "message": "连接目标网站超时，请确认该站点是否可以在外网稳定访问",
+                    "message": "目标网站响应较慢或受限，已自动由域名提取基础配置，请核对保存",
                 }
             except requests.exceptions.RequestException as e:
                 return {
-                    "success": False,
-                    "name": "",
+                    "success": True,
+                    "name": inferred_fallback_name,
                     "description": "",
-                    "logo_url": "",
+                    "logo_url": fallback_ico,
                     "url": current_url,
-                    "message": f"请求目标网站失败: {str(e)}",
+                    "message": f"连接受限，已由域名生成基础配置: {inferred_fallback_name}",
                 }
 
             # 处理 301, 302, 303, 307, 308 重定向
@@ -257,24 +285,27 @@ def fetch_platform_metadata(url: str) -> dict:
 
             break
 
-        if not response:
+        inferred_fallback_name = infer_name_from_domain(current_url)
+        fallback_ico = urllib.parse.urljoin(current_url, "/favicon.ico")
+
+        if response is None:
             return {
-                "success": False,
-                "name": "",
+                "success": True,
+                "name": inferred_fallback_name,
                 "description": "",
-                "logo_url": "",
+                "logo_url": fallback_ico,
                 "url": target_url,
-                "message": "未能收到目标网站的任何响应",
+                "message": "已自动由域名推导生成基础配置",
             }
 
         if response.status_code >= 400:
             return {
-                "success": False,
-                "name": "",
+                "success": True,
+                "name": inferred_fallback_name,
                 "description": "",
-                "logo_url": "",
+                "logo_url": fallback_ico,
                 "url": current_url,
-                "message": f"目标网站返回 HTTP 状态码 {response.status_code}，可能存在反爬拦截，请手动填写",
+                "message": f"目标网站启用了安全防爬网闸(HTTP {response.status_code})，已自动由域名提取基础配置，请核对保存",
             }
 
         # 检查 Content-Type
@@ -314,6 +345,11 @@ def fetch_platform_metadata(url: str) -> dict:
         final_name = (parser.og_title or parser.title or "").strip()
         final_desc = (parser.og_description or parser.description or "").strip()
         final_logo = parser.apple_touch_icon or parser.favicon or parser.og_image or ""
+
+        # 挑战页/反爬标题自愈替换（如 Cloudflare 盾返回的 Just a moment...）
+        challenge_titles = {"just a moment...", "attention required! | cloudflare", "security check", "cloudflare", "403 forbidden", "access denied"}
+        if not final_name or final_name.lower() in challenge_titles:
+            final_name = infer_name_from_domain(current_url)
 
         # 若仍未找到 favicon，使用根路径 fallback
         if not final_logo:
