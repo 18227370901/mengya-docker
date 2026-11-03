@@ -1416,6 +1416,21 @@ apps/core/                                    apps/core/
     </ul>
   </div>
 </section>
+
+<section class="adr-card" id="adr-10-72">
+  <h2>10.72 ADR 10.72：全站收藏大数紧凑化自适应、AI 长时分析动态百分比进度与随时取消、胎教故事双向一键互译与外部翻译引擎管线架构治理规范 (v2.07)</h2>
+  <div class="adr-meta"><span class="badge">Version: v2.07</span><span class="badge">Date: 2026-11-02</span><span class="badge status-accepted">Accepted</span></div>
+  <h3>10.72.1 背景与业务痛点</h3>
+  <p>商品详情页收藏按钮直接拼接数字导致“用户个人收藏”与“全站累计热度”语义混淆，且百万级大数极易撑破排版；AI 深度评测与智能待产包黑盒等待缺乏进度感知且不可随时取消；胎教故事中英维护繁琐缺乏统一外部翻译容灾管线。</p>
+  <h3>10.72.2 架构决策与设计规范</h3>
+  <ul>
+    <li><strong>全站紧凑计数格式化与收藏组件升级</strong>：统一封装 <code>formatCompactCount</code>（k/万/10万+ 封顶），<code>FavoriteButton</code> 解耦个人动作与累计热度 Badge，悬浮展示千分位人次气泡，覆盖全部内容消费页面；</li>
+    <li><strong>AI 长时处理动态进度与主动取消机制</strong>：封装 <code>AiProgressModal</code> 阶段式百分比动画进度条（0%~100%）与真实耗时反馈，Axios 层挂载 <code>AbortController</code> 实现随时主动中断与零残留自愈（商品评测 + 待产包分析）；</li>
+    <li><strong>胎教故事双向一键互译与外部翻译管线</strong>：在 <code>service_config.py</code> 挂载 <code>translation</code> 服务组，支持 AI 大模型（温情童话语境）、MyMemory 国际免Key、Google 及自定义开放端点，支持故障转移重试、连通性测试与 <code>AuditLog</code> 行为审计。</li>
+    <li><strong>权限与云端容灾零破坏</strong>：翻译与配置接口受既有权限细粒度保护，外部接口配置天生纳入 <code>CORE_BACKUP_MODELS</code> 拓扑流式备份与还原。</li>
+  </ul>
+</section>
+
 </main>
   </div>
 
@@ -2458,6 +2473,108 @@ apps/core/                                    apps/core/
         </div>
       </section>
 
+    <div class="adr-card">
+      <h3>10.62 健康中心全模块导入与新增时序一致性架构治理 (v1.97)</h3>
+      <p><strong>发布日期：</strong>2026-10-29</p>
+      <p><strong>核心解决：</strong>彻底修复 CSV 模板列数错位与时序矛盾缺陷；落实用户选择「保持 CSV 所填阶段直接导入」时手填孕周 100% 保留入库原则；批量导入统一豁免历史交叉阻断；字段说明默认收起优化篇幅。</p>
+    </div>
+
+
+    <div class="adr-card">
+      <h3>10.63 健康中心全生命周期多阶段平滑共存与视图切片架构重构 (v1.98)</h3>
+      <p><strong>发布日期：</strong>2026-10-29</p>
+      <p><strong>核心解决：</strong>彻底解耦妈妈健康数据与单一状态绑定限制，新增生命周期多阶段视图切片（全部/非孕期备孕/孕期产检/产后恢复）；宝宝生长发育模块新增成长阶段切片（全部/婴儿期/幼儿期/学龄前）；实现图表、列表、统计卡与打卡表单全链路自适应联动。</p>
+    </div>
+
+
+    <div class="adr-card">
+      <h3>10.64 健康中心三层层次化控制台与全生命周期动态模板深度对齐 (v1.99)</h3>
+      <p><strong>发布日期：</strong>2026-10-29</p>
+      <p><strong>核心解决：</strong>重构健康页面为三层金字塔架构（控制台主体操作层、生命周期阶段切片层、监测指标二级导航层）；实现在全部阶段下根据下方打卡模块当前阶段类型动态匹配 CSV 导入模板；特定阶段下表单智能锁定当前阶段消除冗余选项与视界撕裂。</p>
+    </div>
+
+
+<section class="adr-card" id="adr-10-65">
+  <h2>10.65 ADR 10.65：健康中心全模块数据表格可编辑（Edit）赋能与打卡弹窗回显联动规范 (v2.00)</h2>
+  <div class="adr-meta"><span class="badge">Version: v2.00</span><span class="badge">Date: 2026-10-29</span><span class="badge status-accepted">Accepted</span></div>
+  <h3>10.65.1 背景与业务痛点</h3>
+  <p>健康中心历史记录表格长期仅支持勾选和删除，缺乏便捷编辑修改渠道。用户修正历史指标必须先删后录，体验割裂。</p>
+  <h3>10.65.2 架构决策与设计规范</h3>
+  <ul>
+    <li><strong>全表格统一操作列</strong>：宝宝生长表、体重/BMI 明细表、血压/血糖明细表统一集成 <code>Edit3</code> 语义化编辑按钮，严格遵循 <code>health_record_update</code> 权限；</li>
+    <li><strong>三层事件透传体系</strong>：表格 ➔ 分析看板 ➔ 页面路由层，统一派发 <code>onEditRecord</code>；</li>
+    <li><strong>智能模态联动与聚焦</strong>：通过 <code>openCheckIn</code> 回显历史实体并自动聚焦对应指标录入卡片（<code>bmi</code> / <code>vitals</code>）。</li>
+  </ul>
+</section>
+
+
+<section class="adr-card" id="adr-10-66">
+  <h2>10.66 ADR 10.66：健康中心全模块表格展示完备度治理、打卡排版水平对齐与覆盖视口自动定位规范 (v2.01)</h2>
+  <div class="adr-meta"><span class="badge">Version: v2.01</span><span class="badge">Date: 2026-10-30</span><span class="badge status-accepted">Accepted</span></div>
+  <h3>10.66.1 背景与业务痛点</h3>
+  <p>妈妈历史BMI表参数透传缺失致编辑隐藏；宝宝测量表漏显月龄与备忘；头围输入框排版高低错位；覆盖提示弹窗滚动条未自愈。</p>
+  <h3>10.66.2 架构决策与设计规范</h3>
+  <ul>
+    <li><strong>表格透传与权限完备</strong>：解构并向底部历史明细传递 <code>onEditRecord</code>，完善操作列权限渲染；</li>
+    <li><strong>成长记录全指标展示</strong>：消除抬头硬编码括号，列表补全测量月龄与备注备忘；</li>
+    <li><strong>栅格水平对齐与双重视口自愈</strong>：统一测量输入框水平基准线；冲突时自动置顶滚动并提供底部快捷覆盖条。</li>
+  </ul>
+</section>
+
+
+<section class="adr-card" id="adr-10-67">
+  <h2>10.67 ADR 10.67：健康中心全表单水平线物理级对齐与图表统计看板去重聚焦规范 (v2.02)</h2>
+  <div class="adr-meta"><span class="badge">Version: v2.02</span><span class="badge">Date: 2026-10-30</span><span class="badge status-accepted">Accepted</span></div>
+  <h3>10.67.1 背景与业务痛点</h3>
+  <p>妈妈打卡表单在多列布局下基准线高低错位；时间轴图表看板上下存在重复统计卡片致使页面过长。</p>
+  <h3>10.67.2 架构决策与设计规范</h3>
+  <ul>
+    <li><strong>输入框网格物理齐平</strong>：统一 flex 容器与 label 最小高度，保证所有并排输入框水平线绝对对齐；</li>
+    <li><strong>图表看板去重与无损统合</strong>：图表视图自动隐去顶部统计卡片，并将全部业务维度统合于下方看板，零信息遗漏。</li>
+  </ul>
+</section>
+
+
+<section class="adr-card" id="adr-10-68">
+  <h2>10.68 ADR 10.68：生命体征编辑全链路贯通与记录类型饼图富文本防重叠设计规范 (v2.03)</h2>
+  <div class="adr-meta"><span class="badge">Version: v2.03</span><span class="badge">Date: 2026-10-30</span><span class="badge status-accepted">Accepted</span></div>
+  <h3>10.68.1 背景与业务痛点</h3>
+  <p>生命体征表编辑按钮无响应；饼图单调留白过大且缺乏引导标签。</p>
+  <h3>10.68.2 架构决策与设计规范</h3>
+  <ul>
+    <li><strong>生命体征编辑透传贯通</strong>：VitalsAnalysisView 解构并传递 <code>onEditRecord</code>，唤起打卡弹窗；</li>
+    <li><strong>饼图富文本与双重防重叠</strong>：启用外侧平滑引导折线与双行富文本说明，通过 <code>labelLayout.hideOverlap</code> 与 <code>shiftY</code> 绝不产生文字与扇区重叠。</li>
+  </ul>
+</section>
+
+
+<section class="adr-card" id="adr-10-69">
+  <h2>10.69 ADR 10.69：妈妈测量打卡历史数据表备注备忘列补全与全字段完备展示规范 (v2.04)</h2>
+  <div class="adr-meta"><span class="badge">Version: v2.04</span><span class="badge">Date: 2026-10-30</span><span class="badge status-accepted">Accepted</span></div>
+  <h3>10.69.1 背景与业务痛点</h3>
+  <p>测量打卡历史表备注字段被隐藏在展开折叠内，用户无法在主表中一目了然。</p>
+  <h3>10.69.2 架构决策与设计规范</h3>
+  <ul>
+    <li><strong>主表补齐备注备忘列</strong>：新增该列并具备省略与 hover 浮窗提示能力；</li>
+    <li><strong>三表全指标统一</strong>：与宝宝测量表、体征明细表统一字段完备度与列布局结构。</li>
+  </ul>
+</section>
+
+
+<section class="adr-card" id="adr-10-70">
+  <h2>10.70 ADR 10.70：增量时序看板边距自愈、长文本智能摘要悬停展开与重启全员强制下线规范 (v2.05)</h2>
+  <div class="adr-meta"><span class="badge">Version: v2.05</span><span class="badge">Date: 2026-10-30</span><span class="badge status-accepted">Accepted</span></div>
+  <h3>10.70.1 背景与业务痛点</h3>
+  <p>增量阈值文字切边；长备注需繁琐展开详情；run.ps1 缺失重启注销 Token 流程。</p>
+  <h3>10.70.2 架构决策与设计规范</h3>
+  <ul>
+    <li><strong>图表边距自愈与标签定位</strong>：right 边距提升至 85px，解决切边；</li>
+    <li><strong>长备注智能悬停展开</strong>：<code>line-clamp-2</code> 与 <code>hover:line-clamp-none</code> 极速预览；</li>
+    <li><strong>运维脚本全平台对齐</strong>：<code>run.ps1</code> 重启强制调用 <code>invalidate_tokens</code>，保障安全。</li>
+  </ul>
+</section>
+
+
 <section class="adr-card" id="adr-10-71">
   <h2>10.71 ADR 10.71：三方平台接入中转站架构、SSRF 零信任安全防护与资源级细粒度权限管控规范 (v2.06)</h2>
   <div class="adr-meta"><span class="badge">Version: v2.06</span><span class="badge">Date: 2026-10-30</span><span class="badge status-accepted">Accepted</span></div>
@@ -2474,6 +2591,7 @@ apps/core/                                    apps/core/
 </ul>
 </section>
 
+<section id="adr-10-73"><h2>10.73 商品库 AI 一键评测生命周期竞态消除 (v2.08)</h2><p>规范组件卸载自动中止请求与路由重入状态复位机制，彻底根治切页重入从0自动重跑缺陷。</p></section>
 </body>
 
 </html>

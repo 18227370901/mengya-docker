@@ -153,6 +153,7 @@ export interface TimelineItem {
   is_essential: boolean;
   sort_order?: number;
   view_count?: number;
+  fav_count?: number;
   products: Product[];
 }
 
@@ -373,6 +374,7 @@ export interface Recipe {
   sort_order: number;
   is_active?: boolean;
   view_count: number;
+  fav_count?: number;
   created_at: string;
 }
 
@@ -396,6 +398,7 @@ export interface FetalStory {
   sort_order: number;
   is_active?: boolean;
   view_count: number;
+  fav_count?: number;
   created_at: string;
 }
 
@@ -414,6 +417,7 @@ export interface KidsEncyclopedia {
   sort_order: number;
   is_active?: boolean;
   view_count: number;
+  fav_count?: number;
   created_at: string;
 }
 

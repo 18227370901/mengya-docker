@@ -493,6 +493,8 @@ function StoryCard({ story, onClick, compact }: { story: FetalStory; onClick: ()
             objectId={story.id}
             favoriteType="fetal_story"
             note={story.title}
+            count={story.fav_count}
+            variant="icon"
             className="ml-auto"
           />
         </div>
@@ -576,7 +578,8 @@ function StoryDetail({
               objectId={story.id}
               favoriteType="fetal_story"
               note={story.title}
-              variant="icon"
+              count={story.fav_count}
+              variant="pill"
               size="sm"
             />
             {(story.content_en || story.title_en) && (

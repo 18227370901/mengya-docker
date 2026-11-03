@@ -1,6 +1,6 @@
-import { useAuthStore } from "@/store/authStore";
+﻿import { useAuthStore } from "@/store/authStore";
 import { useFavoriteStore } from "@/store/favoriteStore";
-﻿import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   ArrowLeft,
@@ -15,6 +15,9 @@ import {
   ShoppingBag,
 } from "lucide-react";
 import CopyButton from "@/components/CopyButton";
+import FavoriteButton from "@/components/FavoriteButton";
+import AiProgressModal from "@/components/ui/AiProgressModal";
+import axios from "axios";
 import { productApi } from "@/api/catalog";
 import type { Product } from "@/types";
 
@@ -26,8 +29,15 @@ interface AIEvalResult {
   product_name: string;
 }
 
+const PRODUCT_AI_STAGES = [
+  { threshold: 0, text: "正在解析商品核心规格、CCC认证及安全合规标准..." },
+  { threshold: 25, text: "正在联网检索多平台价格走势与质检抽检舆情..." },
+  { threshold: 60, text: "母婴 AI 专家正在综合性能优缺点与适用月龄..." },
+  { threshold: 85, text: "正在组织排版深度评测结论与选购防坑贴士..." },
+  { threshold: 95, text: "评测生成完毕，即将呈现..." },
+];
+
 export default function ProductDetailPage() {
-  const { hasPermission } = useAuthStore();
   const { id } = useParams();
   const [product, setProduct] = useState<Product | null>(null);
   const [loadState, setLoadState] = useState<"loading" | "error" | "notfound" | "ok">("loading");
@@ -40,7 +50,6 @@ export default function ProductDetailPage() {
   // AI 评测状态
   const [aiLoading, setAiLoading] = useState(false);
   const [aiEval, setAiEval] = useState<AIEvalResult | null>(null);
-  const [showAiModal, setShowAiModal] = useState(false);
 
   // Toast
   const [toast, setToast] = useState("");
@@ -51,14 +60,36 @@ export default function ProductDetailPage() {
     toastTimerRef.current = setTimeout(() => setToast(""), 2500);
   };
 
+  // 组件卸载时安全中断在途评测请求，防止切页后后台空跑与重入竞态
   useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+    };
+  }, []);
+
+  const prevIdRef = useRef<string | undefined>(undefined);
+
+  useEffect(() => {
+    if (prevIdRef.current === id && product) {
+      return;
+    }
+    prevIdRef.current = id;
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setAiLoading(false);
+
     setLoadState("loading");
     setProduct(null);
-    // v1.88.4 收藏状态未就绪由 store 兜底，无需单独重置
 
     if (id) {
       const prodId = Number(id);
-      ensureProductFavorites("product");
+      useFavoriteStore.getState().ensureType("product");
       try {
         const cached = sessionStorage.getItem(`ai_product_eval_${prodId}`);
         if (cached) {
@@ -79,7 +110,7 @@ export default function ProductDetailPage() {
     } else {
       setLoadState("notfound");
     }
-  }, [id, ensureProductFavorites]);
+  }, [id]);
 
   const toggleFavorite = async () => {
     if (!product || favLoading) return;
@@ -105,20 +136,36 @@ export default function ProductDetailPage() {
     }
   };
 
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  const handleCancelAiEvaluate = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setAiLoading(false);
+    showToast("已取消 AI 评测");
+  }, []);
+
   const handleAiEvaluate = async () => {
     if (!product || aiLoading) return;
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
     setAiLoading(true);
-    setShowAiModal(true);
     try {
-            const res = await productApi.aiEvaluate(product.id);
+      const res = await productApi.aiEvaluate(product.id, { signal: controller.signal });
       setAiEval(res);
       try {
         sessionStorage.setItem(`ai_product_eval_${product.id}`, JSON.stringify(res));
       } catch {}
-    } catch {
-      showToast("评测生成失败，请重试");
+    } catch (err: any) {
+      if (axios.isCancel(err) || err?.name === "CanceledError" || err?.code === "ERR_CANCELED") {
+        return;
+      }
+      showToast(err?.message || "评测生成失败，请重试");
     } finally {
       setAiLoading(false);
+      abortControllerRef.current = null;
     }
   };
 
@@ -214,20 +261,28 @@ export default function ProductDetailPage() {
             {aiLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
             <span>AI 一键评测</span>
           </button>
-          {/* 收藏按钮 */}
-          <button
-            className={`flex items-center gap-1.5 rounded-xl border px-3.5 py-1.5 text-sm font-medium transition active:scale-95 ${
-              isFavorited
-                ? "border-pink-200 bg-pink-50 text-pink-600"
-                : "border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
-            }`}
-            onClick={toggleFavorite}
-            disabled={favLoading}
-          >
-            <Heart className={`h-4 w-4 ${isFavorited ? "fill-pink-500 text-pink-500" : ""}`} />
-            <span>{isFavorited ? "已收藏" : "加入收藏"}</span>
-            {product.fav_count ? <span className="text-xs opacity-75">({product.fav_count})</span> : null}
-          </button>
+          {/* 统一规范收藏按钮：支持大数紧凑单位自适应（如 1.5万、10万+）与悬浮提示 */}
+          <FavoriteButton
+            objectId={product.id}
+            favoriteType="product"
+            note={`${product.brand} ${product.name}`}
+            count={product.fav_count}
+            size="md"
+            variant="pill"
+            unfavoritedLabel="加入收藏"
+            favoritedLabel="已收藏"
+            onToggle={(nextFav) => {
+              setProduct((prev) =>
+                prev
+                  ? {
+                      ...prev,
+                      fav_count: Math.max(0, (prev.fav_count || 0) + (nextFav ? 1 : -1)),
+                    }
+                  : null
+              );
+              showToast(nextFav ? "已添加到收藏夹" : "已取消收藏");
+            }}
+          />
         </div>
       </div>
 
@@ -402,23 +457,15 @@ export default function ProductDetailPage() {
         </div>
       )}
 
-      {/* AI 评测模态弹窗（加载中时显示） */}
-      {showAiModal && aiLoading && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 text-center shadow-xl">
-            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-indigo-50 text-indigo-500">
-              <Sparkles className="h-7 w-7 animate-pulse" />
-            </div>
-            <h3 className="text-lg font-bold text-gray-800">AI 正在一键深度评测中...</h3>
-            <p className="mt-2 text-xs text-gray-500 leading-relaxed">
-              正在综合分析【{product.brand} {product.name}】的价格走势、参数规格、CCC认证、主流电商平台政策与实际使用要点，请稍候。
-            </p>
-            <div className="mt-5 flex justify-center">
-              <Loader2 className="h-6 w-6 animate-spin text-indigo-500" />
-            </div>
-          </div>
-        </div>
-      )}
+      {/* AI 一键评测动态百分比进度与可取消模态弹窗 */}
+      <AiProgressModal
+        isOpen={aiLoading}
+        title="AI 正在一键深度评测中..."
+        description={`正在综合分析【${product.brand} ${product.name}】的价格走势、参数规格、CCC认证、主流电商平台政策与实际使用要点，请稍候。`}
+        stages={PRODUCT_AI_STAGES}
+        onCancel={handleCancelAiEvaluate}
+        cancelText="取消评测"
+      />
 
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 rounded-xl bg-gray-800 px-4 py-2 text-sm text-white shadow-lg z-50">

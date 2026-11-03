@@ -262,6 +262,8 @@ export default function PregnancyWeeklyPage() {
                         objectId={item.id}
                         favoriteType="timeline"
                         note={item.title}
+                        count={item.fav_count}
+                        variant="icon"
                         className="ml-auto"
                       />
                     </div>

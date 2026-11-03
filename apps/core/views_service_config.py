@@ -91,7 +91,7 @@ class AdminServiceConfigTestView(APIView):
 
 def _summarize_payload(group, data):
     """审计详情摘要（不泄露完整地址列表）"""
-    if group == 'search_pipeline':
+    if DEFAULT_GROUPS.get(group, {}).get('type') == 'engines':
         engines = data.get('engines') or []
         return '引擎 %d 个（%s），超时 %ss，重试 %s 轮' % (
             len([e for e in engines if isinstance(e, dict) and e.get('enabled')]),

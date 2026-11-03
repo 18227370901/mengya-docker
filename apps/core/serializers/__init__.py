@@ -312,6 +312,11 @@ class TimelineSerializer(serializers.ModelSerializer):
     products = ProductSerializer(many=True, read_only=True)
     category_label = serializers.CharField(source="get_category_display", read_only=True)
     stage_label = serializers.CharField(source="get_stage_type_display", read_only=True)
+    fav_count = serializers.SerializerMethodField()
+
+    def get_fav_count(self, obj):
+        from apps.core.models.favorite import UserFavorite
+        return UserFavorite.objects.filter(favorite_type="timeline", object_id=obj.id).count()
 
     class Meta:
         model = TimelineEvent
@@ -331,12 +336,18 @@ class TimelineSerializer(serializers.ModelSerializer):
             "is_active",
             "sort_order",
             "view_count",
+            "fav_count",
             "products",
         ]
 
 
 class RecipeSerializer(serializers.ModelSerializer):
     period_label = serializers.CharField(source="get_period_display", read_only=True)
+    fav_count = serializers.SerializerMethodField()
+
+    def get_fav_count(self, obj):
+        from apps.core.models.favorite import UserFavorite
+        return UserFavorite.objects.filter(favorite_type="recipe", object_id=obj.id).count()
 
     class Meta:
         model = Recipe
@@ -354,13 +365,19 @@ class RecipeSerializer(serializers.ModelSerializer):
             "sort_order",
             "is_active",
             "view_count",
+            "fav_count",
             "created_at",
         ]
-        read_only_fields = ["id", "view_count", "created_at"]
+        read_only_fields = ["id", "view_count", "fav_count", "created_at"]
 
 
 class KidsEncyclopediaSerializer(serializers.ModelSerializer):
     chapter_label = serializers.CharField(source="get_chapter_display", read_only=True)
+    fav_count = serializers.SerializerMethodField()
+
+    def get_fav_count(self, obj):
+        from apps.core.models.favorite import UserFavorite
+        return UserFavorite.objects.filter(favorite_type="encyclopedia", object_id=obj.id).count()
 
     class Meta:
         model = KidsEncyclopedia
@@ -379,9 +396,10 @@ class KidsEncyclopediaSerializer(serializers.ModelSerializer):
             "sort_order",
             "is_active",
             "view_count",
+            "fav_count",
             "created_at",
         ]
-        read_only_fields = ["id", "view_count", "created_at"]
+        read_only_fields = ["id", "view_count", "fav_count", "created_at"]
 
 
 class ShoppingListItemSerializer(serializers.ModelSerializer):
@@ -668,6 +686,12 @@ class BabyShoppingItemSerializer(serializers.ModelSerializer):
 
 
 class FetalStorySerializer(serializers.ModelSerializer):
+    fav_count = serializers.SerializerMethodField()
+
+    def get_fav_count(self, obj):
+        from apps.core.models.favorite import UserFavorite
+        return UserFavorite.objects.filter(favorite_type="fetal_story", object_id=obj.id).count()
+
     class Meta:
         model = FetalStory
         fields = [
@@ -690,8 +714,9 @@ class FetalStorySerializer(serializers.ModelSerializer):
             "sort_order",
             "is_active",
             "view_count",
+            "fav_count",
             "created_at",
         ]
-        read_only_fields = ["id", "view_count", "created_at"]
+        read_only_fields = ["id", "view_count", "fav_count", "created_at"]
 
 from .health import BmiAnalysisInputSerializer, VitalsAnalysisInputSerializer

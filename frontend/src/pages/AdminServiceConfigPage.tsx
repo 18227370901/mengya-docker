@@ -3,7 +3,7 @@ import type { ComponentType } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ArrowLeft, ArrowDown, ArrowUp, Check, CheckCircle2, XCircle, CloudSun, Globe2,
-  Loader2, Plus, RefreshCcw, Save, Settings2, Trash2, FlaskConical, Wind, CalendarDays, Search, X, Pencil
+  Loader2, Plus, RefreshCcw, Save, Settings2, Trash2, FlaskConical, Wind, CalendarDays, Search, X, Pencil, Languages
 } from "lucide-react";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { serviceConfigApi } from "@/api/services";
@@ -16,6 +16,7 @@ const GROUP_ICONS: Record<string, ComponentType<{ className?: string }>> = {
   air_quality: Wind,
   holiday: CalendarDays,
   search_pipeline: Globe2,
+  translation: Languages,
 };
 
 /** v1.73 外部接口服务配置：天气 / 节假日 / AI 公网搜索引擎管线统一管理 */

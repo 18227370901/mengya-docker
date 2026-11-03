@@ -308,6 +308,8 @@ export default function ThirdPartyHubPage() {
                         objectId={p.id}
                         favoriteType="platform"
                         note={p.name}
+                        count={p.fav_count}
+                        variant="icon"
                         size="sm"
                       />
                       <button

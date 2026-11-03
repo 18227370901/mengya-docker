@@ -34,8 +34,8 @@ export const babyShoppingApi = {
   categories: () =>
     api.get<ApiResponse<BabyShoppingCategories>>("/baby-shopping/categories/").then((r) => r.data.data),
 
-  aiRecommend: (data: { season: string; delivery_method: string; budget?: string; extra?: string }) =>
-    api.post<ApiResponse<AIRecommendResult>>("/baby-shopping/ai_recommend/", data, { timeout: 90000 }).then((r) => r.data.data),
+  aiRecommend: (data: { season: string; delivery_method: string; budget?: string; extra?: string }, config?: { signal?: AbortSignal }) =>
+    api.post<ApiResponse<AIRecommendResult>>("/baby-shopping/ai_recommend/", data, { timeout: 90000, ...(config || {}) }).then((r) => r.data.data),
 };
 
 export const searxngConfigApi = {

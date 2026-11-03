@@ -14,6 +14,7 @@ from rest_framework.views import APIView
 from django.db.models import Q
 
 from .models.platform import ThirdPartyPlatform, ThirdPartyPlatformResource
+from .models.favorite import UserFavorite
 from .services.platform_meta_service import fetch_platform_metadata
 from .utils.audit import audit
 from .utils.permissions import has_permission
@@ -57,6 +58,7 @@ def _serialize_platform(p, allowed_resources=None, is_admin_user=False):
         "age_group_display": p.get_age_group_display(),
         "tags": p.tags or [],
         "sort_order": p.sort_order,
+        "fav_count": UserFavorite.objects.filter(favorite_type="platform", object_id=p.id).count(),
         "is_enabled": p.is_enabled,
         "visibility_type": p.visibility_type,
         "allowed_user_ids": p.allowed_user_ids if is_admin_user else [],

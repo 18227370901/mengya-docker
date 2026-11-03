@@ -298,6 +298,7 @@ export default function PregnancyRecipePage() {
                     objectId={recipe.id}
                     favoriteType="recipe"
                     note={recipe.title}
+                    count={recipe.fav_count}
                     variant="icon"
                     size="sm"
                   />

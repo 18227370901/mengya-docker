@@ -397,7 +397,7 @@ export default function TimelinePage() {
             <div key={item.id} className="card relative hover:shadow-md transition">
               {/* v1.88.2 列表卡片直接提供收藏按钮，无需点进详情 */}
               <div className="absolute right-3 top-3 z-10">
-                <FavoriteButton objectId={item.id} favoriteType="timeline" note={item.title} />
+                <FavoriteButton objectId={item.id} favoriteType="timeline" note={item.title} count={item.fav_count} variant="icon" />
               </div>
               <Link to={`/timeline/${item.id}`}>
                 <div className="mb-2 flex items-center gap-2">

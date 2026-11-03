@@ -5877,7 +5877,7 @@ class FetalStoryViewSet(viewsets.ModelViewSet):
 
     def get_permissions(self):
         """知识库写操作仅管理员或被授权用户（kb_stories_manage）"""
-        if self.action in ("create", "update", "partial_update", "destroy", "import_csv", "batch"):
+        if self.action in ("create", "update", "partial_update", "destroy", "import_csv", "batch", "translate"):
             return [KbWritePermission()]
         return super().get_permissions()
 
@@ -5947,6 +5947,57 @@ class FetalStoryViewSet(viewsets.ModelViewSet):
             .order_by("week_start")
         )
         return Response({"code": 0, "message": "success", "data": list(weeks)})
+
+    @action(detail=False, methods=["post"])
+    def translate(self, request):
+        """v2.07 胎教故事双向互译接口（仅具有 kb_stories_manage 权限或管理员可调用）"""
+        if not (request.user.is_staff or has_permission(request.user, "kb_stories_manage")):
+            return Response(
+                {"code": 4030, "message": "您暂无胎教故事管理与翻译权限", "data": None},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        data = request.data or {}
+        fields = data.get("fields") or {}
+        if not isinstance(fields, dict):
+            return Response(
+                {"code": 2001, "message": "fields 必须为字典对象", "data": None},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        source_lang = str(data.get("source_lang", "zh")).strip().lower()
+        target_lang = str(data.get("target_lang", "en")).strip().lower()
+        preferred_engine = data.get("engine")
+        if preferred_engine:
+            preferred_engine = str(preferred_engine).strip()
+
+        from apps.core.services.translation_service import translate_story_package
+        res = translate_story_package(
+            fields=fields,
+            source_lang=source_lang,
+            target_lang=target_lang,
+            preferred_engine=preferred_engine,
+            user=request.user,
+        )
+
+        if not res.get("success"):
+            return Response(
+                {"code": 5003, "message": res.get("error") or "翻译失败，请检查翻译引擎配置或网络状态", "data": res},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+        direction_label = "中译英" if source_lang.startswith("zh") else "英译中"
+        engine_label = res.get("used_engine_label") or res.get("used_engine") or "默认引擎"
+        target_title = fields.get("title") or fields.get("title_en") or "胎教故事"
+        audit(
+            request,
+            action="kb_story_translate",
+            action_label="胎教故事翻译",
+            target_type="fetal_story",
+            target_id=0,
+            target_name=str(target_title)[:50],
+            detail=f"使用【{engine_label}】进行{direction_label}互译，共翻译 {len(res.get('results', {}))} 个字段",
+        )
+
+        return Response({"code": 0, "message": f"翻译完成（引擎：{engine_label}）", "data": res})
 
     @action(detail=True, methods=["post"])
     def increment_view(self, request, pk=None):

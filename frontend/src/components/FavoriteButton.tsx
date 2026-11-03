@@ -1,16 +1,17 @@
 /**
- * v1.88.1 可复用收藏按钮组件（v1.88.4 改造为全局 store 模式）
+ * v1.88.1 可复用收藏按钮组件（v1.88.4 改造为全局 store 模式，v2.07 强化淘宝风格直显大数与千分位气泡）
  *
- * 供商品、时间轴、胎教故事、孕期食谱、幼儿百科等内容页统一使用。
- * v1.88.4 起收藏状态读取全局 favoriteStore（zustand）：
- * - 每类型只发 1 次 /api/favorites/map/ 请求（列表页 N 张卡片共享，不再各查各的）；
- * - 列表卡片与详情弹窗读同一份状态，任一处切换全局即时同步；
- * - 点击走 store.toggle 乐观更新，失败回滚并提示。
- * 后端按 favorite_create / favorite_delete 权限键管控（管理员始终放行）。
+ * 供商品、时间轴、胎教故事、孕期食谱、幼儿百科、第三方导航等全站内容统一使用。
+ * v2.07 强化：
+ * - 仿淘宝/小红书直接呈现累计收藏人次：未收藏 [♡ 收藏 1.2万] / 已收藏 [♥ 已收藏 1.2万]；
+ * - 列表卡片 icon 模式下自动呈现微胶囊徽章 [♡ 1.2万] / [♥ 1.2万]，无需悬浮即可一眼洞察人气；
+ * - 点击走乐观增减：收藏即时 +1，取消即时 -1，杜绝滞后感；
+ * - 鼠标悬浮依然展示精准千分位人次提示气泡（如：全站累计 1,234 位妈妈收藏）。
  */
 import { useEffect, useState } from "react";
 import { Heart, Loader2 } from "lucide-react";
 import { useFavoriteStore } from "@/store/favoriteStore";
+import { formatCompactCount, formatFullCount } from "@/utils/format";
 
 export type FavoriteType =
   | "product"
@@ -29,10 +30,19 @@ interface FavoriteButtonProps {
   favoriteType: FavoriteType;
   /** 收藏备注（一般存对象标题，便于收藏中心展示） */
   note?: string;
+  /** 累计收藏人次（可选） */
+  count?: number;
+  /** 是否在 pill 模式下显式呈现紧凑计数（默认 true） */
+  showCount?: boolean;
+  /** 自定义未收藏时的文案，默认为“收藏” */
+  unfavoritedLabel?: string;
+  /** 自定义已收藏时的文案，默认为“已收藏” */
+  favoritedLabel?: string;
   /** 尺寸：sm 用于列表/弹窗头部，md 用于详情页 */
   size?: "sm" | "md";
-  /** 展示样式：icon 仅图标；pill 图标+文字 */
+  /** 展示样式：icon 仅图标/微胶囊；pill 图标+文字胶囊 */
   variant?: "icon" | "pill";
+  onToggle?: (nextFav: boolean) => void;
   className?: string;
 }
 
@@ -40,37 +50,57 @@ export default function FavoriteButton({
   objectId,
   favoriteType,
   note = "",
+  count,
+  showCount = true,
+  unfavoritedLabel = "收藏",
+  favoritedLabel = "已收藏",
   size = "sm",
   variant = "icon",
+  onToggle,
   className = "",
 }: FavoriteButtonProps) {
-  // v1.88.4 从全局 store 读取状态：与列表页/其他弹窗天然同步
   const favorited = useFavoriteStore((s) => s.maps[favoriteType]?.has(objectId) === true);
   const isReady = useFavoriteStore((s) => s.loaded.has(favoriteType));
   const loading = useFavoriteStore((s) => s.loading.has(favoriteType));
   const ensureType = useFavoriteStore((s) => s.ensureType);
   const [toggling, setToggling] = useState(false);
+  const [localDelta, setLocalDelta] = useState(0);
 
-  // 挂载时确保该类型收藏状态已加载（store 内部并发去重，只发 1 次请求）
   useEffect(() => {
     ensureType(favoriteType);
   }, [favoriteType, ensureType]);
+
+  useEffect(() => {
+    setLocalDelta(0);
+  }, [count, objectId]);
 
   const handleToggle = async (e: React.MouseEvent) => {
     e.stopPropagation();
     e.preventDefault();
     if (toggling) return;
     setToggling(true);
+    const wasFav = favorited;
+    setLocalDelta((prev) => prev + (wasFav ? -1 : 1));
     try {
-      await useFavoriteStore.getState().toggle(objectId, favoriteType, note);
+      const nextFav = await useFavoriteStore.getState().toggle(objectId, favoriteType, note);
+      onToggle?.(nextFav);
     } catch (err: any) {
+      setLocalDelta((prev) => prev + (wasFav ? 1 : -1));
       alert(err?.message || "收藏操作失败，请稍后重试");
     } finally {
       setToggling(false);
     }
   };
 
-  // v1.88.4 类型级状态未就绪时显示检查中（一次性，整页 1 个请求全部就绪）
+  const effectiveCount = count !== undefined ? Math.max(0, count + localDelta) : undefined;
+  const compactCountStr = effectiveCount !== undefined && effectiveCount > 0 ? formatCompactCount(effectiveCount) : "";
+  const fullCountStr = effectiveCount !== undefined && effectiveCount > 0 ? formatFullCount(effectiveCount) : "";
+  const tooltipText = fullCountStr
+    ? `${favorited ? "已收藏" : "点击加入收藏"} (全站累计 ${fullCountStr} 位妈妈收藏)`
+    : favorited
+    ? "已收藏，点击取消"
+    : "点击加入收藏";
+
   if (!isReady) {
     return (
       <span
@@ -82,24 +112,41 @@ export default function FavoriteButton({
     );
   }
 
-  const iconSize = size === "sm" ? "h-[18px] w-[18px]" : "h-6 w-6";
+  const iconSize = size === "sm" ? "h-4 w-4" : "h-4.5 w-4.5";
 
   if (variant === "icon") {
+    if (showCount && compactCountStr) {
+      return (
+        <button
+          type="button"
+          onClick={handleToggle}
+          title={tooltipText}
+          className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium transition active:scale-95 shadow-2xs ${
+            favorited
+              ? "border-pink-200 bg-pink-50 text-pink-600 hover:bg-pink-100"
+              : "border-gray-200 bg-white/95 text-gray-600 backdrop-blur-xs hover:border-pink-200 hover:text-pink-600 hover:bg-white"
+          } ${className}`}
+        >
+          <Heart className={`h-3.5 w-3.5 shrink-0 ${favorited ? "fill-pink-500 text-pink-500" : "text-gray-400"}`} />
+          <span className="text-[11px] font-semibold leading-none">{compactCountStr}</span>
+        </button>
+      );
+    }
+
     return (
       <button
         type="button"
         onClick={handleToggle}
-        title={favorited ? "取消收藏" : "收藏"}
-        // v1.88.3 视觉增强：未收藏=浅橙底+描边爱心（一眼可辨），已收藏=红底实心，尺寸加大一档
-        className={`inline-flex items-center justify-center rounded-lg border transition ${
+        title={tooltipText}
+        className={`inline-flex items-center justify-center rounded-lg border transition active:scale-95 ${
           size === "sm" ? "h-8 w-8" : "h-10 w-10"
         } ${
           favorited
-            ? "border-rose-200 bg-rose-100 text-rose-500 hover:bg-rose-200"
-            : "border-orange-200 bg-orange-50 text-orange-500 hover:border-orange-300 hover:bg-orange-100"
+            ? "border-pink-200 bg-pink-50 text-pink-500 hover:bg-pink-100"
+            : "border-gray-200 bg-white text-gray-400 hover:border-pink-200 hover:text-pink-500 hover:bg-pink-50/50"
         } ${className}`}
       >
-        <Heart className={`${iconSize} ${favorited ? "fill-current" : ""}`} />
+        <Heart className={`${iconSize} ${favorited ? "fill-pink-500 text-pink-500" : ""}`} />
       </button>
     );
   }
@@ -108,14 +155,27 @@ export default function FavoriteButton({
     <button
       type="button"
       onClick={handleToggle}
-      className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-medium transition ${
+      title={tooltipText}
+      className={`inline-flex items-center gap-1.5 rounded-full border transition active:scale-95 shadow-2xs ${
+        size === "sm" ? "px-3 py-1.5 text-xs font-medium" : "px-4 py-2 text-sm font-medium"
+      } ${
         favorited
-          ? "border-rose-200 bg-rose-50 text-rose-500 hover:bg-rose-100"
-          : "border-gray-200 bg-white text-gray-500 hover:border-rose-200 hover:text-rose-500"
+          ? "border-pink-300 bg-pink-50 text-pink-600 hover:bg-pink-100"
+          : "border-gray-200 bg-white text-gray-700 hover:border-pink-200 hover:text-pink-600 hover:bg-pink-50/40"
       } ${className}`}
     >
-      <Heart className={`h-4 w-4 ${favorited ? "fill-current" : ""}`} />
-      {favorited ? "已收藏" : "收藏"}
+      <Heart className={`${size === "sm" ? "h-4 w-4" : "h-4 w-4"} shrink-0 ${favorited ? "fill-pink-500 text-pink-500" : "text-gray-400"}`} />
+      <span>{favorited ? favoritedLabel : unfavoritedLabel}</span>
+      {showCount && compactCountStr ? (
+        <span
+          className={`ml-0.5 rounded-full px-1.5 py-0.5 text-[10px] leading-tight font-semibold ${
+            favorited ? "bg-pink-200/80 text-pink-700" : "bg-gray-100 text-gray-600"
+          }`}
+          title={`全站累计 ${fullCountStr} 人收藏`}
+        >
+          {compactCountStr}
+        </span>
+      ) : null}
     </button>
   );
 }

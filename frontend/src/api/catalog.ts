@@ -69,6 +69,20 @@ export const recipeApi = {
     api.get<ApiResponse<KnowledgePagedResponse<Recipe>>>("/recipes/", { params }).then((r) => r.data.data as KnowledgePagedResponse<Recipe>),
   detail: (id: number) => api.get<ApiResponse<Recipe>>(`/recipes/${id}/`).then((r) => r.data.data),
   nutrients: () => api.get<ApiResponse<{ nutrient_tag: string; count: number }[]>>("/recipes/nutrients/").then((r) => r.data.data),
+  // v2.07 胎教故事中英文互译
+  translate: (data: {
+    fields: Record<string, string>;
+    source_lang?: string;
+    target_lang?: string;
+    engine?: string;
+  }) =>
+    api.post<ApiResponse<{
+      success: boolean;
+      results: Record<string, string>;
+      used_engine: string;
+      used_engine_label: string;
+    }>>("/fetal-stories/translate/", data).then((r) => r.data),
+
   // v1.88 管理员 CRUD + 批量 + 导入导出
   create: (data: Partial<Recipe>) => api.post<ApiResponse<Recipe>>("/recipes/", data).then((r) => r.data.data),
   update: (id: number, data: Partial<Recipe>) => api.patch<ApiResponse<Recipe>>(`/recipes/${id}/`, data).then((r) => r.data.data),
@@ -95,6 +109,20 @@ export const kidsEncyclopediaApi = {
     api.get<ApiResponse<KnowledgePagedResponse<KidsEncyclopedia>>>("/kids-encyclopedia/", { params }).then((r) => r.data.data as KnowledgePagedResponse<KidsEncyclopedia>),
   detail: (id: number) => api.get<ApiResponse<KidsEncyclopedia>>(`/kids-encyclopedia/${id}/`).then((r) => r.data.data),
   chapters: () => api.get<ApiResponse<{ chapter: string; count: number }[]>>("/kids-encyclopedia/chapters/").then((r) => r.data.data),
+  // v2.07 胎教故事中英文互译
+  translate: (data: {
+    fields: Record<string, string>;
+    source_lang?: string;
+    target_lang?: string;
+    engine?: string;
+  }) =>
+    api.post<ApiResponse<{
+      success: boolean;
+      results: Record<string, string>;
+      used_engine: string;
+      used_engine_label: string;
+    }>>("/fetal-stories/translate/", data).then((r) => r.data),
+
   // v1.88 管理员 CRUD + 批量 + 导入导出
   create: (data: Partial<KidsEncyclopedia>) => api.post<ApiResponse<KidsEncyclopedia>>("/kids-encyclopedia/", data).then((r) => r.data.data),
   update: (id: number, data: Partial<KidsEncyclopedia>) => api.patch<ApiResponse<KidsEncyclopedia>>(`/kids-encyclopedia/${id}/`, data).then((r) => r.data.data),
@@ -135,8 +163,8 @@ export const productApi = {
   batch: (ids: number[], action: "delete" | "active" | "inactive") =>
     api.post<ApiResponse<{ count: number; action: string }>>("/products/batch/", { ids, action }).then((r) => r.data),
 
-  aiEvaluate: (id: number) =>
-    api.post<ApiResponse<{ source: string; used_config_name: string; evaluation: string; product_id: number; product_name: string }>>(`/products/${id}/ai-evaluate/`).then((r) => r.data.data),
+  aiEvaluate: (id: number, config?: { signal?: AbortSignal }) =>
+    api.post<ApiResponse<{ source: string; used_config_name: string; evaluation: string; product_id: number; product_name: string }>>(`/products/${id}/ai-evaluate/`, {}, config).then((r) => r.data.data),
 
   // 导入导出（仅管理员）；v1.88.1 导出改 POST + scope 三选，含品牌档案标签列
   exportCsv: (payload: KbExportPayload) =>
@@ -173,6 +201,20 @@ export const fetalStoryApi = {
     api.get<ApiResponse<number[]>>("/fetal-stories/weeks/").then((r) => r.data.data),
   incrementView: (id: number) =>
     api.post<ApiResponse<{ view_count: number }>>(`/fetal-stories/${id}/increment_view/`).then((r) => r.data.data),
+  // v2.07 胎教故事中英文互译
+  translate: (data: {
+    fields: Record<string, string>;
+    source_lang?: string;
+    target_lang?: string;
+    engine?: string;
+  }) =>
+    api.post<ApiResponse<{
+      success: boolean;
+      results: Record<string, string>;
+      used_engine: string;
+      used_engine_label: string;
+    }>>("/fetal-stories/translate/", data).then((r) => r.data),
+
   // v1.88 管理员 CRUD + 批量 + 导入导出
   create: (data: Partial<FetalStory>) => api.post<ApiResponse<FetalStory>>("/fetal-stories/", data).then((r) => r.data.data),
   update: (id: number, data: Partial<FetalStory>) => api.patch<ApiResponse<FetalStory>>(`/fetal-stories/${id}/`, data).then((r) => r.data.data),

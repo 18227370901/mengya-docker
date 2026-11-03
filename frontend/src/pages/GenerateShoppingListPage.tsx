@@ -1,4 +1,6 @@
-import { useState } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import axios from "axios";
+import AiProgressModal from "@/components/ui/AiProgressModal";
 import { useNavigate } from "react-router-dom";
 import { ArrowLeft, Loader2, Sparkles, ShoppingBag, Check, CheckSquare, FileText } from "lucide-react";
 import { shoppingApi, babyShoppingApi } from "@/api/services";
@@ -127,6 +129,14 @@ function renderRawContent(raw: string) {
   return blocks;
 }
 
+const SHOPPING_AI_STAGES = [
+  { threshold: 0, text: "正在根据季节、分娩方式与预算偏好初始化模型..." },
+  { threshold: 25, text: "正在联网检索母婴护理规范与分娩住院常备指南..." },
+  { threshold: 55, text: "母婴 AI 专家正在动态编排妈妈篇与宝宝篇分类物品清单..." },
+  { threshold: 82, text: "正在校验参考数量、防踩坑备忘及实用选购要点..." },
+  { threshold: 95, text: "分析完成，即将呈现个性化待产包推荐..." },
+];
+
 export default function GenerateShoppingListPage() {
   const navigate = useNavigate();
   const [season, setSeason] = useState("");
@@ -137,6 +147,26 @@ export default function GenerateShoppingListPage() {
   const [error, setError] = useState("");
   const [aiResult, setAiResult] = useState<AIRecommendResult | null>(null);
   const [adopting, setAdopting] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  // 组件卸载时安全中断在途 AI 分析请求
+  useEffect(() => {
+    return () => {
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+    };
+  }, []);
+
+  const handleCancelAiAnalyze = useCallback(() => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    setLoading(false);
+    setError("已取消 AI 分析推荐");
+  }, []);
 
   const aiAnalyze = async () => {
     if (!season || !delivery) {
@@ -144,20 +174,30 @@ export default function GenerateShoppingListPage() {
       return;
     }
     setError("");
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
     setLoading(true);
     setAiResult(null);
     try {
-      const result = await babyShoppingApi.aiRecommend({
-        season,
-        delivery_method: delivery,
-        budget: budget || undefined,
-        extra: extra || undefined,
-      });
+      const result = await babyShoppingApi.aiRecommend(
+        {
+          season,
+          delivery_method: delivery,
+          budget: budget || undefined,
+          extra: extra || undefined,
+        },
+        { signal: controller.signal }
+      );
       setAiResult(result);
-    } catch (e) {
+    } catch (e: any) {
+      if (axios.isCancel(e) || e?.name === "CanceledError" || e?.code === "ERR_CANCELED") {
+        setError("已取消 AI 分析推荐");
+        return;
+      }
       setError((e as Error).message || "AI 分析失败，请稍后重试");
     } finally {
       setLoading(false);
+      abortControllerRef.current = null;
     }
   };
 
@@ -422,6 +462,16 @@ export default function GenerateShoppingListPage() {
           生成逻辑基于母婴健康共识，供参考，具体以医生建议为准
         </p>
       )}
+      {/* AI 智能待产包一键分析进度与可取消弹窗 */}
+      <AiProgressModal
+        isOpen={loading}
+        title="AI 正在一键深度分析推荐待产包..."
+        description={"正在综合【" + (SEASON_LABELS[season] || season || "当前季节") + " · " + (DELIVERY_LABELS[delivery] || delivery || "指定分娩方式") + "】的母婴住院与产后护理需求，请稍候。"}
+        stages={SHOPPING_AI_STAGES}
+        onCancel={handleCancelAiAnalyze}
+        cancelText="取消分析"
+      />
     </div>
   );
 }
+

@@ -71,6 +71,17 @@ DEFAULT_GROUPS = {
         ],
         'retries': 1,
     },
+    'translation': {
+        'label': '胎教与母婴中英文互译管线',
+        'type': 'engines',
+        'defaults': [
+            {'key': 'ai_model', 'url': 'internal://ai-model', 'timeout': 15.0, 'enabled': True},
+            {'key': 'mymemory', 'url': 'https://api.mymemory.translated.net/get', 'timeout': 6.0, 'enabled': True},
+            {'key': 'google_translate', 'url': 'https://translate.googleapis.com/translate_a/single', 'timeout': 5.0, 'enabled': False},
+            {'key': 'custom_api', 'url': 'https://api.fanyi.baidu.com/api/trans/vip/translate', 'timeout': 5.0, 'enabled': False},
+        ],
+        'retries': 1,
+    },
 }
 
 # 搜索引擎 key → 展示名（前端图标/标签用）
@@ -82,6 +93,10 @@ ENGINE_LABELS = {
     'sogou': '搜狗搜索',
     'baidu': '百度搜索',
     'yahoo': '雅虎搜索',
+    'ai_model': 'AI 母婴温情大模型',
+    'mymemory': 'MyMemory 国际免Key端点',
+    'google_translate': 'Google 公共翻译端点',
+    'custom_api': '自定义开放翻译接口',
 }
 
 # 节假日地址占位符（管理员无需填写，保存时自动补全，调用时注入年份）
@@ -154,10 +169,12 @@ def get_endpoints(group):
     return default
 
 
-def get_engines():
-    """搜索引擎组返回 [{key, url, timeout, enabled}]；无配置回落默认"""
-    default = [dict(x) for x in DEFAULT_GROUPS['search_pipeline']['defaults']]
-    cfg = _get_config_map().get('search_pipeline') or {}
+def get_engines(group='search_pipeline'):
+    """指定引擎组返回 [{key, url, timeout, enabled}]；无配置回落默认"""
+    if group not in DEFAULT_GROUPS or DEFAULT_GROUPS[group].get('type') != 'engines':
+        group = 'search_pipeline'
+    default = [dict(x) for x in DEFAULT_GROUPS[group]['defaults']]
+    cfg = _get_config_map().get(group) or {}
     raw = cfg.get('engines')
     if isinstance(raw, list) and raw:
         out = []
@@ -185,7 +202,7 @@ def _clamp(v, lo, hi):
 def get_timeout(group):
     """读取组请求超时（秒），非法回落默认。
     search_pipeline 组无组级超时（超时在引擎行级），返回 None"""
-    if group == 'search_pipeline':
+    if DEFAULT_GROUPS.get(group, {}).get('type') == 'engines':
         return None
     cfg = _get_config_map().get(group) or {}
     try:
@@ -335,7 +352,7 @@ def get_all_config():
             'defaults': meta['defaults'],
         }
         if meta['type'] == 'engines':
-            item['engines'] = get_engines()
+            item['engines'] = get_engines(group)
             item['engine_labels'] = ENGINE_LABELS
         else:
             endpoints = get_endpoints(group)
@@ -344,6 +361,23 @@ def get_all_config():
             item['endpoints'] = endpoints
         result[group] = item
     return {'groups': result}
+
+
+def get_group(group):
+    """读取指定分组当前有效配置"""
+    meta = DEFAULT_GROUPS.get(group)
+    if not meta:
+        return None
+    if meta['type'] == 'engines':
+        return {
+            'engines': get_engines(group),
+            'retries': get_retries(group),
+        }
+    return {
+        'endpoints': get_endpoints(group),
+        'timeout': get_timeout(group),
+        'retries': get_retries(group),
+    }
 
 
 # ===================== 一键测试执行器 =====================
@@ -421,7 +455,13 @@ def test_endpoint(group, url, timeout=None):
 
 
 def test_engine(key, url, timeout=None):
-    """测试搜索引擎行：复用 web_search 各引擎专属解析器，能解析出结果即成功"""
+    """测试引擎行（支持 AI 搜索引擎与翻译引擎）"""
+    if key in ('ai_model', 'mymemory', 'google_translate', 'custom_api'):
+        try:
+            from apps.core.services.translation_service import test_translation_engine
+            return test_translation_engine(key, url=url, timeout=timeout)
+        except Exception as e:
+            return {'url': url or key, 'ok': False, 'message': f'翻译引擎测试异常: {str(e)[:150]}', 'latency_ms': 0}
     if timeout is None:
         timeout = 1.0
         for eng in get_engines():
@@ -445,7 +485,7 @@ def test_engine(key, url, timeout=None):
 def test_group(group, payload):
     """按当前配置顺序与启用状态测试整组（模拟故障转移顺序），返回逐条结果"""
     results = []
-    if group == 'search_pipeline':
+    if DEFAULT_GROUPS.get(group, {}).get('type') == 'engines':
         engines = payload.get('engines') or []
         for item in engines:
             if not isinstance(item, dict) or not item.get('enabled'):

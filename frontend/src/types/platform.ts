@@ -29,6 +29,7 @@ export interface ThirdPartyPlatform {
   visibility_type: 'all' | 'restricted';
   allowed_user_ids?: number[];
   created_by?: string;
+  fav_count?: number;
   resources: ThirdPartyPlatformResource[];
   created_at?: string;
   updated_at?: string;

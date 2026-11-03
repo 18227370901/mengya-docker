@@ -73,6 +73,8 @@ class AuditLog(models.Model):
         ("platform_resource_update", "编辑平台子资源"),
         ("platform_resource_delete", "删除平台子资源"),
         ("platform_access", "访问三方平台或资源"),
+        # 知识库管理
+        ("kb_story_translate", "胎教故事双向翻译"),
     ]
 
     user = models.ForeignKey(
