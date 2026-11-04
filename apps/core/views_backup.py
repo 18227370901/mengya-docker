@@ -108,6 +108,7 @@ class AdminBackupConfigView(APIView):
             cfg.backup_encrypt_password = str(data.get("backup_encrypt_password")).strip()
 
         cfg.save()
+        db_profile = backup_service.get_current_runtime_db_profile()
 
         audit(
             request,
