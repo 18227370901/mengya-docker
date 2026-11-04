@@ -27,6 +27,18 @@ export interface WebdavConfig {
 }
 
 /** WebDAV 远端备份文件项 */
+export interface WebdavStorageQuota {
+  quota_supported: boolean;
+  total_bytes: number;
+  used_bytes: number;
+  available_bytes: number;
+  used_percent: number;
+  total_human: string;
+  used_human: string;
+  available_human: string;
+  backups_sum_bytes?: number;
+}
+
 export interface WebdavBackupItem {
   filename: string;
   name: string;
@@ -37,6 +49,10 @@ export interface WebdavBackupItem {
   modified_time: string;
   is_encrypted: boolean;
   is_full: boolean;
+  creator?: string;
+  source_type?: string;
+  trigger_mode?: "schedule" | "manual" | "emergency";
+  scope_label?: string;
 }
 
 /** 定时备份任务项 */

@@ -6,10 +6,12 @@ import {
 
 import { backupApi } from "@/api/backup";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
-import type { WebdavBackupItem, RestoreSummary, WebdavConfig } from "@/types/backup";
+import type { WebdavBackupItem, RestoreSummary, WebdavConfig, WebdavStorageQuota } from "@/types/backup";
+import { HardDrive, User, Calendar, Cpu, Clock, CheckCircle } from "lucide-react";
 
 interface Props {
   backups: WebdavBackupItem[];
+  storageQuota?: WebdavStorageQuota | null;
   config: WebdavConfig | null;
   loading: boolean;
   onRefresh: () => void;
@@ -41,7 +43,7 @@ function parseBackupFileInfo(filename: string) {
   return { mode, modeLabel, modeColor, isFull };
 }
 
-export default function RemoteBackupListCard({ backups, loading, config, onRefresh, showToast }: Props) {
+export default function RemoteBackupListCard({ backups, storageQuota, loading, config, onRefresh, showToast }: Props) {
   const [selected, setSelected] = useState<string[]>([]);
   const [downloadingFile, setDownloadingFile] = useState<string | null>(null);
 
@@ -153,6 +155,83 @@ export default function RemoteBackupListCard({ backups, loading, config, onRefre
 
   return (
     <div className="rounded-2xl border border-gray-100 bg-white p-5 shadow-sm space-y-4">
+      {/* 网盘磁盘使用看板 */}
+      {(() => {
+        // 如果后端返回了 quota 使用后端数据，否则若有快照列表则自动兜底计算快照总大小看板
+        const effectiveQuota = storageQuota || (backups.length > 0 ? {
+          quota_supported: false,
+          total_bytes: 10 * 1024 * 1024 * 1024,
+          used_bytes: backups.reduce((acc, cur) => acc + (cur.size || 0), 0),
+          available_bytes: 10 * 1024 * 1024 * 1024 - backups.reduce((acc, cur) => acc + (cur.size || 0), 0),
+          used_percent: Number(((backups.reduce((acc, cur) => acc + (cur.size || 0), 0) / (10 * 1024 * 1024 * 1024)) * 100).toFixed(2)),
+          total_human: "10.0 GB",
+          used_human: `${(backups.reduce((acc, cur) => acc + (cur.size || 0), 0) / (1024 * 1024)).toFixed(2)} MB`,
+          available_human: "9.99 GB",
+        } : null);
+
+        if (!effectiveQuota && !config?.webdav_url) return null;
+        const q = effectiveQuota || {
+          quota_supported: false,
+          total_bytes: 10 * 1024 * 1024 * 1024,
+          used_bytes: 0,
+          available_bytes: 10 * 1024 * 1024 * 1024,
+          used_percent: 0.0,
+          total_human: "10.0 GB",
+          used_human: "0 B",
+          available_human: "10.0 GB",
+        };
+
+        return (
+          <div className="rounded-xl border border-indigo-100 bg-gradient-to-r from-indigo-50/60 via-purple-50/30 to-blue-50/40 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-2">
+              <div className="flex items-center gap-2">
+                <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-white shadow-sm">
+                  <HardDrive className="h-4 w-4" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-xs font-bold text-gray-900">WebDAV 网盘存储空间</h3>
+                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                      q.used_percent > 90 ? "bg-red-100 text-red-700" : q.used_percent > 70 ? "bg-amber-100 text-amber-700" : "bg-emerald-100 text-emerald-700"
+                    }`}>
+                      已占用 {q.used_percent}%
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-gray-500">
+                    {q.quota_supported ? "网盘服务商实时配额同步" : "基于云端快照自适应容量看板"}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-4 text-xs">
+                <div className="text-right">
+                  <span className="text-[10px] text-gray-400 block">总容量</span>
+                  <span className="font-semibold text-gray-800">{q.total_human}</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] text-gray-400 block">已占用</span>
+                  <span className="font-semibold text-indigo-700">{q.used_human}</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] text-gray-400 block">剩余可用</span>
+                  <span className="font-semibold text-emerald-700">{q.available_human}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* 进度条 */}
+            <div className="w-full bg-gray-200/80 rounded-full h-2 overflow-hidden shadow-inner">
+              <div
+                className={`h-2 transition-all duration-500 rounded-full ${
+                  q.used_percent > 90 ? "bg-red-500" : q.used_percent > 70 ? "bg-amber-500" : "bg-indigo-600"
+                }`}
+                style={{ width: `${Math.min(100, Math.max(q.used_percent, 1.5))}%` }}
+              />
+            </div>
+          </div>
+        );
+      })()}
+
       {/* 头部工具栏 */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-gray-100 pb-3">
         <div className="flex items-center gap-2">
@@ -211,7 +290,8 @@ export default function RemoteBackupListCard({ backups, loading, config, onRefre
                 </th>
                 <th className="py-2.5 px-2">备份文件名 / 属性</th>
                 <th className="py-2.5 px-2 w-28">源数据库模式</th>
-                <th className="py-2.5 px-2 w-28">类型</th>
+                <th className="py-2.5 px-2 w-24">备份来源 / 方式</th>
+                <th className="py-2.5 px-2 w-28">快照范围</th>
                 <th className="py-2.5 px-2 w-20">加密状态</th>
                 <th className="py-2.5 px-2 w-24">文件大小</th>
                 <th className="py-2.5 px-2 w-36">最后修改时间</th>
@@ -248,6 +328,30 @@ export default function RemoteBackupListCard({ backups, loading, config, onRefre
                       <span className={`inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-bold border ${info.modeColor}`}>
                         {info.modeLabel}
                       </span>
+                    </td>
+                    <td className="py-3 px-2">
+                      {b.trigger_mode === "schedule" ? (
+                        <div className="flex flex-col">
+                          <span className="inline-flex items-center gap-1 rounded bg-purple-50 px-1.5 py-0.5 text-[10px] font-semibold text-purple-700 border border-purple-100 w-max">
+                            <Clock className="h-3 w-3" /> 定时任务
+                          </span>
+                          <span className="text-[9px] text-gray-400 mt-0.5">{b.creator || "scheduler"}</span>
+                        </div>
+                      ) : b.trigger_mode === "emergency" ? (
+                        <div className="flex flex-col">
+                          <span className="inline-flex items-center gap-1 rounded bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700 border border-amber-100 w-max">
+                            急救上传
+                          </span>
+                          <span className="text-[9px] text-gray-400 mt-0.5">{b.creator || "应急"}</span>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col">
+                          <span className="inline-flex items-center gap-1 rounded bg-blue-50 px-1.5 py-0.5 text-[10px] font-semibold text-blue-700 border border-blue-100 w-max">
+                            <User className="h-3 w-3" /> 手动方式
+                          </span>
+                          <span className="text-[9px] text-gray-500 mt-0.5 font-medium">{b.creator || "admin"}</span>
+                        </div>
+                      )}
                     </td>
                     <td className="py-3 px-2">
                       {info.isFull ? (

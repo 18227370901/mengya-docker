@@ -15,7 +15,7 @@ export const backupApi = {
 
   /** 获取远端 WebDAV 备份列表 */
   listBackups: () =>
-    api.get<{ code: number; message: string; data: { configured: boolean; backups: WebdavBackupItem[] } }>("/admin/backups/list/").then((r) => r.data.data),
+    api.get<{ code: number; message: string; data: { configured: boolean; backups: WebdavBackupItem[]; storage_quota?: any } }>("/admin/backups/list/").then((r) => r.data.data),
 
   /** 手动触发即时备份并上传 WebDAV */
   uploadBackup: (payload: { backup_type: "full_backup" | "db_backup"; use_encrypt: boolean; manual_encrypt_password?: string }) =>

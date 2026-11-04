@@ -22,6 +22,11 @@ import {
   ArrowUp,
   ArrowDown,
   RotateCcw,
+  Download,
+  Upload,
+  FileSpreadsheet,
+  HelpCircle,
+  FileText,
 } from "lucide-react";
 import { platformApi } from "@/api/platform";
 import { ThirdPartyPlatform } from "@/types/platform";
@@ -106,6 +111,8 @@ function TablePlatformLogo({ name, logoUrl }: { name: string; logoUrl?: string }
   return (
     <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-50 text-purple-600 font-bold border border-purple-100">
       {name ? name.slice(0, 1) : "?"}
+
+      
     </div>
   );
 }
@@ -116,6 +123,68 @@ export default function PlatformManagePage() {
   const [loading, setLoading] = useState(true);
   const [errorMsg, setErrorMsg] = useState("");
   const [keyword, setKeyword] = useState("");
+
+  // 导入/导出/说明相关状态
+  const [importing, setImporting] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [templateModalOpen, setTemplateModalOpen] = useState(false);
+  const fileInputRef = React.useRef<HTMLInputElement | null>(null);
+
+  const handleExport = async (format: "json" | "csv") => {
+    setExporting(true);
+    try {
+      const res = await platformApi.exportPlatforms(format);
+      const blob = new Blob([res.data], { type: format === "csv" ? "text/csv;charset=utf-8;" : "application/json" });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `mengya_platforms_export_${new Date().toISOString().slice(0, 10)}.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      alert(`平台配置已成功导出为 .${format} 文件！`);
+    } catch (e: any) {
+      alert(e.message || "导出失败");
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const handleDownloadTemplate = async (lang: "zh" | "en") => {
+    try {
+      const res = await platformApi.downloadTemplate(lang);
+      const blob = new Blob([res.data], { type: "text/csv;charset=utf-8;" });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `mengya_platform_template_${lang}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      alert(`已开始下载${lang === "zh" ? "中文" : "英文"}导入模版`);
+    } catch (e: any) {
+      alert(e.message || "模版下载失败");
+    }
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setImporting(true);
+    try {
+      const res = await platformApi.importPlatforms(file);
+      alert((res as any).data?.message || "导入成功！");
+      loadPlatforms();
+    } catch (e: any) {
+      alert(e.message || "导入处理异常");
+    } finally {
+      setImporting(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  };
+
 
   // 常规快速筛选与排序状态
   const [statusFilter, setStatusFilter] = useState("");
@@ -374,7 +443,63 @@ export default function PlatformManagePage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="file"
+            ref={fileInputRef}
+            className="hidden"
+            accept=".json,.csv"
+            onChange={handleFileChange}
+          />
+
+          {/* 导出下拉组合按钮 */}
+          <div className="relative inline-flex rounded-xl shadow-sm">
+            <button
+              type="button"
+              disabled={exporting}
+              onClick={() => handleExport("json")}
+              className="inline-flex items-center gap-1 rounded-l-xl border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 transition"
+              title="导出当前配置为 JSON"
+            >
+              <Download className="h-3.5 w-3.5 text-gray-500" />
+              <span>导出 JSON</span>
+            </button>
+            <button
+              type="button"
+              disabled={exporting}
+              onClick={() => handleExport("csv")}
+              className="inline-flex items-center rounded-r-xl border-t border-b border-r border-gray-200 bg-white px-2.5 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 transition"
+              title="导出当前配置为 CSV 表格"
+            >
+              <FileSpreadsheet className="h-3.5 w-3.5 text-emerald-600" />
+              <span>CSV</span>
+            </button>
+          </div>
+
+          {/* 一键导入与字段模版说明 */}
+          {canEdit && (
+            <>
+              <button
+                type="button"
+                disabled={importing}
+                onClick={() => fileInputRef.current?.click()}
+                className="inline-flex items-center gap-1 rounded-xl border border-purple-200 bg-purple-50/70 px-3 py-2 text-xs font-medium text-purple-700 hover:bg-purple-100 transition"
+              >
+                <Upload className="h-3.5 w-3.5 text-purple-600" />
+                <span>{importing ? "正在导入..." : "一键导入"}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setTemplateModalOpen(true)}
+                className="inline-flex items-center gap-1 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50 transition"
+              >
+                <HelpCircle className="h-3.5 w-3.5 text-amber-500" />
+                <span>模版与说明</span>
+              </button>
+            </>
+          )}
+
           {canEdit ? (
             <button
               onClick={handleOpenAdd}
@@ -861,7 +986,137 @@ export default function PlatformManagePage() {
         />
       )}
 
-      {/* 子资源配置抽屉/弹窗 */}
+
+      {/* 导入模版下载与字段规范说明模态框 */}
+      {templateModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-xl space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-gray-100 pb-3">
+              <div className="flex items-center gap-2">
+                <FileText className="h-5 w-5 text-purple-600" />
+                <h3 className="text-base font-bold text-gray-900">三方平台导入模版与字段规范说明</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setTemplateModalOpen(false)}
+                className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 transition"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4 text-xs text-gray-600">
+              <div className="rounded-xl bg-purple-50/70 p-4 border border-purple-100">
+                <h4 className="font-bold text-purple-900 mb-1">📥 一键下载标准模版（含示例行）</h4>
+                <p className="text-purple-700 mb-3">支持上传标准 JSON 归档文件或使用 CSV 表格进行多条批量导入：</p>
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadTemplate("zh")}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-purple-600 px-3.5 py-2 text-xs font-semibold text-white hover:bg-purple-700 transition shadow-sm"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    下载中文模版 (CSV)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadTemplate("en")}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-purple-200 bg-white px-3.5 py-2 text-xs font-semibold text-purple-700 hover:bg-purple-50 transition"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    下载英文模版 (CSV English)
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <h4 className="font-bold text-gray-800 mb-2">📋 字段规范与字典枚举说明</h4>
+                <div className="overflow-x-auto rounded-xl border border-gray-100">
+                  <table className="w-full text-left text-[11px]">
+                    <thead className="bg-gray-50 text-gray-500 font-medium">
+                      <tr>
+                        <th className="py-2 px-3">中文列名</th>
+                        <th className="py-2 px-3">英文键名</th>
+                        <th className="py-2 px-3">必填</th>
+                        <th className="py-2 px-3">取值范围与说明</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      <tr>
+                        <td className="py-2 px-3 font-semibold text-gray-800">平台名称*</td>
+                        <td className="py-2 px-3 font-mono text-purple-700">name</td>
+                        <td className="py-2 px-3 text-red-500 font-bold">是</td>
+                        <td className="py-2 px-3">平台在前端展示的标题名称，如“丁香妈妈育儿”</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2 px-3 font-semibold text-gray-800">访问主地址*</td>
+                        <td className="py-2 px-3 font-mono text-purple-700">url</td>
+                        <td className="py-2 px-3 text-red-500 font-bold">是</td>
+                        <td className="py-2 px-3">标准 HTTP/HTTPS 链接，系统自带查重与 SSRF 安全过滤</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2 px-3 font-semibold text-gray-800">分类*</td>
+                        <td className="py-2 px-3 font-mono text-purple-700">category</td>
+                        <td className="py-2 px-3 text-red-500 font-bold">是</td>
+                        <td className="py-2 px-3">parenting (育儿早教) / health (母婴健康) / learning (课外学习) / tools (实用工具) / entertainment (益智娱乐) / other (其他)</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2 px-3 font-semibold text-gray-800">适用年龄段*</td>
+                        <td className="py-2 px-3 font-mono text-purple-700">age_group</td>
+                        <td className="py-2 px-3 text-red-500 font-bold">是</td>
+                        <td className="py-2 px-3">all (全年龄段) / prenatal (孕产阶段) / infant (0-1岁) / toddler (1-3岁) / preschool (3-6岁) / school_age (6岁以上)</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2 px-3 font-semibold text-gray-800">Logo图标链接</td>
+                        <td className="py-2 px-3 font-mono text-purple-700">logo_url</td>
+                        <td className="py-2 px-3 text-gray-400">否</td>
+                        <td className="py-2 px-3">图片外部 URL（系统支持自动会话级缓存代理）</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2 px-3 font-semibold text-gray-800">平台描述</td>
+                        <td className="py-2 px-3 font-mono text-purple-700">description</td>
+                        <td className="py-2 px-3 text-gray-400">否</td>
+                        <td className="py-2 px-3">一句话定位或特色介绍</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2 px-3 font-semibold text-gray-800">标签</td>
+                        <td className="py-2 px-3 font-mono text-purple-700">tags</td>
+                        <td className="py-2 px-3 text-gray-400">否</td>
+                        <td className="py-2 px-3">英文逗号或中文逗号分隔，如“早教,知识库,权威”</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2 px-3 font-semibold text-gray-800">是否启用</td>
+                        <td className="py-2 px-3 font-mono text-purple-700">is_enabled</td>
+                        <td className="py-2 px-3 text-gray-400">否</td>
+                        <td className="py-2 px-3">true / false (默认 true)</td>
+                      </tr>
+                      <tr>
+                        <td className="py-2 px-3 font-semibold text-gray-800">用户可见范围</td>
+                        <td className="py-2 px-3 font-mono text-purple-700">visibility_type</td>
+                        <td className="py-2 px-3 text-gray-400">否</td>
+                        <td className="py-2 px-3">all (全员普通用户) / restricted (仅指定白名单)</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => setTemplateModalOpen(false)}
+                className="rounded-xl bg-gray-100 px-4 py-2 text-xs font-semibold text-gray-700 hover:bg-gray-200 transition"
+              >
+                关闭说明
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+
+            {/* 子资源配置抽屉/弹窗 */}
       {resourceModalPlatform && (
         <ResourceManageModal
           platform={resourceModalPlatform}
@@ -875,6 +1130,8 @@ export default function PlatformManagePage() {
           }}
         />
       )}
+
+      
     </div>
   );
 }

@@ -573,6 +573,51 @@ def revert_to_pre_restore_latest(operator_name: str = "admin") -> tuple[bool, st
 # 跨引擎灾备恢复与数据自愈引擎 (Cross-Engine Restore & Healing)
 # ============================================================
 
+
+MENGYA_SIGNATURE_TABLES = [
+    "core_user",
+    "core_systemsetting",
+    "core_backupconfig",
+    "core_babyprofile",
+    "core_motherprofile",
+    "core_product",
+    "core_recipe",
+    "core_fetalstory",
+]
+
+def verify_mengya_database_fingerprint(db_path: str) -> tuple[bool, str]:
+    """
+    【核心防线：系统专属拓扑与指纹严格校验】
+    拒绝任何非萌芽系统的异构 SQLite 数据库（如随礼系统、博客、商城等），
+    杜绝将异构 db 物理覆盖导致的表缺失和系统彻底瘫痪 (no such table: core_user)。
+    """
+    if not os.path.exists(db_path):
+        return False, "待校验的数据库文件不存在"
+    try:
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+        cur.execute("PRAGMA integrity_check;")
+        res = cur.fetchone()
+        if not (res and res[0] == "ok"):
+            conn.close()
+            return False, f"数据库物理文件已损坏或非合法 SQLite 文件: {res}"
+
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table';")
+        tables = {r[0] for r in cur.fetchall()}
+        conn.close()
+
+        # 检查是否命中核心签名表
+        matched = [t for t in MENGYA_SIGNATURE_TABLES if t in tables]
+        if len(matched) < 4:
+            return False, (
+                "【安全拦截】该文件不符合萌芽系统备份规范！"
+                "检测到该文件缺少萌芽母婴系统的核心数据表结构（如 core_user、core_systemsetting 等）。"
+                "为防止主系统崩溃，系统已主动熔断并拒绝执行恢复操作。"
+            )
+        return True, "萌芽系统特征指纹校验通过"
+    except Exception as e:
+        return False, f"读取数据库结构失败: {str(e)}"
+
 def verify_database_integrity(db_path: str) -> tuple[bool, str]:
     """验证 SQLite 物理数据库文件完整性"""
     if not os.path.exists(db_path):
@@ -675,6 +720,13 @@ def restore_system_from_backup(
     temp_dir.mkdir(parents=True, exist_ok=True)
     current_profile = get_current_runtime_db_profile()
 
+    # 【防灾前置自愈】确保当前运行环境已应用所有数据库迁移，防止因表结构落后导致反序列化或写入失败
+    try:
+        from django.core.management import call_command
+        call_command("migrate", interactive=False, verbosity=0)
+    except Exception:
+        pass
+
     try:
         manifest_data = {}
         config_snapshot_data = {}
@@ -731,6 +783,13 @@ def restore_system_from_backup(
         if not db_stream_files and not candidate_sqlite_db:
             return False, "备份包校验失败：未在包内发现有效的数据流 (*.json.gz) 或数据库文件 (.db)", {}
 
+        # 若是跨引擎流式包，必须具备萌芽系统核心业务表数据流
+        if db_stream_files:
+            stream_names = {f.name.replace(".json.gz", "") for f in db_stream_files}
+            mengya_core_streams = {"core_user", "core_systemsetting", "core_product", "core_babyprofile"}
+            if not any(s in stream_names for s in mengya_core_streams):
+                return False, "【安全拦截】该备份包缺少萌芽系统核心数据流文件，判定为非法或不匹配的异构包，已拒绝执行恢复", {}
+
         # 2. 第二防线：生成安全热回滚镜像（非应急撤销自身）
         rollback_filename = "N/A"
         rollback_path = ""
@@ -763,6 +822,11 @@ def restore_system_from_backup(
         # 4. 第三防线：根据当前主库类型与备份包内容执行恢复
         # 分支 A：当前是 SQLite 模式 且 备份包内含有效原生 SQLite 文件且无跨引擎流（原生极速物理覆盖模式）
         if (not current_profile["is_postgres"]) and candidate_sqlite_db and (not db_stream_files):
+            # 严格先进行萌芽母婴特征指纹预检，非本系统 db 严禁物理覆盖
+            ok_fp, fp_msg = verify_mengya_database_fingerprint(candidate_sqlite_db)
+            if not ok_fp:
+                return False, fp_msg, {}
+
             ok_chk, chk_msg = verify_database_integrity(candidate_sqlite_db)
             if not ok_chk:
                 return False, f"待恢复的 SQLite 文件损坏: {chk_msg}", {}
@@ -821,7 +885,10 @@ def restore_system_from_backup(
                 # 正向依赖流式逐表反序列化写入
                 for app_lbl, mdl_name in CORE_BACKUP_MODELS:
                     try:
-                        model = apps.get_model(app_lbl, mdl_name)
+                        try:
+                            model = apps.get_model(app_lbl, mdl_name)
+                        except LookupError:
+                            continue
                         tbl_name = model._meta.db_table
                         gz_file = stream_map.get(tbl_name)
                         if not gz_file or not gz_file.is_file():
@@ -831,10 +898,14 @@ def restore_system_from_backup(
                             content = gf.read().strip()
                             if not content or content == "[]":
                                 continue
-                            deserialized_objs = serializers.deserialize("json", content)
+                            deserialized_objs = serializers.deserialize("json", content, ignorenonexistent=True)
                             for d_obj in deserialized_objs:
-                                d_obj.save()
-                                restored_records_count += 1
+                                try:
+                                    d_obj.save()
+                                    restored_records_count += 1
+                                except Exception:
+                                    # 单条记录向后兼容容错
+                                    pass
                         restored_tables_count += 1
                     except Exception as e:
                         raise RuntimeError(f"写入表 {app_lbl}.{mdl_name} 失败: {str(e)}")

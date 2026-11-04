@@ -12,7 +12,7 @@ import LocalRestoreCard from "@/components/backup/LocalRestoreCard";
 import ScheduledTasksCard from "@/components/backup/ScheduledTasksCard";
 
 import { backupApi } from "@/api/backup";
-import type { WebdavConfig, WebdavBackupItem, ScheduledTaskItem, RollbackInfo } from "@/types/backup";
+import type { WebdavConfig, WebdavBackupItem, ScheduledTaskItem, RollbackInfo, WebdavStorageQuota } from "@/types/backup";
 
 type TabKey = "webdav" | "manual" | "remote" | "local_restore" | "tasks";
 
@@ -23,6 +23,7 @@ export default function AdminBackupPage() {
   // 数据状态
   const [config, setConfig] = useState<WebdavConfig | null>(null);
   const [backups, setBackups] = useState<WebdavBackupItem[]>([]);
+  const [storageQuota, setStorageQuota] = useState<WebdavStorageQuota | null>(null);
   const [tasks, setTasks] = useState<ScheduledTaskItem[]>([]);
   const [rollbackInfo, setRollbackInfo] = useState<RollbackInfo | null>(null);
 
@@ -60,6 +61,9 @@ export default function AdminBackupPage() {
     try {
       const data = await backupApi.listBackups();
       setBackups(data.backups || []);
+      if (data.storage_quota) {
+        setStorageQuota(data.storage_quota);
+      }
     } catch (e: any) {
       setBackups([]);
     } finally {
@@ -293,6 +297,7 @@ export default function AdminBackupPage() {
         {activeTab === "remote" && (
           <RemoteBackupListCard
             backups={backups}
+            storageQuota={storageQuota}
             config={config}
             loading={loadingBackups}
             onRefresh={() => {

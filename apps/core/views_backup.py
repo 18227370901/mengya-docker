@@ -190,10 +190,15 @@ class AdminBackupListView(APIView):
 
         ok, res = webdav_utils.list_backups(cfg)
         if ok:
+            quota_info = webdav_utils.get_webdav_storage_quota(cfg, backups_list=res)
             return Response({
                 "code": 0,
                 "message": "success",
-                "data": {"configured": True, "backups": res},
+                "data": {
+                    "configured": True,
+                    "backups": res,
+                    "storage_quota": quota_info,
+                },
             })
         return Response({"code": 5002, "message": f"拉取云端列表失败: {res}", "data": {"configured": True, "backups": []}}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 

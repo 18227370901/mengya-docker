@@ -2149,7 +2149,16 @@ apps/core/                                    apps/core/
     <li>一体化服务重启后浏览器逐项验证全部通过：行默认只读编辑、保存/取消、首尾行置灰（新增行默认只读）、排序、首页天气/万年历/AI 助手链路无回归，测试数据已清理。</li>
   </ul>
   <hr style="border:none;border-top:1px solid #e2e8f0;margin:24px 0;" />
-  <h3 style="color:#0f172a;margin-top:0;">10.36 架构极简治理：根目录瘦身、文档中心分流与跨 AI 协作维护规范落地 (v1.74)</h3>
+  <div class="card" style="background:#fff;border:1px solid #e2e8f0;border-radius:12px;padding:24px;margin-bottom:24px;box-shadow:0 1px 3px rgba(0,0,0,0.05);">
+  <h3 style="color:#0f172a;margin-top:0;">10.76 ADR-76：跨版本容灾恢复自愈、WebDAV空间配额探测与三方平台中英导入导出治理 (v2.11)</h3>
+  <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.76.1 核心架构与功能特性</h4>
+  <ul style="color:#334155;line-height:1.6;">
+    <li><strong>容灾前置迁移与字段自愈：</strong>备份恢复前自动执行未决数据库迁移并增加反序列化模型与字段容错，彻底解决跨版本恢复无表报错并顺利恢复三方平台接入数据。</li>
+    <li><strong>WebDAV 空间配额与备份来源：</strong>基于 RFC 4331 协议读取远端已用与可用字节并提供自适应容量条（总大小/已占用/剩余/占比）；文件名元数据精准解析创建人与触发类型（定时任务 / 手动备份 / 本地急救）。</li>
+    <li><strong>三方平台一键互导与双语模版：</strong>支持 JSON 与 CSV 全量双向互导，提供中英文标准模版下载及详尽字典枚举说明，并同步打通用户权限控制与审计日志。</li>
+  </ul>
+</div>
+<h3 style="color:#0f172a;margin-top:0;">10.36 架构极简治理：根目录瘦身、文档中心分流与跨 AI 协作维护规范落地 (v1.74)</h3>
   <h4 style="color:#1e293b;font-size:15px;margin-top:12px;">10.36.1 治理背景与核心痛点</h4>
   <p style="color:#475569;line-height:1.6;">
     随着平台的持续演进，根目录与文档体系暴露出显著的结构性膨胀：<code>README.md</code> 累积达 1361 行，大量版本发布流水账与深层理论混杂，初次接入成本极高；辅助脚本与设计文档散落根目录；跨 AI 编程助手开发缺乏统一约束，容易发生日志反弹污染。

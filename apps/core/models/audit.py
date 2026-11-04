@@ -73,6 +73,8 @@ class AuditLog(models.Model):
         ("platform_resource_update", "编辑平台子资源"),
         ("platform_resource_delete", "删除平台子资源"),
         ("platform_access", "访问三方平台或资源"),
+        ("platform_export", "导出三方平台数据"),
+        ("platform_import", "导入三方平台数据"),
         # 知识库管理
         ("kb_story_translate", "胎教故事双向翻译"),
     ]

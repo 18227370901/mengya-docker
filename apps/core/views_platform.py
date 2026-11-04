@@ -1,3 +1,13 @@
+
+def _normalize_platform_url(raw_url: str) -> str:
+    """标准化平台 URL：去除前后空白、BOM 字符、多余末尾斜杠以确保查重一致性"""
+    if not raw_url:
+        return ""
+    clean = raw_url.strip().strip("\ufeff").strip("\u200b")
+    # 去除末尾所有多余斜杠
+    clean = clean.rstrip("/")
+    return clean
+
 # -*- coding: utf-8 -*-
 """
 三方平台接入与聚合中转站 API (Third Party Platform Views)
@@ -183,6 +193,14 @@ class PlatformListView(APIView):
         if not name or not url:
             return Response(
                 {"code": 4000, "message": "平台名称与访问地址不能为空", "data": None},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        clean_url = _normalize_platform_url(url)
+        existing_dup = ThirdPartyPlatform.objects.filter(is_active=True, url__in=[clean_url, clean_url + "/"]).first()
+        if existing_dup:
+            return Response(
+                {"code": 4001, "message": f"该访问地址已存在同名平台【{existing_dup.name}】，请勿重复添加", "data": None},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -488,7 +506,8 @@ class PlatformCheckUrlView(APIView):
         if not url:
             return Response({"code": 0, "message": "success", "data": {"exists": False}})
 
-        qs = ThirdPartyPlatform.objects.filter(is_active=True, url=url)
+        clean_url = _normalize_platform_url(url)
+        qs = ThirdPartyPlatform.objects.filter(is_active=True, url__in=[clean_url, clean_url + "/"])
         if exclude_id and exclude_id.isdigit():
             qs = qs.exclude(id=int(exclude_id))
 
@@ -598,6 +617,7 @@ class PlatformIconProxyView(APIView):
         # 校验 URL 协议合法性
         import urllib.parse
         import socket
+        import requests
         from django.http import HttpResponse
         from .services.platform_meta_service import is_ip_safe, BROWSER_HEADERS
 
@@ -634,3 +654,375 @@ class PlatformIconProxyView(APIView):
                 return http_resp
         except Exception as e:
             return Response({"code": 5000, "message": f"中转抓取失败: {str(e)}", "data": None}, status=status.HTTP_502_BAD_GATEWAY)
+
+
+import io
+import csv
+import json
+from datetime import datetime
+from django.http import HttpResponse
+
+
+class PlatformExportView(APIView):
+    """一键导出三方平台数据 (支持 JSON 与 CSV)"""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        if not _is_admin(request.user) and not has_permission(request.user, "platform_manage_import_export"):
+            return Response(
+                {"code": 4003, "message": "无权导出三方平台数据", "data": None},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        fmt = (request.query_params.get("export_type") or request.query_params.get("fmt") or request.query_params.get("format") or "json").lower()
+        platforms_qs = ThirdPartyPlatform.objects.filter(is_active=True).prefetch_related("resources").order_by("sort_order", "id")
+
+        if fmt == "csv":
+            response = HttpResponse(content_type="text/csv; charset=utf-8-sig")
+            response["Content-Disposition"] = 'attachment; filename="mengya_platforms_export.csv"'
+            writer = csv.writer(response)
+            writer.writerow([
+                "平台名称*",
+                "访问主地址*",
+                "分类*",
+                "适用年龄段*",
+                "Logo图标链接",
+                "平台描述",
+                "标签(逗号分隔)",
+                "排序权重",
+                "是否启用(true/false)",
+                "可见范围(all/restricted)",
+                "允许用户ID白名单(逗号分隔)",
+            ])
+            for p in platforms_qs:
+                writer.writerow([
+                    p.name,
+                    p.url,
+                    p.category,
+                    p.age_group,
+                    p.logo_url,
+                    p.description,
+                    ",".join(p.tags or []),
+                    p.sort_order,
+                    "true" if p.is_enabled else "false",
+                    p.visibility_type,
+                    ",".join(map(str, p.allowed_user_ids or [])),
+                ])
+            audit(
+                request,
+                action="platform_export",
+                action_label="导出三方平台数据",
+                target_type="ThirdPartyPlatform",
+                detail=f"成功导出 {platforms_qs.count()} 个平台 (CSV格式)",
+            )
+            return response
+
+        # 默认 JSON 格式
+        data_list = []
+        for p in platforms_qs:
+            p_data = {
+                "name": p.name,
+                "url": p.url,
+                "logo_url": p.logo_url,
+                "description": p.description,
+                "category": p.category,
+                "age_group": p.age_group,
+                "tags": p.tags or [],
+                "sort_order": p.sort_order,
+                "is_enabled": p.is_enabled,
+                "visibility_type": p.visibility_type,
+                "allowed_user_ids": p.allowed_user_ids or [],
+                "resources": [
+                    {
+                        "title": r.title,
+                        "path_or_url": r.path_or_url,
+                        "description": r.description,
+                        "icon": r.icon,
+                        "sort_order": r.sort_order,
+                        "is_enabled": r.is_enabled,
+                        "access_rule": r.access_rule,
+                        "allowed_user_ids": r.allowed_user_ids or [],
+                    }
+                    for r in p.resources.filter(is_active=True).order_by("sort_order", "id")
+                ],
+            }
+            data_list.append(p_data)
+
+        audit(
+            request,
+            action="platform_export",
+            action_label="导出三方平台数据",
+            target_type="ThirdPartyPlatform",
+            detail=f"成功导出 {len(data_list)} 个平台 (JSON格式)",
+        )
+
+        response = HttpResponse(
+            json.dumps({"version": "2.0", "exported_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), "platforms": data_list}, ensure_ascii=False, indent=2),
+            content_type="application/json; charset=utf-8",
+        )
+        response["Content-Disposition"] = 'attachment; filename="mengya_platforms_export.json"'
+        return response
+
+
+class PlatformImportView(APIView):
+    """一键批量导入三方平台数据 (支持 JSON 与 CSV，自动排重与白名单校验)"""
+
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if not _is_admin(request.user) and not has_permission(request.user, "platform_manage_import_export"):
+            return Response(
+                {"code": 4003, "message": "无权导入三方平台数据", "data": None},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        uploaded_file = request.FILES.get("file")
+        if not uploaded_file:
+            # 兼容从 request.data 传 json
+            raw_data = request.data.get("platforms") or request.data.get("items")
+            if not raw_data:
+                return Response({"code": 4000, "message": "请上传需要导入的 JSON 或 CSV 文件", "data": None}, status=status.HTTP_400_BAD_REQUEST)
+            items = raw_data if isinstance(raw_data, list) else []
+        else:
+            fn = uploaded_file.name.lower()
+            try:
+                if fn.endswith(".json"):
+                    content = uploaded_file.read().decode("utf-8")
+                    parsed = json.loads(content)
+                    items = parsed.get("platforms", parsed) if isinstance(parsed, dict) else parsed
+                elif fn.endswith(".csv"):
+                    content = uploaded_file.read().decode("utf-8-sig")
+                    reader = csv.reader(io.StringIO(content))
+                    rows = list(reader)
+                    if not rows:
+                        return Response({"code": 4001, "message": "CSV 文件为空", "data": None}, status=status.HTTP_400_BAD_REQUEST)
+                    headers = [h.strip() for h in rows[0]]
+                    items = []
+                    for row in rows[1:]:
+                        if not any(row):
+                            continue
+                        row_dict = dict(zip(headers, row))
+                        # 兼容中文或英文表头
+                        name = row_dict.get("平台名称*") or row_dict.get("name*") or row_dict.get("name") or ""
+                        url = row_dict.get("访问主地址*") or row_dict.get("url*") or row_dict.get("url") or ""
+                        if not name or not url:
+                            continue
+                        cat = row_dict.get("分类*") or row_dict.get("category*") or row_dict.get("category") or "tools"
+                        age = row_dict.get("适用年龄段*") or row_dict.get("age_group*") or row_dict.get("age_group") or "all"
+                        logo = row_dict.get("Logo图标链接") or row_dict.get("logo_url") or ""
+                        desc = row_dict.get("平台描述") or row_dict.get("description") or ""
+                        tags_raw = row_dict.get("标签(逗号分隔)") or row_dict.get("tags") or ""
+                        tags = [t.strip() for t in tags_raw.replace("，", ",").split(",") if t.strip()]
+                        sort_val = int(row_dict.get("排序权重") or row_dict.get("sort_order") or 0)
+                        enabled_str = str(row_dict.get("是否启用(true/false)") or row_dict.get("is_enabled") or "true").lower()
+                        is_enabled = enabled_str in ("true", "1", "是", "yes")
+                        vis_raw = str(row_dict.get("可见范围(all/restricted)") or row_dict.get("visibility_type") or "all").lower()
+                        vis = "restricted" if "rest" in vis_raw or "白名单" in vis_raw else "all"
+                        uid_raw = row_dict.get("允许用户ID白名单(逗号分隔)") or row_dict.get("allowed_user_ids") or ""
+                        uids = [int(u.strip()) for u in uid_raw.replace("，", ",").split(",") if u.strip().isdigit()]
+
+                        items.append({
+                            "name": name,
+                            "url": url,
+                            "category": cat,
+                            "age_group": age,
+                            "logo_url": logo,
+                            "description": desc,
+                            "tags": tags,
+                            "sort_order": sort_val,
+                            "is_enabled": is_enabled,
+                            "visibility_type": vis,
+                            "allowed_user_ids": uids,
+                        })
+                else:
+                    return Response({"code": 4002, "message": "不支持的文件格式，仅支持 .json 与 .csv 文件", "data": None}, status=status.HTTP_400_BAD_REQUEST)
+            except Exception as e:
+                return Response({"code": 5001, "message": f"文件解析异常: {str(e)}", "data": None}, status=status.HTTP_400_BAD_REQUEST)
+
+        if not isinstance(items, list) or len(items) == 0:
+            return Response({"code": 4004, "message": "未发现有效的三方平台配置记录", "data": None}, status=status.HTTP_400_BAD_REQUEST)
+
+        imported_count = 0
+        updated_count = 0
+        errors = []
+
+        valid_categories = {k for k, _ in ThirdPartyPlatform.CATEGORY_CHOICES}
+        valid_age_groups = {k for k, _ in ThirdPartyPlatform.AGE_GROUP_CHOICES}
+
+        for idx, item in enumerate(items, start=1):
+            name = str(item.get("name") or "").strip()
+            url = str(item.get("url") or "").strip()
+            if not name or not url:
+                errors.append(f"第 {idx} 项：缺少平台名称或访问主地址，已跳过")
+                continue
+
+            # 分类与年龄段自动容错映射
+            cat = str(item.get("category") or "tools").strip()
+            if cat not in valid_categories:
+                cat = "tools"
+            age = str(item.get("age_group") or "all").strip()
+            if age not in valid_age_groups:
+                age = "all"
+
+            # 查重与合并（归一化匹配：同时比对末尾斜杠与去斜杠，彻底防止重复导入）
+            clean_url = _normalize_platform_url(url)
+            candidate_urls = [clean_url, clean_url + "/"]
+            existing = ThirdPartyPlatform.objects.filter(url__in=candidate_urls, is_active=True).first()
+            if not existing:
+                # 兼容查找可能被软删除的旧记录进行复用激活
+                existing = ThirdPartyPlatform.objects.filter(url__in=candidate_urls).first()
+            if existing:
+                existing.name = name
+                existing.category = cat
+                existing.age_group = age
+                if item.get("logo_url"):
+                    existing.logo_url = item["logo_url"]
+                if item.get("description"):
+                    existing.description = item["description"]
+                if "tags" in item:
+                    existing.tags = item["tags"] if isinstance(item["tags"], list) else []
+                if "sort_order" in item:
+                    try:
+                        existing.sort_order = int(item["sort_order"])
+                    except Exception:
+                        pass
+                if "is_enabled" in item:
+                    existing.is_enabled = bool(item["is_enabled"])
+                if "visibility_type" in item:
+                    existing.visibility_type = item["visibility_type"]
+                if "allowed_user_ids" in item and isinstance(item["allowed_user_ids"], list):
+                    existing.allowed_user_ids = item["allowed_user_ids"]
+                existing.is_active = True
+                existing.save()
+                target_platform = existing
+                updated_count += 1
+            else:
+                target_platform = ThirdPartyPlatform.objects.create(
+                    name=name,
+                    url=url,
+                    logo_url=item.get("logo_url") or "",
+                    description=item.get("description") or "",
+                    category=cat,
+                    age_group=age,
+                    tags=item.get("tags") if isinstance(item.get("tags"), list) else [],
+                    sort_order=int(item.get("sort_order") or 0),
+                    is_enabled=bool(item.get("is_enabled", True)),
+                    is_active=True,
+                    visibility_type=item.get("visibility_type") or "all",
+                    allowed_user_ids=item.get("allowed_user_ids") if isinstance(item.get("allowed_user_ids"), list) else [],
+                    created_by=request.user,
+                )
+                imported_count += 1
+
+            # 兼容导入子资源
+            resources = item.get("resources")
+            if isinstance(resources, list):
+                for r in resources:
+                    r_title = str(r.get("title") or "").strip()
+                    r_path = str(r.get("path_or_url") or "").strip()
+                    if not r_title or not r_path:
+                        continue
+                    ThirdPartyPlatformResource.objects.update_or_create(
+                        platform=target_platform,
+                        path_or_url=r_path,
+                        defaults={
+                            "title": r_title,
+                            "description": r.get("description") or "",
+                            "icon": r.get("icon") or "",
+                            "sort_order": int(r.get("sort_order") or 0),
+                            "is_enabled": bool(r.get("is_enabled", True)),
+                            "is_active": True,
+                            "access_rule": r.get("access_rule") or "inherit",
+                            "allowed_user_ids": r.get("allowed_user_ids") if isinstance(r.get("allowed_user_ids"), list) else [],
+                        },
+                    )
+
+        audit(
+            request,
+            action="platform_import",
+            action_label="导入三方平台数据",
+            target_type="ThirdPartyPlatform",
+            detail=f"批量导入完成：新增 {imported_count} 条，更新覆盖 {updated_count} 条，跳过错误 {len(errors)} 项",
+        )
+
+        return Response({
+            "code": 0,
+            "message": f"导入成功！新增 {imported_count} 条，更新覆盖 {updated_count} 条",
+            "data": {
+                "imported_count": imported_count,
+                "updated_count": updated_count,
+                "errors": errors,
+            },
+        })
+
+
+class PlatformTemplateDownloadView(APIView):
+    """三方平台批量导入中英文模板下载与字典字段说明"""
+
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        lang = request.query_params.get("lang", "zh").lower()
+        response = HttpResponse(content_type="text/csv; charset=utf-8-sig")
+
+        if lang == "en":
+            response["Content-Disposition"] = 'attachment; filename="mengya_platform_import_template_en.csv"'
+            writer = csv.writer(response)
+            writer.writerow([
+                "name*",
+                "url*",
+                "category*",
+                "age_group*",
+                "logo_url",
+                "description",
+                "tags",
+                "sort_order",
+                "is_enabled",
+                "visibility_type",
+                "allowed_user_ids",
+            ])
+            writer.writerow([
+                "Example Maternal & Infant Hub",
+                "https://example.com/parenting",
+                "parenting",
+                "all",
+                "https://example.com/logo.png",
+                "High-quality authoritative parenting knowledge hub",
+                "parenting,early-learning",
+                "1",
+                "true",
+                "all",
+                "",
+            ])
+        else:
+            response["Content-Disposition"] = 'attachment; filename="mengya_platform_import_template_zh.csv"'
+            writer = csv.writer(response)
+            writer.writerow([
+                "平台名称*",
+                "访问主地址*",
+                "分类*",
+                "适用年龄段*",
+                "Logo图标链接",
+                "平台描述",
+                "标签(逗号分隔)",
+                "排序权重",
+                "是否启用(true/false)",
+                "可见范围(all/restricted)",
+                "允许用户ID白名单(逗号分隔)",
+            ])
+            writer.writerow([
+                "示例优质母婴中转站",
+                "https://example.com/parenting",
+                "parenting",
+                "all",
+                "https://example.com/logo.png",
+                "权威母婴早教与健康聚合导航",
+                "早教,权威科普",
+                "1",
+                "true",
+                "all",
+                "",
+            ])
+
+        return response

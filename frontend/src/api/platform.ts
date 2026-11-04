@@ -41,4 +41,23 @@ export const platformApi = {
     api.post<{ code: number; message: string; data: null }>("/platforms/batch/", { action, ids }),
   logAccess: (platformId: number, resourceId?: number) =>
     api.post<{ code: number; message: string; data: null }>(`/platforms/${platformId}/access/`, { resource_id: resourceId }),
+  exportPlatforms: (format: "json" | "csv" = "json") => {
+    return api.get(`/platforms/export/?export_type=${format}`, {
+      responseType: "blob",
+    });
+  },
+  importPlatforms: (file: File) => {
+    const formData = new FormData();
+    formData.append("file", file);
+    return api.post<{ code: number; message: string; data: { imported_count: number; updated_count: number; errors: string[] } }>(
+      "/platforms/import/",
+      formData,
+      { headers: { "Content-Type": "multipart/form-data" } }
+    );
+  },
+  downloadTemplate: (lang: "zh" | "en" = "zh") => {
+    return api.get(`/platforms/template/?lang=${lang}`, {
+      responseType: "blob",
+    });
+  },
 };

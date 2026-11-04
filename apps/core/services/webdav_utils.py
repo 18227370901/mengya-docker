@@ -314,6 +314,7 @@ def list_backups(webdav_url_or_config, username=None, password=None, backup_path
             is_encrypted = filename.lower().endswith(".zip")
             is_full = "full" in filename.lower()
 
+            source_meta = parse_backup_source_info(filename)
             backups.append({
                 "filename": filename,
                 "name": filename,
@@ -324,6 +325,10 @@ def list_backups(webdav_url_or_config, username=None, password=None, backup_path
                 "modified_time": last_modified,
                 "is_encrypted": is_encrypted,
                 "is_full": is_full,
+                "creator": source_meta["creator"],
+                "source_type": source_meta["source_type"],
+                "trigger_mode": source_meta["trigger_mode"],
+                "scope_label": source_meta["scope_label"],
             })
 
         backups.sort(key=lambda x: x["filename"], reverse=True)
@@ -467,3 +472,151 @@ def decrypt_and_extract_zip(zip_file_path, zip_password, target_extract_dir):
         if "Bad password" in err_msg or "password" in err_msg.lower():
             return False, "解密密码不正确"
         return False, f"解压失败: {err_msg}"
+
+
+def parse_backup_source_info(filename: str) -> dict:
+    """
+    解析备份文件名称，识别创建人、触发方式与来源类型
+    规范：mengya_backup_{timestamp}_{db_mode}_{creator}_{scope}.zip
+    """
+    lower = filename.lower()
+    clean = filename.strip()
+    
+    creator = "admin"
+    source_type = "手动备份"
+    trigger_mode = "manual"
+    scope_label = "全量系统快照" if ("_full." in lower or (lower.endswith(".zip") and "_db." not in lower)) else "纯数据快照"
+    
+    parts = clean.replace(".zip", "").replace(".db", "").split("_")
+    # 格式可能为: ["mengya", "backup", "20261104", "142923", "sqlite", "admin", "db"]
+    if len(parts) >= 7 and parts[0] == "mengya" and parts[1] == "backup":
+        creator = parts[5]
+    elif len(parts) >= 5 and parts[0] == "mengya" and parts[1] == "backup":
+        creator = parts[4]
+    elif "dl_" in lower:
+        creator = "远端同步"
+        
+    if creator.lower() in ("scheduler", "system", "cron", "autotask"):
+        source_type = "定时任务"
+        trigger_mode = "schedule"
+    elif "uploaded" in lower or "emergency" in lower:
+        source_type = "本地急救"
+        trigger_mode = "emergency"
+    else:
+        source_type = "手动方式"
+        trigger_mode = "manual"
+        
+    return {
+        "creator": creator,
+        "source_type": source_type,
+        "trigger_mode": trigger_mode,
+        "scope_label": scope_label,
+    }
+
+
+def get_webdav_storage_quota(webdav_url_or_config, username=None, password=None, backup_path=None, backups_list=None) -> dict:
+    """
+    探测 WebDAV 网盘磁盘空间配额与使用情况：
+    1. 尝试 RFC 4331 标准 (quota-available-bytes / quota-used-bytes)
+    2. 若远端不支持，结合云端备份总计大小与预设配额（或默认 5GB/10GB）提供自适应计算
+    """
+    if hasattr(webdav_url_or_config, "server_url") or hasattr(webdav_url_or_config, "webdav_url"):
+        cfg = webdav_url_or_config
+        webdav_url, username, password = _unpack_auth_params(cfg)
+        if backup_path is None:
+            backup_path = getattr(cfg, "backup_path", None) or getattr(cfg, "backup_subdir", "")
+    else:
+        webdav_url = webdav_url_or_config
+
+    if not webdav_url or not str(webdav_url).strip():
+        return {
+            "quota_supported": False,
+            "total_bytes": 0,
+            "used_bytes": 0,
+            "available_bytes": 0,
+            "used_percent": 0.0,
+            "total_human": "未知",
+            "used_human": "0 B",
+            "available_human": "未知",
+        }
+
+    target_url = _resolve_target_dir_url(webdav_url, backup_path)
+    session = _get_session(username, password)
+    
+    # 优先向根路径和目标路径发送 PROPFIND 请求获取配额
+    quota_available = None
+    quota_used = None
+    
+    prop_xml = (
+        '<?xml version="1.0" encoding="utf-8" ?>'
+        '<D:propfind xmlns:D="DAV:">'
+        '  <D:prop>'
+        '    <D:quota-available-bytes/>'
+        '    <D:quota-used-bytes/>'
+        '  </D:prop>'
+        '</D:propfind>'
+    ).encode("utf-8")
+
+    namespaces = {"D": "DAV:"}
+    test_urls = [target_url]
+    parsed_base = urllib.parse.urlparse(_normalize_url(webdav_url))
+    root_url = f"{parsed_base.scheme}://{parsed_base.netloc}/"
+    if root_url not in test_urls:
+        test_urls.append(root_url)
+        
+    for u in test_urls:
+        try:
+            resp = session.request("PROPFIND", u, data=prop_xml, headers={"Depth": "0"}, timeout=8, verify=False)
+            if resp.status_code in (200, 207):
+                root = ET.fromstring(resp.content)
+                for prop in root.findall(".//D:prop", namespaces):
+                    av_el = prop.find("D:quota-available-bytes", namespaces)
+                    if av_el is not None and av_el.text and av_el.text.strip().isdigit():
+                        quota_available = int(av_el.text.strip())
+                    us_el = prop.find("D:quota-used-bytes", namespaces)
+                    if us_el is not None and us_el.text and us_el.text.strip().isdigit():
+                        quota_used = int(us_el.text.strip())
+                if quota_available is not None or quota_used is not None:
+                    break
+        except Exception:
+            pass
+
+    # 计算本地/云端已有备份累计占用
+    backups_sum_bytes = 0
+    if backups_list:
+        for b in backups_list:
+            backups_sum_bytes += int(b.get("size") or 0)
+
+    if quota_available is not None and quota_used is not None:
+        total = quota_available + quota_used
+        pct = round((quota_used / total * 100), 2) if total > 0 else 0.0
+        return {
+            "quota_supported": True,
+            "total_bytes": total,
+            "used_bytes": quota_used,
+            "available_bytes": quota_available,
+            "used_percent": pct,
+            "total_human": f"{total / (1024**3):.2f} GB" if total >= 1024**3 else f"{total / (1024**2):.1f} MB",
+            "used_human": f"{quota_used / (1024**3):.2f} GB" if quota_used >= 1024**3 else f"{quota_used / (1024**2):.2f} MB",
+            "available_human": f"{quota_available / (1024**3):.2f} GB" if quota_available >= 1024**3 else f"{quota_available / (1024**2):.1f} MB",
+            "backups_sum_bytes": backups_sum_bytes,
+        }
+
+    # 若 WebDAV 服务商（如坚果云基础接口）未开放 RFC 4331，按云端备份与主流标准预设计算
+    # 坚果云免费用户默认约 1GB~5GB，此处默认以 10GB 为基准比例尺或动态自适应
+    estimated_total = max(10 * 1024 * 1024 * 1024, backups_sum_bytes * 2)
+    estimated_used = backups_sum_bytes
+    estimated_available = max(0, estimated_total - estimated_used)
+    pct = round((estimated_used / estimated_total * 100), 2) if estimated_total > 0 else 0.0
+
+    return {
+        "quota_supported": False,
+        "total_bytes": estimated_total,
+        "used_bytes": estimated_used,
+        "available_bytes": estimated_available,
+        "used_percent": pct,
+        "total_human": f"{estimated_total / (1024**3):.1f} GB",
+        "used_human": f"{estimated_used / (1024**2):.2f} MB" if estimated_used < 1024**3 else f"{estimated_used / (1024**3):.2f} GB",
+        "available_human": f"{estimated_available / (1024**3):.2f} GB",
+        "backups_sum_bytes": backups_sum_bytes,
+    }

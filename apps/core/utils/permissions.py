@@ -109,6 +109,7 @@ DEFAULT_USER_PERMISSIONS = {
 
     "menu_admin_platforms": False,          # 三方平台接入管理菜单（仅管理员默认可见）
     "platform_manage_edit": False,          # 平台与子资源增删改与一键抓取配置（需管理员身份）
+    "platform_manage_import_export": False,  # 平台配置一键导入导出与模板下载（需管理员身份）
 }
 
 # 父子关联映射表：子权限 key -> 其直接父权限 key（支持多级继承联动）
@@ -148,6 +149,7 @@ PERMISSION_PARENT_MAP = {
 
     # 三方平台模块：menu_admin_platforms -> platform_manage_edit
     "platform_manage_edit": "menu_admin_platforms",
+    "platform_manage_import_export": "menu_admin_platforms",
 }
 
 # 衍生直接子节点表：父权限 key -> [子权限 key, ...]

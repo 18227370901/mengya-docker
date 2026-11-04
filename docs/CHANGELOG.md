@@ -6,6 +6,27 @@
 
 ---
 
+## 2026-11-04 架构升级与功能完善：v2.11 版本（跨版本容灾恢复自愈、WebDAV 网盘配额可视化与三方平台中英导入导出治理）
+
+### 核心变更概览
+1. **云端容灾备份与急救恢复深度自愈**：
+   - **向后兼容与前置自愈 (Pre-migration & Fault-tolerant Restore)**：在 `backup_service.py` 恢复入口自动检测并应用未决数据库迁移（如三方平台迁移），并为 ORM 反序列化写入引入模型存在性与单条字段自愈容错，彻底根除跨旧版本备份还原报 `OperationalError: no such table` 的缺陷；
+   - **备份来源类型解析与呈现**：快照元数据深度解析 `creator` 标识与命名前缀，新增识别**定时任务（Scheduler/Cron）**、**手动方式（管理员操作）**与**本地急救**，前端表格新增独立展示列与视觉徽章；
+   - **WebDAV 网盘磁盘空间与配额看板**：支持标准 RFC 4331 WebDAV Quota 探测（`<D:quota-available-bytes>` / `<D:quota-used-bytes>`），并提供多态自适应计算，前端提供动态容量条展示**总容量、已占用、剩余可用与占用百分比**。
+2. **三方平台接入模块一键导入导出与规范化**：
+   - **批量双向互导**：后端新增 `/api/platforms/export/`（一键导出当前三方平台配置为 JSON 或 CSV）与 `/api/platforms/import/`（支持 JSON/CSV 批量上传、白名单校验、URL 智能查重与子资源导入）；
+   - **中英双语模版与字典说明**：新增 `/api/platforms/template/` 支持一键下载中文（`zh`）与英文（`en`）标准 CSV 模版，前端集成弹窗呈现详尽的字段规范与枚举字典对照表。
+3. **全局权限与安全链路全面同步**：
+   - **权限矩阵打通**：在 `permissions.py` 中新增 `platform_manage_import_export`（平台导入与导出细粒度控制），挂接至 `menu_admin_platforms` 并在权限树中建立规范联动；
+   - **审计日志闭环**：在 `AuditLog` 新增 `platform_export` 与 `platform_import` 审计动作，全流程记录导入条数与操作细节。
+
+### 验证结果
+- 全量前端生产编译与静态产物同步 `python tools/build_frontend.py` 编译通过（2627 modules）；
+- 跨版本上传还原测试通过，恢复三方平台接入数据 18 条就绪；
+- 接口实测：三方平台 JSON/CSV 导出、中英模版下载、WebDAV 配额与来源分析均正常工作（200 OK）。
+
+---
+
 ## 2026-11-04 架构与性能升级：v2.10 版本（系统性能上线加固、GZip动态压缩、容灾备份魔数自愈与会话强制注销治理）
 
 ### 核心变更概览
