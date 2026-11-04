@@ -1,3 +1,4 @@
+import { useSessionImage } from "@/utils/sessionMediaCache";
 import React, { useEffect, useState, useMemo } from "react";
 import {
   Share2,
@@ -91,15 +92,14 @@ const VISIBILITY_OPTIONS = [
 
 
 function TablePlatformLogo({ name, logoUrl }: { name: string; logoUrl?: string }) {
-  const [failed, setFailed] = useState(false);
-  if (logoUrl && !failed) {
+  const { src, failed } = useSessionImage(logoUrl);
+  if (src && !failed) {
     return (
       <img
-        src={logoUrl}
+        src={src}
         alt={name}
         referrerPolicy="no-referrer"
         className="h-8 w-8 rounded-lg object-contain border border-gray-100 bg-gray-50 p-0.5"
-        onError={() => setFailed(true)}
       />
     );
   }

@@ -1,90 +1,107 @@
 # -*- coding: utf-8 -*-
 """
-service_config.py — 外部接口服务配置管理（v1.73 新增）
-
-集中管理各模块「内置默认调用地址但页面无配置入口」的外部服务：
-  1. 天气·地理编码（Open-Meteo Geocoding）
-  2. 天气·天气预报（Open-Meteo Forecast）
-  3. 天气·空气质量（Open-Meteo Air Quality）
-  4. 法定节假日班/休数据（timor.tech，地址含 {年份} 占位符自动补全）
-  5. AI 公网搜索引擎管线（DuckDuckGo / Google / Bing / 360 / 搜狗 / 百度 / 雅虎，
-     行级地址+行级超时+行级开关，顺序即故障转移顺序）
-
-统一模型：
-  - 普通组（天气三组 / 节假日） = 有序端点列表 [{url, enabled}] + 重试参数（timeout 秒 / retries 轮）
-  - 搜索引擎组（search_pipeline） = 有序引擎列表 [{key, url, timeout, enabled}] + retries 轮
-    （每个 key 绑定专属 HTML 解析器，改地址须为同款引擎的兼容端点）
-
-故障转移：
-  - 按序遍历启用端点/引擎，任一成功即返回；全部失败按 retries 整轮重试
-
-存储：复用 SystemSetting 单行模型新增 external_api_config JSONField（见 models/system.py），
-  实时读库、异常兜底返回默认值，与业务完全解耦。
+service_config.py — 外部接口服务配置管理（v2.09 增强：API Key / 鉴权头 / 适配协议体系）
 """
 import json
 import time
-
-# ===================== 分组默认配置 =====================
+import requests
 
 DEFAULT_GROUPS = {
     'geocoding': {
-        'label': '天气·地理编码',
+        'label': '地理编码定位服务',
         'type': 'endpoints',
-        'defaults': [{'url': 'https://geocoding-api.open-meteo.com/v1/search', 'enabled': True}],
+        'defaults': [
+            {
+                'url': 'https://geocoding-api.open-meteo.com/v1/search',
+                'enabled': True,
+                'name': 'Open-Meteo 官方地理编码',
+                'adapter': 'standard',
+                'auth_type': 'none',
+                'auth_key': '',
+                'auth_value': '',
+            }
+        ],
         'timeout': 8,
         'retries': 0,
     },
     'forecast': {
-        'label': '天气·天气预报',
+        'label': '天气及气象预报服务',
         'type': 'endpoints',
-        'defaults': [{'url': 'https://api.open-meteo.com/v1/forecast', 'enabled': True}],
+        'defaults': [
+            {
+                'url': 'https://api.open-meteo.com/v1/forecast',
+                'enabled': True,
+                'name': 'Open-Meteo 15天全功能预报 (免Key)',
+                'adapter': 'standard',
+                'auth_type': 'none',
+                'auth_key': '',
+                'auth_value': '',
+            }
+        ],
         'timeout': 8,
         'retries': 0,
     },
     'air_quality': {
-        'label': '天气·空气质量',
+        'label': '空气质量与指数服务',
         'type': 'endpoints',
-        'defaults': [{'url': 'https://air-quality-api.open-meteo.com/v1/air-quality', 'enabled': True}],
+        'defaults': [
+            {
+                'url': 'https://air-quality-api.open-meteo.com/v1/air-quality',
+                'enabled': True,
+                'name': 'Open-Meteo 空气质量',
+                'adapter': 'standard',
+                'auth_type': 'none',
+                'auth_key': '',
+                'auth_value': '',
+            }
+        ],
         'timeout': 8,
         'retries': 0,
     },
     'holiday': {
-        'label': '法定节假日',
+        'label': '法定节假日日历',
         'type': 'endpoints',
-        # 管理员只需填写到 .../year/ 即可，保存时自动补全 {年份} 占位符，调用时注入当年年份
-        'defaults': [{'url': 'https://timor.tech/api/holiday/year/', 'enabled': True}],
+        'defaults': [
+            {
+                'url': 'https://timor.tech/api/holiday/year/',
+                'enabled': True,
+                'name': 'Timor 节假日开放 API',
+                'adapter': 'standard',
+                'auth_type': 'none',
+                'auth_key': '',
+                'auth_value': '',
+            }
+        ],
         'timeout': 8,
         'retries': 0,
     },
     'search_pipeline': {
-        'label': 'AI 公网搜索引擎管线',
+        'label': 'AI 公网搜索管线搜索引擎',
         'type': 'engines',
-        # key 与 web_search.py 的引擎解析器一一对应；顺序即故障转移顺序
         'defaults': [
-            {'key': 'duckduckgo', 'url': 'https://lite.duckduckgo.com/lite/', 'timeout': 1.0, 'enabled': True},
-            {'key': 'google', 'url': 'https://www.google.com/search', 'timeout': 1.0, 'enabled': True},
-            {'key': 'bing', 'url': 'https://cn.bing.com/search', 'timeout': 2.5, 'enabled': True},
-            {'key': 'so', 'url': 'https://www.so.com/s', 'timeout': 2.0, 'enabled': True},
-            {'key': 'sogou', 'url': 'https://www.sogou.com/web', 'timeout': 2.0, 'enabled': True},
-            {'key': 'baidu', 'url': 'https://www.baidu.com/s', 'timeout': 1.5, 'enabled': True},
-            {'key': 'yahoo', 'url': 'https://search.yahoo.com/search', 'timeout': 1.2, 'enabled': True},
+            {'key': 'duckduckgo', 'url': 'https://lite.duckduckgo.com/lite/', 'timeout': 1.0, 'enabled': True, 'auth_type': 'none', 'auth_key': '', 'auth_value': ''},
+            {'key': 'google', 'url': 'https://www.google.com/search', 'timeout': 1.0, 'enabled': True, 'auth_type': 'none', 'auth_key': '', 'auth_value': ''},
+            {'key': 'bing', 'url': 'https://cn.bing.com/search', 'timeout': 2.5, 'enabled': True, 'auth_type': 'none', 'auth_key': '', 'auth_value': ''},
+            {'key': 'so', 'url': 'https://www.so.com/s', 'timeout': 2.0, 'enabled': True, 'auth_type': 'none', 'auth_key': '', 'auth_value': ''},
+            {'key': 'sogou', 'url': 'https://www.sogou.com/web', 'timeout': 2.0, 'enabled': True, 'auth_type': 'none', 'auth_key': '', 'auth_value': ''},
+            {'key': 'baidu', 'url': 'https://www.baidu.com/s', 'timeout': 1.5, 'enabled': True, 'auth_type': 'none', 'auth_key': '', 'auth_value': ''},
+            {'key': 'yahoo', 'url': 'https://search.yahoo.com/search', 'timeout': 1.2, 'enabled': True, 'auth_type': 'none', 'auth_key': '', 'auth_value': ''},
         ],
         'retries': 1,
     },
     'translation': {
-        'label': '胎教与母婴中英文互译管线',
+        'label': '胎教故事及母婴双语翻译引擎',
         'type': 'engines',
         'defaults': [
-            {'key': 'ai_model', 'url': 'internal://ai-model', 'timeout': 15.0, 'enabled': True},
-            {'key': 'mymemory', 'url': 'https://api.mymemory.translated.net/get', 'timeout': 6.0, 'enabled': True},
-            {'key': 'google_translate', 'url': 'https://translate.googleapis.com/translate_a/single', 'timeout': 5.0, 'enabled': False},
-            {'key': 'custom_api', 'url': 'https://api.fanyi.baidu.com/api/trans/vip/translate', 'timeout': 5.0, 'enabled': False},
+            {'key': 'ai_model', 'url': 'internal://ai-model', 'timeout': 15.0, 'enabled': True, 'auth_type': 'none', 'auth_key': '', 'auth_value': ''},
+            {'key': 'mymemory', 'url': 'https://api.mymemory.translated.net/get', 'timeout': 6.0, 'enabled': True, 'auth_type': 'none', 'auth_key': '', 'auth_value': ''},
+            {'key': 'google_translate', 'url': 'https://translate.googleapis.com/translate_a/single', 'timeout': 5.0, 'enabled': False, 'auth_type': 'none', 'auth_key': '', 'auth_value': ''},
+            {'key': 'custom_api', 'url': 'https://api.fanyi.baidu.com/api/trans/vip/translate', 'timeout': 5.0, 'enabled': False, 'auth_type': 'none', 'auth_key': '', 'auth_value': ''},
         ],
         'retries': 1,
     },
 }
 
-# 搜索引擎 key → 展示名（前端图标/标签用）
 ENGINE_LABELS = {
     'duckduckgo': 'DuckDuckGo',
     'google': 'Google',
@@ -93,31 +110,89 @@ ENGINE_LABELS = {
     'sogou': '搜狗搜索',
     'baidu': '百度搜索',
     'yahoo': '雅虎搜索',
-    'ai_model': 'AI 母婴温情大模型',
-    'mymemory': 'MyMemory 国际免Key端点',
-    'google_translate': 'Google 公共翻译端点',
+    'ai_model': 'AI 母婴专有模型',
+    'mymemory': 'MyMemory 翻译免Key端点',
+    'google_translate': 'Google 翻译免密端点',
     'custom_api': '自定义开放翻译接口',
 }
 
-# 节假日地址占位符（管理员无需填写，保存时自动补全，调用时注入年份）
+ENDPOINT_PRESETS = [
+    {
+        'id': 'open_meteo_forecast',
+        'group': 'forecast',
+        'name': 'Open-Meteo 15天全功能预报 (免Key推荐)',
+        'url': 'https://api.open-meteo.com/v1/forecast',
+        'adapter': 'standard',
+        'auth_type': 'none',
+        'auth_key': '',
+        'desc': '全球高精度15天逐日预报、折线图、日出日落、紫外线，免API Key。',
+    },
+    {
+        'id': 'uapis_weather_realtime',
+        'group': 'forecast',
+        'name': 'UAPIS 国内极简即时实况天气',
+        'url': 'https://uapis.cn/api/v1/misc/weather',
+        'adapter': 'uapis',
+        'auth_type': 'none',
+        'auth_key': '',
+        'desc': '国内极速实况气温、风向风力与天气现象。前端天气页自适应为精细实时看板。',
+    },
+    {
+        'id': 'qweather_forecast',
+        'group': 'forecast',
+        'name': '和风天气 QWeather 商业预报 API',
+        'url': 'https://devapi.qweather.com/v7/weather/now',
+        'adapter': 'qweather',
+        'auth_type': 'query',
+        'auth_key': 'key',
+        'desc': '和风天气官方 Web API，需要填入您的开发者 API Key。',
+    },
+    {
+        'id': 'amap_weather',
+        'group': 'forecast',
+        'name': '高德开放平台天气查询 API',
+        'url': 'https://restapi.amap.com/v3/weather/weatherInfo',
+        'adapter': 'amap',
+        'auth_type': 'query',
+        'auth_key': 'key',
+        'desc': '高德官方 Web 服务天气 API，支持国内区县级天气实况。',
+    },
+    {
+        'id': 'timor_holiday',
+        'group': 'holiday',
+        'name': 'Timor 节假日及调休日历',
+        'url': 'https://timor.tech/api/holiday/year/',
+        'adapter': 'standard',
+        'auth_type': 'none',
+        'auth_key': '',
+        'desc': '权威法定节假日、调休工作日数据源，免 Key。',
+    },
+]
+
 HOLIDAY_PLACEHOLDER = '{年份}'
-# 与 holiday_service 既有 TIMOR_API 的 {} 占位兼容：存储层统一用 {年份}，读取后转 {} 给 format()
 HOLIDAY_FORMAT_PLACEHOLDER = '{}'
 
+def mask_auth_value(val):
+    if not val:
+        return ''
+    s = str(val).strip()
+    if len(s) <= 6:
+        return '****'
+    return f'{s[:2]}****{s[-4:]}'
 
-# ===================== 存储读写 =====================
+def is_masked_value(val):
+    if not val:
+        return False
+    return '****' in str(val)
 
 def _get_setting_obj():
-    """获取 SystemSetting 单行对象（读失败返回 None，保证后台线程安全）"""
     try:
         from apps.core.models.system import SystemSetting
         return SystemSetting.get_settings()
     except Exception:
         return None
 
-
 def _get_config_map():
-    """读取整份 external_api_config（{group: {...}}），无配置返回空 dict"""
     obj = _get_setting_obj()
     if obj is None:
         return {}
@@ -129,9 +204,7 @@ def _get_config_map():
         pass
     return {}
 
-
 def _save_group(group, payload):
-    """保存一组配置子树（失败静默，配置写失败不阻断主流程）"""
     obj = _get_setting_obj()
     if obj is None:
         return False
@@ -146,11 +219,23 @@ def _save_group(group, payload):
     except Exception:
         return False
 
-
-# ===================== 读取配置 =====================
+def _normalize_endpoint_item(item, default_name=''):
+    if not isinstance(item, dict):
+        return None
+    url = str(item.get('url', '')).strip()
+    if not url:
+        return None
+    return {
+        'url': url,
+        'enabled': bool(item.get('enabled', True)),
+        'name': str(item.get('name', default_name) or default_name).strip(),
+        'adapter': str(item.get('adapter', 'standard') or 'standard').strip(),
+        'auth_type': str(item.get('auth_type', 'none') or 'none').strip(),
+        'auth_key': str(item.get('auth_key', '') or '').strip(),
+        'auth_value': str(item.get('auth_value', '') or '').strip(),
+    }
 
 def get_endpoints(group):
-    """普通组：返回 [{url, enabled}]；库中无配置时回落默认列表；有配置但停用时尊重配置"""
     default = [dict(x) for x in DEFAULT_GROUPS[group]['defaults']]
     cfg = _get_config_map()
     if group not in cfg:
@@ -160,17 +245,14 @@ def get_endpoints(group):
     if isinstance(raw, list):
         out = []
         for item in raw:
-            if isinstance(item, dict) and str(item.get('url', '')).strip():
-                out.append({
-                    'url': str(item['url']).strip(),
-                    'enabled': bool(item.get('enabled', True)),
-                })
-        return out
+            norm = _normalize_endpoint_item(item)
+            if norm:
+                out.append(norm)
+        if out:
+            return out
     return default
 
-
 def get_engines(group='search_pipeline'):
-    """指定引擎组返回 [{key, url, timeout, enabled}]；无配置回落默认"""
     if group not in DEFAULT_GROUPS or DEFAULT_GROUPS[group].get('type') != 'engines':
         group = 'search_pipeline'
     default = [dict(x) for x in DEFAULT_GROUPS[group]['defaults']]
@@ -185,11 +267,13 @@ def get_engines(group='search_pipeline'):
                     'url': str(item.get('url', '')).strip(),
                     'timeout': _clamp(float(item.get('timeout', 1.0)), 0.3, 30.0),
                     'enabled': bool(item.get('enabled', True)),
+                    'auth_type': str(item.get('auth_type', 'none') or 'none').strip(),
+                    'auth_key': str(item.get('auth_key', '') or '').strip(),
+                    'auth_value': str(item.get('auth_value', '') or '').strip(),
                 })
         if out:
             return out
     return default
-
 
 def _clamp(v, lo, hi):
     try:
@@ -198,10 +282,7 @@ def _clamp(v, lo, hi):
     except (TypeError, ValueError):
         return lo
 
-
 def get_timeout(group):
-    """读取组请求超时（秒），非法回落默认。
-    search_pipeline 组无组级超时（超时在引擎行级），返回 None"""
     if DEFAULT_GROUPS.get(group, {}).get('type') == 'engines':
         return None
     cfg = _get_config_map().get(group) or {}
@@ -210,41 +291,35 @@ def get_timeout(group):
     except (TypeError, ValueError):
         return DEFAULT_GROUPS[group]['timeout']
 
-
 def get_retries(group):
-    """读取组重试轮数，非法回落默认"""
     cfg = _get_config_map().get(group) or {}
     try:
         return int(max(0, min(10, int(float(cfg.get('retries', 0))))))
     except (TypeError, ValueError):
         return DEFAULT_GROUPS[group]['retries']
 
-
 def get_enabled_urls(group):
-    """普通组：按配置顺序返回启用的端点 URL 列表（故障转移遍历用）"""
     return [u['url'] for u in get_endpoints(group) if u.get('enabled')]
 
+def get_enabled_endpoints(group):
+    return [u for u in get_endpoints(group) if u.get('enabled')]
 
 def get_enabled_engines():
-    """搜索引擎组：按配置顺序返回启用的引擎 [{key, url, timeout}]"""
     return [{'key': e['key'], 'url': e['url'], 'timeout': e['timeout']}
             for e in get_engines() if e.get('enabled')]
 
-
-# ===================== 保存配置 =====================
-
 def save_group_config(group, payload):
-    """保存一组配置。
-    payload: {'endpoints': [{url, enabled}] | 'engines': [{key,url,timeout,enabled}],
-              'timeout': 秒, 'retries': 轮}
-    """
     meta = DEFAULT_GROUPS.get(group)
     if not meta:
         return False
-    # search_pipeline 组无组级超时（超时在引擎行级），仅普通组带 timeout
+    
+    old_endpoints = {u.get('url'): u for u in get_endpoints(group)}
+    old_engines = {e.get('key'): e for e in get_engines(group)} if meta['type'] == 'engines' else {}
+
     data = {'retries': int(get_retries(group))}
     if meta['type'] != 'engines':
         data['timeout'] = int(get_timeout(group))
+    
     if meta['type'] == 'engines':
         raw_engines = payload.get('engines')
         if raw_engines is not None:
@@ -252,11 +327,18 @@ def save_group_config(group, payload):
             for item in raw_engines or []:
                 if not isinstance(item, dict) or not str(item.get('key', '')).strip():
                     continue
+                k = str(item['key']).strip()
+                auth_val = str(item.get('auth_value', '') or '').strip()
+                if is_masked_value(auth_val) and k in old_engines:
+                    auth_val = old_engines[k].get('auth_value', '')
                 engines.append({
-                    'key': str(item['key']).strip(),
+                    'key': k,
                     'url': str(item.get('url', '')).strip(),
                     'timeout': _clamp(float(item.get('timeout', 1.0)), 0.3, 30.0),
                     'enabled': bool(item.get('enabled', True)),
+                    'auth_type': str(item.get('auth_type', 'none') or 'none').strip(),
+                    'auth_key': str(item.get('auth_key', '') or '').strip(),
+                    'auth_value': auth_val,
                 })
             if engines:
                 data['engines'] = engines
@@ -269,25 +351,27 @@ def save_group_config(group, payload):
         if raw_eps is not None:
             endpoints = []
             for item in raw_eps or []:
-                if not isinstance(item, dict) or not str(item.get('url', '')).strip():
+                norm = _normalize_endpoint_item(item)
+                if not norm:
                     continue
-                url = str(item['url']).strip()
+                url = norm['url']
                 if group == 'holiday':
                     url = normalize_holiday_url(url)
-                endpoints.append({'url': url, 'enabled': bool(item.get('enabled', True))})
+                    norm['url'] = url
+                auth_val = norm['auth_value']
+                if is_masked_value(auth_val) and url in old_endpoints:
+                    norm['auth_value'] = old_endpoints[url].get('auth_value', '')
+                endpoints.append(norm)
             if endpoints:
                 data['endpoints'] = endpoints
         if payload.get('timeout') is not None:
             data['timeout'] = int(_clamp(float(payload['timeout']), 1, 60))
         if payload.get('retries') is not None:
             data['retries'] = int(max(0, min(10, int(float(payload['retries'])))))
+            
     return _save_group(group, data)
 
-
 def normalize_holiday_url(url):
-    """节假日地址规范化：自动补全 {年份} 占位符
-    例：https://timor.tech/api/holiday/year/ → https://timor.tech/api/holiday/year/{年份}
-    """
     s = (url or '').strip()
     if not s:
         s = DEFAULT_GROUPS['holiday']['defaults'][0]['url']
@@ -295,16 +379,10 @@ def normalize_holiday_url(url):
     s = s.rstrip('/')
     return s + '/' + HOLIDAY_PLACEHOLDER
 
-
 def display_holiday_url(url):
-    """页面展示用：隐藏 {年份} 占位符，只展示管理员需要编辑的地址"""
     return (url or '').replace(HOLIDAY_PLACEHOLDER, '').replace(HOLIDAY_FORMAT_PLACEHOLDER, '')
 
-
 def holiday_url_for_year(url, year):
-    """把存储的节假日端点地址转换为可请求地址（注入年份）：
-    - 含 {年份} 或 {} 占位符 → 原位替换；
-    - 无占位符（默认端点形态，管理员只填到 .../year/）→ 自动在末尾追加 /{year}"""
     s = (url or '').strip()
     if HOLIDAY_PLACEHOLDER in s or HOLIDAY_FORMAT_PLACEHOLDER in s:
         s = s.replace(HOLIDAY_PLACEHOLDER, str(year)).replace(HOLIDAY_FORMAT_PLACEHOLDER, str(year))
@@ -312,9 +390,7 @@ def holiday_url_for_year(url, year):
         s = s.rstrip('/') + '/' + str(year)
     return s
 
-
 def clear_group(group):
-    """删除一组配置（读取时自动回落默认值）"""
     obj = _get_setting_obj()
     if obj is None:
         return
@@ -327,9 +403,7 @@ def clear_group(group):
     except Exception:
         pass
 
-
 def restore_all_defaults():
-    """恢复全部组默认（清空整份外部接口配置）"""
     obj = _get_setting_obj()
     if obj is None:
         return
@@ -339,9 +413,7 @@ def restore_all_defaults():
     except Exception:
         pass
 
-
 def get_all_config():
-    """供配置页面渲染：{groups: {group: {label, type, endpoints|engines, timeout, retries, defaults, engine_labels}}}"""
     result = {}
     for group, meta in DEFAULT_GROUPS.items():
         item = {
@@ -352,19 +424,30 @@ def get_all_config():
             'defaults': meta['defaults'],
         }
         if meta['type'] == 'engines':
-            item['engines'] = get_engines(group)
+            engines = get_engines(group)
+            masked_engines = []
+            for e in engines:
+                ec = dict(e)
+                ec['has_auth_value'] = bool(e.get('auth_value'))
+                ec['auth_value'] = mask_auth_value(e.get('auth_value'))
+                masked_engines.append(ec)
+            item['engines'] = masked_engines
             item['engine_labels'] = ENGINE_LABELS
         else:
             endpoints = get_endpoints(group)
-            if group == 'holiday':
-                endpoints = [{'url': display_holiday_url(u['url']), 'enabled': u['enabled']} for u in endpoints]
-            item['endpoints'] = endpoints
+            masked_endpoints = []
+            for u in endpoints:
+                uc = dict(u)
+                if group == 'holiday':
+                    uc['url'] = display_holiday_url(u['url'])
+                uc['has_auth_value'] = bool(u.get('auth_value'))
+                uc['auth_value'] = mask_auth_value(u.get('auth_value'))
+                masked_endpoints.append(uc)
+            item['endpoints'] = masked_endpoints
         result[group] = item
-    return {'groups': result}
-
+    return {'groups': result, 'presets': ENDPOINT_PRESETS}
 
 def get_group(group):
-    """读取指定分组当前有效配置"""
     meta = DEFAULT_GROUPS.get(group)
     if not meta:
         return None
@@ -379,12 +462,7 @@ def get_group(group):
         'retries': get_retries(group),
     }
 
-
-# ===================== 一键测试执行器 =====================
-
 def _http_get_dual(url, params=None, timeout=8, headers=None):
-    """禁代理直连优先 + 系统代理兜底（与 weather_service._http_get 同款双路径）"""
-    import requests
     try:
         with requests.Session() as s:
             s.trust_env = False
@@ -395,29 +473,77 @@ def _http_get_dual(url, params=None, timeout=8, headers=None):
         s.trust_env = True
         return s.get(url, params=params, timeout=timeout, headers=headers)
 
+def test_endpoint(group, item_or_url, timeout=None):
+    if isinstance(item_or_url, dict):
+        url = str(item_or_url.get('url', '')).strip()
+        adapter = str(item_or_url.get('adapter', 'standard')).strip()
+        auth_type = str(item_or_url.get('auth_type', 'none')).strip()
+        auth_key = str(item_or_url.get('auth_key', '')).strip()
+        auth_value = str(item_or_url.get('auth_value', '')).strip()
+        if is_masked_value(auth_value):
+            for ep in get_endpoints(group):
+                if ep.get('url') == url:
+                    auth_value = ep.get('auth_value', '')
+                    break
+    else:
+        url = str(item_or_url or '').strip()
+        adapter = 'standard'
+        auth_type = 'none'
+        auth_key = ''
+        auth_value = ''
 
-def test_endpoint(group, url, timeout=None):
-    """测试单个端点地址是否有效，返回 {url, ok, message, latency_ms}
-    按各组真实协议做结构校验（非仅 HTTP 200）"""
     if timeout is None:
-        timeout = get_timeout(group)
-    url = (url or '').strip()
+        timeout = get_timeout(group) or 8
     start = time.time()
 
-    params = None
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+        'Accept': 'application/json',
+    }
+    params = {}
+
+    if auth_value:
+        if auth_type == 'bearer':
+            headers['Authorization'] = f'Bearer {auth_value}'
+        elif auth_type == 'header' and auth_key:
+            headers[auth_key] = auth_value
+        elif auth_type == 'query' and auth_key:
+            params[auth_key] = auth_value
+
     ok_fn = None
     fail_hint = ''
-    if group == 'geocoding':
-        params = {'name': '北京', 'count': 1, 'language': 'zh', 'format': 'json'}
+
+    if adapter == 'uapis' or 'uapis.cn' in url:
+        params['city'] = '北京'
+        ok_fn = lambda d: isinstance(d, dict) and ('weather' in d or 'temperature' in d or d.get('code') in (0, 200))
+        fail_hint = '响应缺少 weather/temperature 字段（非 UAPIS 实时天气兼容源）'
+    elif adapter == 'qweather':
+        params['location'] = '101010100'
+        ok_fn = lambda d: isinstance(d, dict) and d.get('code') in ('200', 200)
+        fail_hint = '和风天气返回异常或 Key 鉴权失败'
+    elif adapter == 'amap':
+        params['city'] = '110000'
+        ok_fn = lambda d: isinstance(d, dict) and d.get('status') == '1'
+        fail_hint = '高德天气返回异常或 Key 鉴权失败'
+    elif group == 'geocoding':
+        params['name'] = '北京'
+        params['count'] = 1
+        params['language'] = 'zh'
+        params['format'] = 'json'
         ok_fn = lambda d: isinstance(d, dict) and isinstance(d.get('results'), list)
-        fail_hint = '响应缺少 results 数组（非 Open-Meteo Geocoding 兼容端点）'
+        fail_hint = '响应缺少 results 列表（非 Open-Meteo Geocoding 兼容端点）'
     elif group == 'forecast':
-        params = {'latitude': 39.9, 'longitude': 116.4,
-                  'current': 'temperature_2m', 'timezone': 'auto'}
+        params['latitude'] = 39.9
+        params['longitude'] = 116.4
+        params['current'] = 'temperature_2m'
+        params['timezone'] = 'auto'
         ok_fn = lambda d: isinstance(d, dict) and ('current' in d or 'daily' in d)
         fail_hint = '响应缺少 current/daily 字段（非 Open-Meteo Forecast 兼容端点）'
     elif group == 'air_quality':
-        params = {'latitude': 39.9, 'longitude': 116.4, 'current': 'us_aqi', 'timezone': 'auto'}
+        params['latitude'] = 39.9
+        params['longitude'] = 116.4
+        params['current'] = 'us_aqi'
+        params['timezone'] = 'auto'
         ok_fn = lambda d: isinstance(d, dict) and isinstance(d.get('current'), dict)
         fail_hint = '响应缺少 current 字段（非 Open-Meteo Air Quality 兼容端点）'
     elif group == 'holiday':
@@ -426,36 +552,34 @@ def test_endpoint(group, url, timeout=None):
         ok_fn = lambda d: isinstance(d, dict) and d.get('code') == 0
         fail_hint = '响应缺少 code==0 字段（非 timor.tech 兼容端点）'
     else:
-        return {'url': url, 'ok': False, 'message': '未知分组: %s' % group, 'latency_ms': int((time.time() - start) * 1000)}
+        return {'url': url, 'ok': False, 'message': '未知服务组: %s' % group, 'latency_ms': int((time.time() - start) * 1000)}
 
     try:
-        # timor.tech 反爬：必须模拟浏览器 UA（否则 403）
-        headers = None
-        if group == 'holiday':
-            headers = {
-                'User-Agent': ('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
-                               '(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36'),
-                'Accept': 'application/json',
-            }
         resp = _http_get_dual(url, params=params, timeout=timeout, headers=headers)
         latency_ms = int((time.time() - start) * 1000)
         try:
             data = resp.json()
         except ValueError:
-            return {'url': url, 'ok': False, 'message': '响应非有效 JSON（HTTP %s）' % resp.status_code, 'latency_ms': latency_ms}
-        if ok_fn(data):
-            return {'url': url, 'ok': True, 'message': '连接正常（HTTP %s）' % resp.status_code, 'latency_ms': latency_ms}
+            return {'url': url, 'ok': False, 'message': f'响应非有效 JSON（HTTP {resp.status_code}）', 'latency_ms': latency_ms}
+        
+        if ok_fn and ok_fn(data):
+            extra_msg = ''
+            if adapter == 'uapis' or 'uapis.cn' in url:
+                extra_msg = f' (已识别即时天气: {data.get("weather")}, 气温 {data.get("temperature")}°C)'
+            return {'url': url, 'ok': True, 'message': f'连接成功（HTTP {resp.status_code}）{extra_msg}', 'latency_ms': latency_ms}
+        
         reason = ''
-        if isinstance(data, dict) and data.get('error'):
-            reason = '：' + str(data.get('reason') or '接口返回错误')
+        if isinstance(data, dict):
+            if data.get('error'):
+                reason = '：' + str(data.get('reason') or data.get('error'))
+            elif data.get('msg') or data.get('message'):
+                reason = '：' + str(data.get('msg') or data.get('message'))
         return {'url': url, 'ok': False, 'message': fail_hint + reason, 'latency_ms': latency_ms}
     except Exception as e:
         latency_ms = int((time.time() - start) * 1000)
-        return {'url': url, 'ok': False, 'message': '请求失败: %s' % str(e)[:200], 'latency_ms': latency_ms}
-
+        return {'url': url, 'ok': False, 'message': f'连接失败: {str(e)[:200]}', 'latency_ms': latency_ms}
 
 def test_engine(key, url, timeout=None):
-    """测试引擎行（支持 AI 搜索引擎与翻译引擎）"""
     if key in ('ai_model', 'mymemory', 'google_translate', 'custom_api'):
         try:
             from apps.core.services.translation_service import test_translation_engine
@@ -472,18 +596,16 @@ def test_engine(key, url, timeout=None):
     start = time.time()
     try:
         from apps.core.services.web_search import search_with_engine
-        results = search_with_engine(key, url, '测试天气', max_results=3, timeout=timeout)
+        results = search_with_engine(key, url, '母婴健康', max_results=3, timeout=timeout)
         latency_ms = int((time.time() - start) * 1000)
         if results:
-            return {'url': url, 'ok': True, 'message': '端点可达且成功解析出 %d 条结果' % len(results), 'latency_ms': latency_ms}
-        return {'url': url, 'ok': False, 'message': '端点可达但未能解析出结果（可能非 %s 兼容端点或被反爬拦截）' % ENGINE_LABELS.get(key, key), 'latency_ms': latency_ms}
+            return {'url': url, 'ok': True, 'message': f'端点畅通，成功解析 {len(results)} 条结果', 'latency_ms': latency_ms}
+        return {'url': url, 'ok': False, 'message': f'端点可达但未能解析结果（可能非 {ENGINE_LABELS.get(key, key)} 兼容端点或被反爬拦截）', 'latency_ms': latency_ms}
     except Exception as e:
         latency_ms = int((time.time() - start) * 1000)
-        return {'url': url, 'ok': False, 'message': '请求失败: %s' % str(e)[:200], 'latency_ms': latency_ms}
-
+        return {'url': url, 'ok': False, 'message': f'连接失败: {str(e)[:200]}', 'latency_ms': latency_ms}
 
 def test_group(group, payload):
-    """按当前配置顺序与启用状态测试整组（模拟故障转移顺序），返回逐条结果"""
     results = []
     if DEFAULT_GROUPS.get(group, {}).get('type') == 'engines':
         engines = payload.get('engines') or []
@@ -496,7 +618,5 @@ def test_group(group, payload):
         for item in endpoints:
             if not isinstance(item, dict) or not item.get('enabled'):
                 continue
-            results.append(test_endpoint(group, item.get('url', ''), timeout=payload.get('timeout')))
+            results.append(test_endpoint(group, item, timeout=payload.get('timeout')))
     return results
-
-

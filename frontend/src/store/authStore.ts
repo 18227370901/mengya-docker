@@ -1,3 +1,4 @@
+import { clearSessionMediaCache } from "@/utils/sessionMediaCache";
 import { create } from "zustand";
 import api from "@/api/client";
 import { authApi } from "@/api/auth";
@@ -66,6 +67,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   logout: () => {
+    clearSessionMediaCache();
     localStorage.removeItem("mengya_access");
     localStorage.removeItem("mengya_refresh");
     // v1.88.4 登出时清空收藏缓存

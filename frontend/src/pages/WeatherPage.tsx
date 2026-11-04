@@ -283,7 +283,7 @@ export default function WeatherPage() {
   }, [weatherData?.daily]);
 
   useEffect(() => {
-    if (!chartRef.current || !weatherData?.daily || weatherData.daily.length === 0) return;
+    if (!chartRef.current || !weatherData?.daily || weatherData.daily.length <= 1) return;
 
     if (!chartInstance.current) {
       chartInstance.current = echarts.init(chartRef.current);

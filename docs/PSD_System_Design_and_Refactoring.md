@@ -2696,3 +2696,32 @@ flowchart TD
 - **治理决策**：
   1. 对标智能待产包（GenerateShoppingListPage）的无阻断常驻渲染模式，通过 prevIdRef 锁定商品加载范围，禁止在相同商品重聚焦时将整个视图打回 loading 态；
   2. 模态弹窗显隐直接绑定单一受控状态 isOpen={aiLoading}，确保弹窗在 DOM 树中生命周期连续，时钟毫秒数与百分比曲线绝对不受标签页/视窗切换影响。
+
+
+### 10.74 外部接口多源协议适配、API Key 凭据体系与三方平台媒体会话级缓存治理 (v2.09)
+
+#### 10.74.1 业务背景与架构痛点
+1. **外部接口仅支持免 Key 模式**：原有外部接口配置只能添加无需凭据的端点，无法满足和风天气、高德开放平台等需要配置 API Key / Token 的主流商业及开放接口接入需求；
+2. **天气协议单一与 UAPIS 实况兼容受阻**：原有天气模块硬依赖 Open-Meteo 的经纬度查询及 `current` + 15天 `daily` 复合结构，当管理员配置 `https://uapis.cn/api/v1/misc/weather` 等轻量实况源时，因缺少多日预报导致连通性测试报错或前端图表破损；
+3. **三方平台外部 Logo 重复拉取开销**：三方平台管理页与中转枢纽页在用户每次进入或路由切换时，均重新发起外部图片 GET 请求，造成大量网络消耗并受制于外链防盗链拦截。
+
+#### 10.74.2 核心架构决策与实现
+1. **统一端点认证体系与脱敏保护**：
+   - 扩展 `ServiceEndpoint` 数据模型：新增 `adapter`、`auth_type`（none / bearer / header / query）、`auth_key` 与 `auth_value`；
+   - 凭据脱敏安全机制：读取时自动对 `auth_value` 执行 `mask_auth_value` 脱敏，保存时如检测到掩码字符则自动保留历史明文密钥，杜绝凭据明文泄露并与云端容灾备份 100% 兼容；
+   - 统一鉴权注入中间件：在 `weather_service._apply_endpoint_auth` 与 `service_config._http_get_dual` 中依序注入 Header 与 Query 鉴权参数。
+2. **气象多源协议自适应与双模驱动**：
+   - 引入专用适配协议：针对 `uapis` 协议实现 `_query_uapis_weather`，将中文实况（气温、湿度、风力风向、现象）转换为统一规范模型，并在返回结构中增加 `capabilities: { has_daily: false, mode: 'realtime_only' }`；
+   - 前端天气页与首页动态感知：`WeatherPage.tsx` 检测到实况模式时，自动停用 15 天 ECharts 折线图并无缝切换为“实时实况精细看板”，突出即时气温、湿度与育儿穿衣建议；`HomeWeatherBanner.tsx` 单日实况优雅回退。
+3. **外部接口配置中心交互现代化**：
+   - 全面升级为 React 响应式受控表单，提供分类 Tab（气象集群、历法节假日、AI 搜索、翻译引擎）；
+   - 内置一键预置模板：支持一键追加 UAPIS 极简实况、Open-Meteo 官方源、和风天气、高德天气、Timor 节假日等预设端点；
+   - 内置“接入规范说明”图文抽屉与行级独立连通性测试。
+4. **三方平台图片会话级缓存（Session Media Cache）**：
+   - 前端构建 `sessionMediaCache.ts`：以内存 Map + `sessionStorage` 实施二级缓存，在途请求并发合并，页面切换 0 外部请求、0 毫秒呈现；
+   - 退出登录自动销毁：在 `useAuthStore.getState().logout()` 时自动清空全部会话图片缓存；
+   - 防盗链与跨域代理兜底：后端新增 `PlatformIconProxyView`（`/api/v1/platforms/proxy-icon/`），经 SSRF 校验后中转并下发 24 小时强缓存响应头。
+
+5. **页面排版与启停按钮视觉增强**：
+   - 彻底修复 `EndpointRow.tsx` 与搜索引擎列表中移动端与窄屏下元素溢出、换行错位问题，采用两层分行自适应栅格；
+   - 优化启停开关视觉体验：弃用隐晦纯小滑动点，升级为具备鲜明状态色与呼吸圆点的状态切换胶囊（“已启用 (绿色)” / “已停用 (灰色)”），点击即可即时切换并给予明确视觉反馈。

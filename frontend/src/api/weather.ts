@@ -41,19 +41,29 @@ export interface AirQuality {
   pm10?: number;
 }
 
+export interface WeatherCapabilities {
+  has_daily: boolean;
+  mode: "full_forecast" | "realtime_only";
+  provider: string;
+  provider_label?: string;
+  report_time?: string;
+}
+
 export interface WeatherData {
   city: string;
   location?: {
     name: string;
-    latitude: number;
-    longitude: number;
-    timezone: string;
+    latitude?: number;
+    longitude?: number;
+    timezone?: string;
     province?: string;
     city?: string;
+    adcode?: string;
   };
   current: CurrentWeather;
   daily: DailyWeather[];
   air_quality?: AirQuality;
+  capabilities?: WeatherCapabilities;
 }
 
 export interface HomeWeatherPayload {
@@ -67,6 +77,7 @@ export interface HomeWeatherPayload {
   tomorrow_max: number | null;
   tomorrow_min: number | null;
   update_time: string;
+  capabilities?: WeatherCapabilities;
 }
 
 export interface HomeWeatherResponse {

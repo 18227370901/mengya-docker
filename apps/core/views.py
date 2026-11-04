@@ -6456,17 +6456,24 @@ def _get_cached_home_weather(city: str, lat: str = None, lon: str = None):
         return None
     current = (data or {}).get("current") or {}
     daily = (data or {}).get("daily") or []
+    cur_temp = current.get("temperature")
+    first_day = daily[0] if (daily and len(daily) > 0) else {}
+    t_max = first_day.get("temp_max") if first_day.get("temp_max") is not None else cur_temp
+    t_min = first_day.get("temp_min") if first_day.get("temp_min") is not None else cur_temp
+    second_day = daily[1] if (daily and len(daily) > 1) else {}
+
     payload = {
         "city": (data or {}).get("city") or city,
-        "temp": current.get("temperature"),
+        "temp": cur_temp,
         "desc": current.get("weather_text") or "",
         "icon": current.get("icon") or "",
         "code": current.get("weather_code"),
-        "today_max": (daily[0] or {}).get("temp_max") if daily else None,
-        "today_min": (daily[0] or {}).get("temp_min") if daily else None,
-        "tomorrow_max": (daily[1] or {}).get("temp_max") if len(daily) > 1 else None,
-        "tomorrow_min": (daily[1] or {}).get("temp_min") if len(daily) > 1 else None,
+        "today_max": t_max,
+        "today_min": t_min,
+        "tomorrow_max": second_day.get("temp_max"),
+        "tomorrow_min": second_day.get("temp_min"),
         "update_time": current.get("time") or "",
+        "capabilities": (data or {}).get("capabilities"),
     }
     _HOME_WEATHER_CACHE[cache_key] = (now + _HOME_WEATHER_TTL, payload)
     if city and city != cache_key:

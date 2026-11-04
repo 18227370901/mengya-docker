@@ -94,6 +94,7 @@ urlpatterns = [
     path("admin/knowledge/reset/", views_knowledge_admin.AdminKnowledgeResetView.as_view(), name="admin-knowledge-reset"),
     # 三方平台接入与中转站 API
     path("platforms/user-options/", views_platform.PlatformUserOptionsView.as_view(), name="platform-user-options"),
+    path("platforms/proxy-icon/", views_platform.PlatformIconProxyView.as_view(), name="platform-icon-proxy"),
     path("platforms/fetch-meta/", views_platform.PlatformMetaFetchView.as_view(), name="platform-fetch-meta"),
     path("platforms/", views_platform.PlatformListView.as_view(), name="platform-list"),
     path("platforms/check-url/", views_platform.PlatformCheckUrlView.as_view(), name="platform-check-url"),

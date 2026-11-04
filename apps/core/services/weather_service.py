@@ -198,6 +198,175 @@ def _http_get(url, params, timeout=HTTP_TIMEOUT):
     return requests.get(url, params=params, timeout=timeout)
 
 
+def _apply_endpoint_auth(url, params, headers, ep):
+    """为外部接口端点动态注入 API Key / Token 凭据"""
+    auth_type = ep.get('auth_type') or 'none'
+    auth_key = ep.get('auth_key') or ''
+    auth_value = ep.get('auth_value') or ''
+    headers = dict(headers or {})
+    params = dict(params or {})
+    if auth_value:
+        if auth_type == 'bearer':
+            headers['Authorization'] = f'Bearer {auth_value}'
+        elif auth_type == 'header' and auth_key:
+            headers[auth_key] = auth_value
+        elif auth_type == 'query' and auth_key:
+            params[auth_key] = auth_value
+    return url, params, headers
+
+
+def _text_to_wmo_code(text):
+    """常见中文天气现象转换为 WMO 编码"""
+    if not text:
+        return 0
+    t = str(text).strip()
+    if '晴' in t:
+        return 0
+    if '多云' in t:
+        return 2
+    if '阴' in t:
+        return 3
+    if '雾' in t:
+        return 45
+    if '雷' in t:
+        return 95
+    if '暴雨' in t:
+        return 65
+    if '大雨' in t:
+        return 63
+    if '中雨' in t:
+        return 61
+    if '雨' in t:
+        return 61
+    if '雪' in t:
+        return 71
+    return 1
+
+
+def _wind_power_to_speed(power_str):
+    """风力等级描述转为近似风速 m/s"""
+    import re
+    m = re.search(r'(\d+)', str(power_str or ''))
+    if m:
+        grade = int(m.group(1))
+        speeds = [0.2, 1.2, 2.8, 4.8, 7.0, 9.5, 12.5, 15.5]
+        return speeds[grade] if grade < len(speeds) else 18.0
+    return 2.5
+
+
+def _query_uapis_weather(endpoint, city_name, province=None, district_city=None):
+    """
+    UAPIS 国内即时实况天气源适配器
+    规范化映射为统一前端标准结构，并在 capabilities 中标明 mode: 'realtime_only'
+    """
+    from . import service_config
+    import time
+    clean_city = str(city_name or '北京').strip()
+    # 清除多余省市区后缀以便匹配 UAPIS
+    target_param = clean_city
+    for suffix in ('市辖区', '特别行政区'):
+        if target_param.endswith(suffix):
+            target_param = target_param[:-len(suffix)]
+            break
+
+    url = endpoint.get('url') or 'https://uapis.cn/api/v1/misc/weather'
+    params = {'city': target_param}
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+        'Accept': 'application/json',
+    }
+    url, params, headers = _apply_endpoint_auth(url, params, headers, endpoint)
+
+    timeout = service_config.get_timeout('forecast') or 8
+    retries = service_config.get_retries('forecast') or 0
+    resp = None
+    for _round in range(retries + 1):
+        try:
+            resp = requests.get(url, params=params, headers=headers, timeout=(5, timeout))
+            if resp.status_code == 200:
+                break
+        except Exception:
+            continue
+
+    if resp is None or resp.status_code != 200:
+        raise WeatherError(f'UAPIS 实时天气接口响应异常 (HTTP {getattr(resp, "status_code", "超时")})', 502)
+
+    try:
+        data = resp.json()
+    except Exception:
+        raise WeatherError('UAPIS 实时天气返回非标准 JSON 数据', 502)
+
+    if not isinstance(data, dict) or ('weather' not in data and 'temperature' not in data):
+        err_msg = data.get('msg') or data.get('message') or '未知数据格式'
+        raise WeatherError(f'UAPIS 天气查询失败: {err_msg}', 400)
+
+    cur_temp = data.get('temperature')
+    weather_str = data.get('weather') or '晴'
+    w_code = _text_to_wmo_code(weather_str)
+    w_icon = weather_icon(w_code)
+    wind_dir = data.get('wind_direction') or '无持续风向'
+    wind_p = data.get('wind_power') or '1级'
+    wind_spd = _wind_power_to_speed(wind_p)
+    humidity = data.get('humidity') or 50
+    rep_time = data.get('report_time') or time.strftime('%Y-%m-%d %H:%M')
+
+    today_str = time.strftime('%Y-%m-%d')
+    daily_item = {
+        'date': today_str,
+        'weather_code': w_code,
+        'weather_text': weather_str,
+        'icon': w_icon,
+        'temp_max': cur_temp,
+        'temp_min': cur_temp,
+        'precip_prob': 0,
+        'sunrise': None,
+        'sunset': None,
+        'uv_index': None,
+        'precipitation': 0,
+    }
+
+    current = {
+        'time': rep_time,
+        'temperature': cur_temp,
+        'apparent_temperature': cur_temp,
+        'feels_like': cur_temp,
+        'relative_humidity': humidity,
+        'humidity': humidity,
+        'weather_code': w_code,
+        'weather_text': weather_str,
+        'icon': w_icon,
+        'wind_speed': wind_spd,
+        'wind_direction': 0,
+        'wind_direction_text': wind_dir,
+        'wind_power': wind_p,
+        'surface_pressure': None,
+        'cloud_cover': None,
+        'precipitation': 0,
+    }
+
+    return {
+        'city': data.get('city') or clean_city,
+        'location': {
+            'name': data.get('city') or clean_city,
+            'province': data.get('province') or province or '',
+            'adcode': data.get('adcode') or '',
+            'timezone': 'Asia/Shanghai',
+            'latitude': None,
+            'longitude': None,
+        },
+        'current': current,
+        'daily': [daily_item],
+        'air_quality': None,
+        'capabilities': {
+            'has_daily': False,
+            'mode': 'realtime_only',
+            'provider': 'uapis',
+            'provider_label': 'UAPIS 极简实时天气',
+            'report_time': rep_time,
+        }
+    }
+
+
 def _http_get_group(group, params, default_url):
     """v1.73 多端点故障转移请求：
     按配置顺序遍历该组「启用」的端点（外部接口配置页管理），任一成功即返回；

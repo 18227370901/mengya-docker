@@ -1,3 +1,4 @@
+import { useSessionImage } from "@/utils/sessionMediaCache";
 import React, { useEffect, useState, useMemo } from "react";
 import {
   Compass,
@@ -50,15 +51,14 @@ const PAGE_SIZE_OPTIONS: PageSizeOption[] = [
 const STORAGE_KEY = "mengya_platforms_page_size";
 
 function HubPlatformLogo({ name, logoUrl }: { name: string; logoUrl?: string }) {
-  const [failed, setFailed] = useState(false);
-  if (logoUrl && !failed) {
+  const { src, failed } = useSessionImage(logoUrl);
+  if (src && !failed) {
     return (
       <img
-        src={logoUrl}
+        src={src}
         alt={name}
         referrerPolicy="no-referrer"
         className="h-11 w-11 rounded-xl object-contain border border-gray-100 bg-gray-50 p-1"
-        onError={() => setFailed(true)}
       />
     );
   }

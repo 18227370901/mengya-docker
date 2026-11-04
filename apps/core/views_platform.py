@@ -584,3 +584,53 @@ class PlatformBatchActionView(APIView):
             status=status.HTTP_400_BAD_REQUEST,
         )
 
+
+
+class PlatformIconProxyView(APIView):
+    """三方平台外部 Logo 安全代理与缓存端点 (带严格 SSRF 防御与长效客户端缓存)"""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        url = request.query_params.get("url", "").strip()
+        if not url:
+            return Response({"code": 4000, "message": "缺少 url 参数", "data": None}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 校验 URL 协议合法性
+        import urllib.parse
+        import socket
+        from django.http import HttpResponse
+        from .services.platform_meta_service import is_ip_safe, BROWSER_HEADERS
+
+        parsed = urllib.parse.urlsplit(url)
+        if parsed.scheme not in ("http", "https") or not parsed.hostname:
+            return Response({"code": 4001, "message": "仅支持 HTTP/HTTPS URL", "data": None}, status=status.HTTP_400_BAD_REQUEST)
+
+        # SSRF 防御校验
+        try:
+            port = parsed.port or (443 if parsed.scheme == "https" else 80)
+            addrinfo = socket.getaddrinfo(parsed.hostname, port)
+            for item in addrinfo:
+                ip = item[4][0]
+                safe, reason = is_ip_safe(ip)
+                if not safe:
+                    return Response({"code": 4003, "message": f"禁止请求私有或非法地址: {reason}", "data": None}, status=status.HTTP_403_FORBIDDEN)
+        except Exception as e:
+            return Response({"code": 4002, "message": f"目标域名解析失败: {str(e)}", "data": None}, status=status.HTTP_400_BAD_REQUEST)
+
+        # 流式抓取
+        try:
+            with requests.get(url, headers=BROWSER_HEADERS, timeout=(3.0, 5.0), stream=True) as resp:
+                if resp.status_code != 200:
+                    return Response({"code": resp.status_code, "message": "上游资源获取失败", "data": None}, status=status.HTTP_502_BAD_GATEWAY)
+                
+                content_type = resp.headers.get("Content-Type", "image/png")
+                # 限制最大 512KB，防止大文件攻击
+                content = resp.raw.read(512 * 1024)
+                
+                http_resp = HttpResponse(content, content_type=content_type)
+                # 允许前端缓存 24 小时
+                http_resp["Cache-Control"] = "private, max-age=86400"
+                http_resp["Access-Control-Allow-Origin"] = "*"
+                return http_resp
+        except Exception as e:
+            return Response({"code": 5000, "message": f"中转抓取失败: {str(e)}", "data": None}, status=status.HTTP_502_BAD_GATEWAY)
