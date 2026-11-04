@@ -926,7 +926,22 @@ def restore_system_from_backup(
                     with connection.cursor() as cur:
                         cur.execute("PRAGMA foreign_keys = ON;")
 
-        # 5. 第四防线：后置自愈与校准
+        # 5. 第四防线：后置结构迁移自愈与校准
+        # 【关键自愈 1】释放连接并在最新数据还原后原地执行 migrate，杜绝老旧版本备份缺少新字段/新表引发 500
+        try:
+            connections.close_all()
+            from django.core.management import call_command
+            call_command("migrate", interactive=False, verbosity=0)
+        except Exception as mig_err:
+            logger.warning(f"[容灾恢复] 后置自动数据迁移警告: {mig_err}")
+
+        # 【关键自愈 2】自愈同步当前唯一管理员账密，防止老备份中历史账密或不同管理员导致恢复后无法登录
+        try:
+            from django.core.management import call_command
+            call_command("ensure_admin")
+        except Exception as admin_err:
+            logger.warning(f"[容灾恢复] 后置管理员自愈同步警告: {admin_err}")
+
         if current_profile["is_postgres"]:
             recalibrate_postgres_sequences()
         else:
