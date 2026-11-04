@@ -58,6 +58,10 @@ class HealthRecord(models.Model):
 
     class Meta:
         ordering = ["-record_date"]
+        indexes = [
+            models.Index(fields=["user", "record_type", "record_date"], name="idx_hlth_u_type_date"),
+            models.Index(fields=["baby", "record_date"], name="idx_hlth_baby_date"),
+        ]
 
     def __str__(self):
         return f"{self.user.phone} - {self.record_date}"

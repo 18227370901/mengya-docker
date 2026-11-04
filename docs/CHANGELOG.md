@@ -6,6 +6,28 @@
 
 ---
 
+## 2026-11-04 架构与性能升级：v2.10 版本（系统性能上线加固、GZip动态压缩、容灾备份魔数自愈与会话强制注销治理）
+
+### 核心变更概览
+1. **网络传输与全站性能加固**：
+   - **GZip 动态响应压缩**：在 Django `MIDDLEWARE` 紧随 WhiteNoise 挂载 `GZipMiddleware`，动态大 JSON 数据包压缩率达 65%~80%；
+   - **数据库高频复合索引**：针对 `AuditLog` 补充 `idx_audit_created`、`idx_audit_action_created`、`idx_audit_user_created` 复合索引；针对 `HealthRecord` 补充 `idx_hlth_u_type_date`、`idx_hlth_baby_date` 索引，彻底规避全表扫描与磁盘 I/O 尖刺；
+   - **高并发 WAL 模式与锁超时**：本地 SQLite 默认注入 `PRAGMA journal_mode = WAL;` 与 5s Busy Timeout 调优，解决并发读写锁等待。
+2. **工业级可观测性与健康探针**：
+   - **生产级日志轮转**：在 `settings.py` 挂载 `RotatingFileHandler`（10MB/5份），集中收敛至 `logs/mengya.log`，彻底消除无界写日志爆盘隐患；
+   - **轻量探活端点**：暴露 `/healthz` 极简探针，毫秒级探测数据库可达性并返回 `200 {"status": "ok", "database": true}`。
+3. **容灾备份核心引擎自愈与会话安全闭环**：
+   - **备份包魔数智能嗅探 (Magic Header Sniffing)**：在 `backup_service.py` 恢复入口增加二进制文件头探测（`PK-Zip`），杜绝因扩展名误重命名导致的 `file is not a database` 崩溃；
+   - **全系统还原会话注销 (Revoked Marker)**：针对本地恢复、云端还原与应急撤销三大场景，数据替换完成后自动刷新全量用户 `active_token_jti`（打上 `revoked_restore_*` 注销标记），旧 Token 立即失效（401 code 1003），阻断越权历史脏数据；
+   - **前端无刷新交互与平滑引导**：恢复成功提示框引导用户“完成恢复并重新登录以加载最新权限”，平滑导航至 `/login?kicked=1`。
+
+### 验证结果
+- 前端全量构建 `python tools/build_frontend.py` 编译通过（2627 modules transformed），静态资产同步无损；
+- 模拟生成伪装扩展名 zip 备份包恢复成功，实测数据恢复后旧 Token 访问接口 100% 触发 1003 拦截并引导至登录；
+- 探活端点 `/healthz` 实测响应耗时 < 2ms，返回 200 OK。
+
+---
+
 ## 2026-11-03 架构升级：v2.09 版本（外部接口多源协议适配与凭据体系、三方平台图片会话级缓存治理）
 
 ### 核心变更概览

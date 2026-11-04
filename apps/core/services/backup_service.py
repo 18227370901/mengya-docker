@@ -682,8 +682,17 @@ def restore_system_from_backup(
         candidate_sqlite_db = None
         db_stream_files = []
 
-        # 1. 第一防线：沙箱预检与解压
-        if is_zip:
+        # 1. 第一防线：文件魔数双重嗅探（兼容用户误将 zip 命名为 .db 或物理 .db）
+        is_real_zip = False
+        try:
+            with open(backup_file_path, "rb") as bf:
+                header = bf.read(16)
+                if header.startswith(b"PK\x03\x04") or header.startswith(b"PK\x05\x06") or header.startswith(b"PK\x07\x08"):
+                    is_real_zip = True
+        except Exception:
+            is_real_zip = is_zip
+
+        if is_zip or is_real_zip:
             ok_unzip, msg_unzip = webdav_utils.decrypt_and_extract_zip(backup_file_path, decrypt_password, str(temp_dir))
             if not ok_unzip:
                 return False, f"解压或解密备份包失败: {msg_unzip}", {}
@@ -893,6 +902,15 @@ def restore_system_from_backup(
         try:
             from apps.core.views import _HOME_WEATHER_CACHE
             _HOME_WEATHER_CACHE.clear()
+        except Exception:
+            pass
+
+        # 9. 【会话安全核心】系统恢复后强制注销所有用户会话，杜绝历史脏 Token 越权
+        try:
+            import uuid
+            User = apps.get_model("core", "User")
+            revoked_marker = f"revoked_restore_{uuid.uuid4().hex[:12]}"
+            User.objects.all().update(active_token_jti=revoked_marker)
         except Exception:
             pass
 

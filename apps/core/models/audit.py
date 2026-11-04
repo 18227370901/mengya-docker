@@ -99,6 +99,11 @@ class AuditLog(models.Model):
         ordering = ["-created_at"]
         verbose_name = "审计日志"
         verbose_name_plural = "审计日志"
+        indexes = [
+            models.Index(fields=["-created_at"], name="idx_audit_created"),
+            models.Index(fields=["action", "-created_at"], name="idx_audit_action_created"),
+            models.Index(fields=["user", "-created_at"], name="idx_audit_user_created"),
+        ]
 
     def __str__(self):
         return f"[{self.created_at:%Y-%m-%d %H:%M}] {self.username} {self.action_label or self.action}"

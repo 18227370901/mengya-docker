@@ -60,8 +60,8 @@ export default function ManualBackupCard({ config, onBackupSuccess, showToast }:
       const now = new Date();
       const pad = (n: number) => String(n).padStart(2, "0");
       const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
-      const ext = backupType === "full_backup" ? "zip" : "db";
-      a.download = `mengya_backup_${ts}_${ext === "zip" ? "full.zip" : "db.db"}`;
+      const ext = "zip";
+      a.download = `mengya_backup_${ts}_${backupType === "full_backup" ? "full" : "db"}.zip`;
       document.body.appendChild(a);
       a.click();
       a.remove();

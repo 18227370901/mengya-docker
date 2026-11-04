@@ -110,10 +110,15 @@ export default function LocalRestoreCard({ showToast }: Props) {
           <div className="pt-2 text-right">
             <button
               type="button"
-              className="rounded-xl bg-emerald-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-emerald-700"
-              onClick={() => window.location.reload()}
+              className="rounded-xl bg-emerald-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 transition"
+              onClick={() => {
+                localStorage.removeItem("mengya_access");
+                localStorage.removeItem("mengya_refresh");
+                sessionStorage.setItem("mengya_kicked", "1");
+                window.location.href = "/login?kicked=1";
+              }}
             >
-              刷新系统页面以加载恢复数据
+              完成恢复并重新登录以加载最新权限
             </button>
           </div>
         </div>

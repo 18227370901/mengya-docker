@@ -363,13 +363,17 @@ export default function RemoteBackupListCard({ backups, loading, config, onRefre
                 <div className="pt-2 text-right">
                   <button
                     type="button"
-                    className="rounded-xl bg-emerald-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-emerald-700"
+                    className="rounded-xl bg-emerald-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 transition"
                     onClick={() => {
                       setRestoreModalOpen(false);
-                      window.location.reload();
+                      setRestoreSummary(null);
+                      localStorage.removeItem("mengya_access");
+                      localStorage.removeItem("mengya_refresh");
+                      sessionStorage.setItem("mengya_kicked", "1");
+                      window.location.href = "/login?kicked=1";
                     }}
                   >
-                    刷新页面以生效最新数据
+                    完成恢复并重新登录以加载最新权限
                   </button>
                 </div>
               </div>

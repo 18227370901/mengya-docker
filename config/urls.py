@@ -1,3 +1,21 @@
+from django.http import JsonResponse
+from django.db import connection
+
+def health_check(request):
+    """服务存活与数据库可达性探针 (<2ms)"""
+    db_ok = True
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1;")
+    except Exception:
+        db_ok = False
+        
+    status_code = 200 if db_ok else 503
+    return JsonResponse(
+        {"status": "ok" if db_ok else "error", "database": db_ok},
+        status=status_code
+    )
+
 from django.urls import include, path, re_path
 from django.views.generic import TemplateView, RedirectView
 from django.views.static import serve
@@ -30,6 +48,7 @@ def serve_fetal_story(request, path):
     return serve(request, path, document_root=fallback_dir)
 
 urlpatterns = [
+    path("healthz", health_check, name="health-check"),
     # 严格封堵原生 Django Admin 页面，统一重定向至前端认证登录页，彻底杜绝后台暴露
     path("admin/login/", RedirectView.as_view(url="/login", permanent=False)),
     path("admin/", RedirectView.as_view(url="/login", permanent=False)),

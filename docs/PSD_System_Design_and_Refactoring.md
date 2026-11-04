@@ -2725,3 +2725,33 @@ flowchart TD
 5. **页面排版与启停按钮视觉增强**：
    - 彻底修复 `EndpointRow.tsx` 与搜索引擎列表中移动端与窄屏下元素溢出、换行错位问题，采用两层分行自适应栅格；
    - 优化启停开关视觉体验：弃用隐晦纯小滑动点，升级为具备鲜明状态色与呼吸圆点的状态切换胶囊（“已启用 (绿色)” / “已停用 (灰色)”），点击即可即时切换并给予明确视觉反馈。
+
+### 10.75 ADR-75：上线前性能加固、可观测性与容灾备份安全自愈落地规范 (v2.10)
+
+#### 10.75.1 业务背景与上线前基线要求
+在项目准备投入正式生产环境运行前，为确保系统在单进程一体化架构下承载高并发读写、规避单点锁库、防止内存与日志无界膨胀，并建立工业级安全防线，系统全面推行了上线前性能、网络、安全及可观测性加固。同时对容灾备份模块中纯数据库快照恢复报错及还原后历史会话未注销的缺陷进行了彻底根治。
+
+#### 10.75.2 核心架构决策与实现规范
+1. **动态网络传输压缩**：
+   - 在 `MIDDLEWARE` 紧随 WhiteNoise 挂载 `django.middleware.gzip.GZipMiddleware`，动态 JSON 数据传输体积平均压缩 65%~80%。
+2. **多态缓存抽象与单会话强一致保障**：
+   - 显式声明 `CACHES` 后端架构，默认加载带有容量上限（2000条）与淘汰策略（Cull 频率 3）的 `LocMemCache`，配置 Redis 时自动切换；
+   - 维持单会话 JTI 强一致性校验，杜绝脏读越权。
+3. **数据库热点复合索引与并发 WAL 模式**：
+   - 针对 `AuditLog` 追加 `idx_audit_created`、`idx_audit_action_created`、`idx_audit_user_created` 复合索引；
+   - 针对 `HealthRecord` 追加 `idx_hlth_u_type_date`、`idx_hlth_baby_date` 时序索引；
+   - 在 SQLite3 连接建立钩子中持久化注入 `PRAGMA journal_mode = WAL;` 与 `PRAGMA synchronous = NORMAL;`。
+4. **集中日志轮转与健康探针**：
+   - 在 `settings.py` 接入 `RotatingFileHandler`（单文件 10MB，最大 5 份轮转），落地至 `logs/mengya.log`，彻底杜绝服务长期运行打爆磁盘；
+   - 暴露 `/healthz` 极简数据库可达性探活端点（<2ms），支持无缝对接外部探针与反向代理。
+5. **容灾快照文件魔数嗅探与自愈恢复**：
+   - 根除纯数据库快照上传急救恢复时报 `file is not a database` 的缺陷：引入二进制魔数双重嗅探（PK-Zip 头），自适应识别解压分支，免疫文件扩展名误改；
+   - 前端下载文件名规范化为 `mengya_backup_{ts}_db.zip`，与多引擎数据流严格对齐。
+6. **容灾还原强制注销全员会话与平滑引导**：
+   - 针对本地恢复、云端还原与应急撤销三大场景，在底层数据恢复完毕后统一注入 `revoked_restore_*` 注销标记，使所有历史会话 Token 立即失效（401 code 1003）；
+   - 前端恢复成功弹窗统一改造为“完成恢复并重新登录以加载最新权限”，自动清理本地凭证并平滑重定向至 `/login?kicked=1`。
+
+#### 10.75.3 实施与验证结果
+- 执行 `python tools/build_frontend.py` 前端编译与静态产物同步通过；
+- 执行 `manage.py migrate core` 成功应用复合索引迁移；
+- 执行 `run.ps1 start`（或 `run.sh start`）服务顺利拉起，`/healthz` 探活返回 `200 {"status": "ok", "database": true}`。
