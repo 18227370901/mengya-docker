@@ -226,7 +226,7 @@ export default function PlatformManagePage() {
     try {
       if (!silent) setLoading(true);
       setErrorMsg("");
-      const res = await platformApi.getPlatforms({ keyword: keyword || undefined });
+      const res = await platformApi.getPlatforms({ keyword: keyword || undefined, scope: "manage" });
       const list = res.data.data || [];
       setPlatforms(list);
       setSelectedIds((prev) => prev.filter((id) => list.some((item) => item.id === id)));

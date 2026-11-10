@@ -9,11 +9,11 @@ export const platformApi = {
   fetchMeta: (url: string) =>
     api.post<{ code: number; message: string; data: PlatformMetaFetchResult }>("/platforms/fetch-meta/", { url }),
 
-  getPlatforms: (params?: { category?: string; age_group?: string; keyword?: string }) =>
+  getPlatforms: (params?: { category?: string; age_group?: string; keyword?: string; scope?: "hub" | "manage" }) =>
     api.get<{ code: number; message: string; data: ThirdPartyPlatform[] }>("/platforms/", { params }),
 
-  getPlatformDetail: (id: number) =>
-    api.get<{ code: number; message: string; data: ThirdPartyPlatform }>(`/platforms/${id}/`),
+  getPlatformDetail: (id: number, scope?: "hub" | "manage") =>
+    api.get<{ code: number; message: string; data: ThirdPartyPlatform }>(`/platforms/${id}/`, { params: scope ? { scope } : undefined }),
 
   createPlatform: (data: Partial<ThirdPartyPlatform>) =>
     api.post<{ code: number; message: string; data: ThirdPartyPlatform }>("/platforms/", data),

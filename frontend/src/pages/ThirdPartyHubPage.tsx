@@ -91,7 +91,7 @@ export default function ThirdPartyHubPage() {
     }
   });
 
-  const canAccess = user?.is_staff || hasPermission("menu_third_party_hub") || hasPermission("menu_admin_platforms");
+  const canAccess = user?.is_staff || hasPermission("menu_third_party_hub");
 
   const loadPlatforms = async () => {
     try {
@@ -101,6 +101,7 @@ export default function ThirdPartyHubPage() {
         category: selectedCategory || undefined,
         age_group: selectedAgeGroup || undefined,
         keyword: searchKeyword || undefined,
+        scope: "hub",
       });
       setPlatforms(res.data.data || []);
       setPage(1);

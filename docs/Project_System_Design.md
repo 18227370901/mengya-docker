@@ -2726,6 +2726,26 @@ flowchart TD
    - 彻底修复 `EndpointRow.tsx` 与搜索引擎列表中移动端与窄屏下元素溢出、换行错位问题，采用两层分行自适应栅格；
    - 优化启停开关视觉体验：弃用隐晦纯小滑动点，升级为具备鲜明状态色与呼吸圆点的状态切换胶囊（“已启用 (绿色)” / “已停用 (灰色)”），点击即可即时切换并给予明确视觉反馈。
 
+### 10.81 ADR-81：三方平台列表视图场景隔离（`scope=hub|manage`）与停用过滤一致性规范 (v2.16)
+
+#### 10.81.1 业务背景与根因分析
+1. **单接口复用无场景标识**：`GET /api/platforms/`（及详情接口）同时服务后台「三方平台接入与中转管理」与前台「三方中转站」，此前仅凭 `_is_admin(user)` 判断是否过滤 `is_enabled=True` 与 `visibility_type`；
+2. **管理页数量不一致**：具有 `menu_admin_platforms` 权限的非管理员用户在管理页请求接口时，被误套用前台过滤规则，导致即便可见性为 `all`（全员普通用户可见）的已停用平台也被过滤，与管理员在管理页看到的平台数量不一致；
+3. **停用后中转站仍展示**：管理员停用某条平台后切到「中转站」页面时，由于 `is_admin=True` 跳过了 `is_enabled=True` 过滤，已停用的平台与子资源仍在前台正常展示。
+
+#### 10.81.2 核心架构决策与实现规范
+1. **显式场景参数 `scope` 隔离（`apps/core/views_platform.py`）**：
+   - `scope="manage"`：面向 `is_admin` 或具备 `menu_admin_platforms` 权限的用户，统一返回全部 `is_active=True` 平台及子资源（包含 `is_enabled=False` 停用项），保证管理页数量与状态筛选口径完全一致；
+   - `scope="hub"`（安全默认）：面向 `is_admin` 或具备 `menu_third_party_hub` 权限的用户，**对所有角色强制过滤 `is_enabled=True`**（含子资源），普通用户再叠加 `visibility_type` / `allowed_user_ids` 白名单过滤；
+   - 引入 `_parse_bool` 对 `is_enabled` 写入进行严格布尔转换。
+2. **前端调用约定（`platform.ts` / `ThirdPartyHubPage.tsx` / `PlatformManagePage.tsx`）**：
+   - 前台 `ThirdPartyHubPage` 固定传入 `scope: "hub"`，后台 `PlatformManagePage` 固定传入 `scope: "manage"`。
+
+#### 10.81.3 实施与验证结果
+- `mengya-docker` 与 `mengya-local` 代码已全量对齐，前端完成 `python tools/build_frontend.py` 编译（2628 modules）与静态产物同步。
+
+---
+
 ### 10.80 ADR-80：全栈网络链路与并发治理、全局 500 兜底、UI 体验组件收敛及登录认证时序加固规范 (v2.15)
 
 #### 10.80.1 业务背景与根因分析

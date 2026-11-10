@@ -2602,6 +2602,24 @@ apps/core/                                    apps/core/
 
 <section id="adr-10-73"><h2>10.73 商品库 AI 一键评测生命周期竞态消除 (v2.08)</h2><p>规范组件卸载自动中止请求与路由重入状态复位机制，彻底根治切页重入从0自动重跑缺陷。</p></section>
 
+<section class="adr-card" id="adr-10-81">
+  <h2>10.81 ADR-81：三方平台列表视图场景隔离（scope=hub|manage）与停用过滤一致性规范 (v2.16)</h2>
+  <div class="adr-meta"><span class="badge">Version: v2.16</span><span class="badge">Date: 2026-11-10</span><span class="badge status-accepted">Accepted</span></div>
+  <h3>10.81.1 业务背景与根因分析</h3>
+  <p><code>GET /api/platforms/</code> 同时服务管理后台与前台「三方中转站」，此前仅凭 <code>_is_admin(user)</code> 决定是否过滤 <code>is_enabled=True</code> 与 <code>visibility_type</code>，导致两类缺陷：其一，具备 <code>menu_admin_platforms</code> 权限的非管理员用户在管理页看不到全员可见的已停用平台，与管理员数量不一致；其二，管理员停用平台后切到中转站页面，因跳过 <code>is_enabled=True</code> 过滤导致停用平台仍在正常展示。</p>
+  <h3>10.81.2 核心架构决策与实现规范</h3>
+  <ul>
+    <li><strong>场景参数隔离</strong>：<code>PlatformListView.get</code> 与 <code>PlatformDetailView.get</code> 新增 <code>scope</code>（<code>manage</code> | <code>hub</code>，默认 <code>hub</code>）；<code>scope=manage</code> 统一返回全部未软删除平台（含停用项），<code>scope=hub</code> 对所有角色（含管理员）强制过滤 <code>is_enabled=True</code>；</li>
+    <li><strong>布尔入参防误判</strong>：新增 <code>_parse_bool</code> 安全解析创建/更新时的 <code>is_enabled</code>；</li>
+    <li><strong>前端调用对齐</strong>：<code>ThirdPartyHubPage.tsx</code> 显式传入 <code>scope: "hub"</code>，<code>PlatformManagePage.tsx</code> 显式传入 <code>scope: "manage"</code>。</li>
+  </ul>
+  <h3>10.81.3 实施与验证结果</h3>
+  <ul>
+    <li><code>mengya-docker</code> 与 <code>mengya-local</code> 代码完成全量同步；</li>
+    <li>执行 <code>python tools/build_frontend.py</code> 完成前端编译（2628 modules）与静态产物同步。</li>
+  </ul>
+</section>
+
 <section class="adr-card" id="adr-10-80">
   <h2>10.80 ADR-80：全栈网络链路与并发治理、全局 500 兜底、UI 体验组件收敛及登录认证时序加固规范 (v2.15)</h2>
   <div class="adr-meta"><span class="badge">Version: v2.15</span><span class="badge">Date: 2026-11-10</span><span class="badge status-accepted">Accepted</span></div>

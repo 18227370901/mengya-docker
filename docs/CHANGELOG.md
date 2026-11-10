@@ -6,6 +6,25 @@
 
 ---
 
+## 2026-11-10 缺陷修复：v2.16 版本（三方平台管理页数量口径统一与停用平台中转站隐藏修复）
+
+### 核心变更概览
+1. **平台列表/详情接口引入显式视图场景 `scope`（`apps/core/views_platform.py`）**：
+   - `PlatformListView.get` 与 `PlatformDetailView.get` 新增 `scope` 参数（`"hub" | "manage"`，默认 `"hub"`），彻底解耦“场景过滤规则”与“账号角色身份”；
+   - **`scope="manage"`（三方平台接入与中转管理页）**：管理员及具备 `menu_admin_platforms` 权限的用户均按一致口径获取全部未软删除平台（含 `is_enabled=False` 已停用项与白名单项）及全量未软删除子资源，解决全员可见停用平台导致管理页各方数量不一致的问题；
+   - **`scope="hub"`（三方中转站前台）**：对所有用户（含管理员）强制过滤 `is_enabled=True` 主平台与子资源，普通用户同步执行 `visibility_type` / `allowed_user_ids` 白名单过滤，确保停用后中转站立即下线不展示；
+   - 新增 `_parse_bool` 安全解析 `is_enabled` 入参，加固 `POST /api/platforms/` 与 `PUT /api/platforms/<pk>/`。
+2. **前端接口与页面适配（`frontend/src/api/platform.ts` / `ThirdPartyHubPage.tsx` / `PlatformManagePage.tsx`）**：
+   - `platformApi.getPlatforms` 与 `getPlatformDetail` 支持透传 `scope`；
+   - `ThirdPartyHubPage.tsx` 显式传入 `scope: "hub"`，权限判定对齐 `PermissionGuard`（`user?.is_staff || hasPermission("menu_third_party_hub")`）；
+   - `PlatformManagePage.tsx` 显式传入 `scope: "manage"`。
+
+### 验证结果
+- 与 `mengya-local` 保持代码 100% 同步；
+- `mengya-docker` 执行 `python tools/build_frontend.py` 完成生产编译（2628 modules）并同步静态产物至 `templates/` 与 `static/`。
+
+---
+
 ## 2026-11-10 全栈架构审计与工程化升级：v2.15 版本（性能、网络链路、异常兜底与 UI 排版同步对齐）
 
 ### 核心变更概览

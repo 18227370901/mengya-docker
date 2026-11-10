@@ -8,6 +8,22 @@ def _normalize_platform_url(raw_url: str) -> str:
     clean = clean.rstrip("/")
     return clean
 
+
+def _parse_bool(value, default: bool = True) -> bool:
+    """安全解析布尔入参（兼容 bool / int / 字符串 false,0,no）"""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    s = str(value).strip().lower()
+    if s in ("false", "0", "no", "off", ""):
+        return False
+    if s in ("true", "1", "yes", "on"):
+        return True
+    return bool(value)
+
 # -*- coding: utf-8 -*-
 """
 三方平台接入与聚合中转站 API (Third Party Platform Views)
@@ -118,20 +134,29 @@ class PlatformListView(APIView):
 
     def get(self, request):
         """
-        获取平台列表：
-        - 管理员：查看所有未软删除平台及所有子资源
-        - 普通用户：须具备 menu_third_party_hub 权限，只能查看已启用、且在可见白名单内的平台及其可见子资源
+        获取平台列表（显式区分前台展示与后台管理场景）：
+        - scope=manage（接入与中转管理页）：管理员及拥有 menu_admin_platforms 权限的用户均可查看全部未软删除平台（含已停用）与子资源，保证数量口径一致
+        - scope=hub（默认，三方中转站前台）：对所有用户（含管理员）强制仅返回已启用平台与子资源；普通用户额外校验可见性白名单
         """
         user = request.user
         is_admin = _is_admin(user)
+        raw_scope = request.query_params.get("scope", "hub").strip().lower()
+        scope = raw_scope if raw_scope in ("hub", "manage") else "hub"
 
-        # 校验是否有中转站或管理页访问权限
-        has_hub_access = is_admin or has_permission(user, "menu_third_party_hub") or has_permission(user, "menu_admin_platforms")
-        if not has_hub_access:
-            return Response(
-                {"code": 4003, "message": "您暂无访问三方中转站模块的权限，请联系管理员开通", "data": None},
-                status=status.HTTP_403_FORBIDDEN,
-            )
+        if scope == "manage":
+            has_access = is_admin or has_permission(user, "menu_admin_platforms")
+            if not has_access:
+                return Response(
+                    {"code": 4003, "message": "您暂无访问三方平台接入管理页面的权限，请联系管理员开通", "data": None},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+        else:
+            has_access = is_admin or has_permission(user, "menu_third_party_hub")
+            if not has_access:
+                return Response(
+                    {"code": 4003, "message": "您暂无访问三方中转站模块的权限，请联系管理员开通", "data": None},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
 
         category = request.query_params.get("category", "").strip()
         age_group = request.query_params.get("age_group", "").strip()
@@ -139,18 +164,16 @@ class PlatformListView(APIView):
 
         qs = ThirdPartyPlatform.objects.filter(is_active=True)
 
-        if not is_admin:
-            # 普通用户仅查看启用的平台
+        if scope == "hub":
             qs = qs.filter(is_enabled=True)
-            # 可见性过滤: visibility_type == 'all' OR allowed_user_ids 包含 user.id
-            # SQLite / PostgreSQL JSONField 包含过滤容错
-            all_platforms = list(qs)
-            visible_platforms = [
-                p for p in all_platforms
-                if p.visibility_type == "all" or (user.id in (p.allowed_user_ids or []))
-            ]
-            platform_ids = [p.id for p in visible_platforms]
-            qs = qs.filter(id__in=platform_ids)
+            if not is_admin:
+                all_platforms = list(qs)
+                visible_platforms = [
+                    p for p in all_platforms
+                    if p.visibility_type == "all" or (user.id in (p.allowed_user_ids or []))
+                ]
+                platform_ids = [p.id for p in visible_platforms]
+                qs = qs.filter(id__in=platform_ids)
 
         if category:
             qs = qs.filter(category=category)
@@ -164,7 +187,7 @@ class PlatformListView(APIView):
 
         # 查询子资源
         res_qs = ThirdPartyPlatformResource.objects.filter(platform_id__in=p_ids, is_active=True)
-        if not is_admin:
+        if scope == "hub":
             res_qs = res_qs.filter(is_enabled=True)
 
         all_res = list(res_qs.order_by("sort_order", "id"))
@@ -172,7 +195,7 @@ class PlatformListView(APIView):
         # 按平台归集并过滤资源级权限
         res_map = {}
         for r in all_res:
-            if not is_admin:
+            if scope == "hub" and not is_admin:
                 if r.access_rule == "restricted" and user.id not in (r.allowed_user_ids or []):
                     continue
             res_map.setdefault(r.platform_id, []).append(r)
@@ -213,7 +236,7 @@ class PlatformListView(APIView):
             age_group=request.data.get("age_group", "all"),
             tags=request.data.get("tags") or [],
             sort_order=int(request.data.get("sort_order", 0)),
-            is_enabled=bool(request.data.get("is_enabled", True)),
+            is_enabled=_parse_bool(request.data.get("is_enabled", True), True),
             visibility_type=request.data.get("visibility_type", "all"),
             allowed_user_ids=request.data.get("allowed_user_ids") or [],
             created_by=request.user,
@@ -247,25 +270,33 @@ class PlatformDetailView(APIView):
             return None
 
     def get(self, request, pk):
-        """获取单个平台详情"""
+        """获取单个平台详情（同步支持 scope=hub/manage）"""
         p = self._get_platform(pk)
         if not p:
             return Response({"code": 4004, "message": "平台不存在或已下线", "data": None}, status=status.HTTP_404_NOT_FOUND)
 
         is_admin = _is_admin(request.user)
-        # 权限校验
-        if not is_admin:
-            if not has_permission(request.user, "menu_third_party_hub"):
+        raw_scope = request.query_params.get("scope", "hub").strip().lower()
+        scope = raw_scope if raw_scope in ("hub", "manage") else "hub"
+
+        if scope == "manage":
+            if not is_admin and not has_permission(request.user, "menu_admin_platforms"):
+                return Response({"code": 4003, "message": "无权访问管理详情", "data": None}, status=status.HTTP_403_FORBIDDEN)
+        else:
+            if not is_admin and not has_permission(request.user, "menu_third_party_hub"):
                 return Response({"code": 4003, "message": "无权访问此模块", "data": None}, status=status.HTTP_403_FORBIDDEN)
             if not p.is_enabled:
                 return Response({"code": 4004, "message": "该平台已暂时停用", "data": None}, status=status.HTTP_404_NOT_FOUND)
-            if p.visibility_type == "restricted" and request.user.id not in (p.allowed_user_ids or []):
+            if not is_admin and p.visibility_type == "restricted" and request.user.id not in (p.allowed_user_ids or []):
                 return Response({"code": 4003, "message": "您不在该平台的访问授权名单中", "data": None}, status=status.HTTP_403_FORBIDDEN)
 
         res_qs = p.resources.filter(is_active=True)
-        if not is_admin:
+        if scope == "hub":
             res_qs = res_qs.filter(is_enabled=True)
-            res_list = [r for r in res_qs if r.access_rule != "restricted" or (request.user.id in (r.allowed_user_ids or []))]
+            if not is_admin:
+                res_list = [r for r in res_qs if r.access_rule != "restricted" or (request.user.id in (r.allowed_user_ids or []))]
+            else:
+                res_list = list(res_qs)
         else:
             res_list = list(res_qs)
 
@@ -280,9 +311,11 @@ class PlatformDetailView(APIView):
         if not p:
             return Response({"code": 4004, "message": "平台不存在", "data": None}, status=status.HTTP_404_NOT_FOUND)
 
-        for field in ("name", "url", "logo_url", "description", "category", "age_group", "sort_order", "is_enabled", "visibility_type"):
+        for field in ("name", "url", "logo_url", "description", "category", "age_group", "sort_order", "visibility_type"):
             if field in request.data:
                 setattr(p, field, request.data[field])
+        if "is_enabled" in request.data:
+            p.is_enabled = _parse_bool(request.data["is_enabled"], p.is_enabled)
 
         if "tags" in request.data:
             p.tags = request.data["tags"] or []
