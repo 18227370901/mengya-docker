@@ -1,6 +1,6 @@
 import { clearSessionMediaCache } from "@/utils/sessionMediaCache";
+import axios from "axios";
 import { create } from "zustand";
-import api from "@/api/client";
 import { authApi } from "@/api/auth";
 import { useFavoriteStore } from "@/store/favoriteStore";
 import type { Stage, User } from "@/types";
@@ -17,6 +17,55 @@ interface AuthState {
   init: () => Promise<void>;
   hasPermission: (key: string) => boolean;
   setPermissions: (permissions: Record<string, boolean>) => void;
+}
+
+let fetchMeInFlight: Promise<void> | null = null;
+
+function mergeMeResponse(
+  data: { user: User; stage: Stage; permissions?: Record<string, boolean>; admin_session_timeout_minutes?: number },
+  curUser: User | null,
+  curStage: Stage | null,
+  curPerms: Record<string, boolean>
+) {
+  const perms = (data as any).permissions || data.user.permissions || {};
+  if ((data as any).admin_session_timeout_minutes !== undefined) {
+    localStorage.setItem("mengya_admin_timeout", String((data as any).admin_session_timeout_minutes));
+  }
+  const newStage = data.stage;
+  const isStageEqual =
+    (!curStage && !newStage) ||
+    (curStage &&
+      newStage &&
+      curStage.type === newStage.type &&
+      curStage.is_pregnant === newStage.is_pregnant &&
+      curStage.value === newStage.value &&
+      curStage.label === newStage.label &&
+      curStage.week_days_text === newStage.week_days_text &&
+      curStage.days_to_due === newStage.days_to_due &&
+      curStage.trimester === newStage.trimester &&
+      curStage.period === newStage.period);
+  const nextStage = isStageEqual ? curStage : newStage;
+
+  const newUser = data.user;
+  const isPermsEqual = JSON.stringify(curPerms) === JSON.stringify(perms);
+  const nextPerms = isPermsEqual ? curPerms : perms;
+  const isUserEqual =
+    !!curUser &&
+    !!newUser &&
+    curUser.id === newUser.id &&
+    curUser.phone === newUser.phone &&
+    curUser.nickname === newUser.nickname &&
+    curUser.role === newUser.role &&
+    curUser.avatar === newUser.avatar &&
+    curUser.due_date === newUser.due_date &&
+    curUser.baby_birthday === newUser.baby_birthday &&
+    curUser.is_pregnant === newUser.is_pregnant &&
+    curUser.is_staff === newUser.is_staff &&
+    curUser.is_active === newUser.is_active &&
+    curUser.ai_authorized === newUser.ai_authorized &&
+    isPermsEqual;
+  const nextUser = isUserEqual ? curUser : { ...newUser, permissions: nextPerms };
+  return { user: nextUser, stage: nextStage, permissions: nextPerms };
 }
 
 export const useAuthStore = create<AuthState>((set, get) => ({
@@ -56,11 +105,8 @@ export const useAuthStore = create<AuthState>((set, get) => ({
     set({ user: { ...user, permissions: initialPerms }, token: access, permissions: initialPerms, loading: true });
     try {
       const data = await authApi.me();
-      const perms = (data as any).permissions || data.user.permissions || {};
-      if ((data as any).admin_session_timeout_minutes !== undefined) {
-        localStorage.setItem("mengya_admin_timeout", String((data as any).admin_session_timeout_minutes));
-      }
-      set({ user: { ...data.user, permissions: perms }, stage: data.stage, permissions: perms, loading: false });
+      const merged = mergeMeResponse(data as any, get().user, get().stage, get().permissions);
+      set({ ...merged, loading: false });
     } catch {
       set({ loading: false });
     }
@@ -88,111 +134,38 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   },
 
   fetchMe: async () => {
-    try {
-      const data = await authApi.me();
-      const perms = (data as any).permissions || data.user.permissions || {};
-      if ((data as any).admin_session_timeout_minutes !== undefined) {
-        localStorage.setItem("mengya_admin_timeout", String((data as any).admin_session_timeout_minutes));
-      }
-      const curStage = get().stage;
-      const newStage = data.stage;
-      const isStageEqual =
-        (!curStage && !newStage) ||
-        (curStage &&
-          newStage &&
-          curStage.type === newStage.type &&
-          curStage.is_pregnant === newStage.is_pregnant &&
-          curStage.value === newStage.value &&
-          curStage.label === newStage.label &&
-          curStage.week_days_text === newStage.week_days_text &&
-          curStage.days_to_due === newStage.days_to_due &&
-          curStage.trimester === newStage.trimester &&
-          curStage.period === newStage.period);
-      const nextStage = isStageEqual ? curStage : newStage;
-      const curUser = get().user;
-      const newUser = data.user;
-      const curPerms = get().permissions;
-      const isPermsEqual = JSON.stringify(curPerms) === JSON.stringify(perms);
-      const nextPerms = isPermsEqual ? curPerms : perms;
-      const isUserEqual =
-        !!curUser &&
-        !!newUser &&
-        curUser.id === newUser.id &&
-        curUser.phone === newUser.phone &&
-        curUser.nickname === newUser.nickname &&
-        curUser.role === newUser.role &&
-        curUser.avatar === newUser.avatar &&
-        curUser.due_date === newUser.due_date &&
-        curUser.baby_birthday === newUser.baby_birthday &&
-        curUser.is_pregnant === newUser.is_pregnant &&
-        curUser.is_staff === newUser.is_staff &&
-        curUser.is_active === newUser.is_active &&
-        curUser.ai_authorized === newUser.ai_authorized &&
-        isPermsEqual;
-      const nextUser = isUserEqual ? curUser : { ...newUser, permissions: nextPerms };
-      set({ user: nextUser, stage: nextStage, permissions: nextPerms, loading: false });
-    } catch {
-      const refreshToken = localStorage.getItem("mengya_refresh");
-      if (refreshToken) {
-        try {
-          const refreshResp = await api.post("/auth/refresh/", { refresh: refreshToken });
-          const newAccess = refreshResp.data?.data?.access;
-          if (newAccess) {
-            localStorage.setItem("mengya_access", newAccess);
-            set({ token: newAccess });
-            const data = await authApi.me();
-            const perms = (data as any).permissions || data.user.permissions || {};
-            const curStage = get().stage;
-      const newStage = data.stage;
-      const isStageEqual =
-        (!curStage && !newStage) ||
-        (curStage &&
-          newStage &&
-          curStage.type === newStage.type &&
-          curStage.is_pregnant === newStage.is_pregnant &&
-          curStage.value === newStage.value &&
-          curStage.label === newStage.label &&
-          curStage.week_days_text === newStage.week_days_text &&
-          curStage.days_to_due === newStage.days_to_due &&
-          curStage.trimester === newStage.trimester &&
-          curStage.period === newStage.period);
-      const nextStage = isStageEqual ? curStage : newStage;
-      const curUser = get().user;
-      const newUser = data.user;
-      const curPerms = get().permissions;
-      const isPermsEqual = JSON.stringify(curPerms) === JSON.stringify(perms);
-      const nextPerms = isPermsEqual ? curPerms : perms;
-      const isUserEqual =
-        !!curUser &&
-        !!newUser &&
-        curUser.id === newUser.id &&
-        curUser.phone === newUser.phone &&
-        curUser.nickname === newUser.nickname &&
-        curUser.role === newUser.role &&
-        curUser.avatar === newUser.avatar &&
-        curUser.due_date === newUser.due_date &&
-        curUser.baby_birthday === newUser.baby_birthday &&
-        curUser.is_pregnant === newUser.is_pregnant &&
-        curUser.is_staff === newUser.is_staff &&
-        curUser.is_active === newUser.is_active &&
-        curUser.ai_authorized === newUser.ai_authorized &&
-        isPermsEqual;
-      const nextUser = isUserEqual ? curUser : { ...newUser, permissions: nextPerms };
-      set({ user: nextUser, stage: nextStage, permissions: nextPerms, loading: false });
-            return;
-          }
-        } catch {
-          // refresh failed
-        }
-      }
-      get().logout();
-      set({ loading: false });
+    if (fetchMeInFlight) {
+      return fetchMeInFlight;
     }
+    fetchMeInFlight = (async () => {
+      try {
+        const data = await authApi.me();
+        const merged = mergeMeResponse(data as any, get().user, get().stage, get().permissions);
+        set({ ...merged, loading: false });
+      } catch (err: any) {
+        if (axios.isCancel(err) || err?.name === "CanceledError" || err?.code === "ERR_CANCELED") {
+          set({ loading: false });
+          return;
+        }
+        const status = err?.response?.status;
+        if (status === 401 || status === 403 || !get().user) {
+          get().logout();
+        }
+        set({ loading: false });
+      } finally {
+        fetchMeInFlight = null;
+      }
+    })();
+    return fetchMeInFlight;
   },
 
   init: async () => {
-    const token = get().token;
+    const token = get().token || localStorage.getItem("mengya_access");
     if (!token) {
+      set({ loading: false });
+      return;
+    }
+    if (get().user) {
       set({ loading: false });
       return;
     }

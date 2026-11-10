@@ -2602,6 +2602,24 @@ apps/core/                                    apps/core/
 
 <section id="adr-10-73"><h2>10.73 商品库 AI 一键评测生命周期竞态消除 (v2.08)</h2><p>规范组件卸载自动中止请求与路由重入状态复位机制，彻底根治切页重入从0自动重跑缺陷。</p></section>
 
+<section class="adr-card" id="adr-10-80">
+  <h2>10.80 ADR-80：全栈网络链路与并发治理、全局 500 兜底、UI 体验组件收敛及登录认证时序加固规范 (v2.15)</h2>
+  <div class="adr-meta"><span class="badge">Version: v2.15</span><span class="badge">Date: 2026-11-10</span><span class="badge status-accepted">Accepted</span></div>
+  <h3>10.80.1 业务背景与根因分析</h3>
+  <p>此前未捕获的后端异常会暴露原生 500 页面；前端 <code>client.ts</code> 曾以 <code>AbortController</code> 中断并发同参数 GET 请求，叠加 <code>LoginPage</code> 未 <code>await setAuth</code> 即跳转 <code>/</code>，导致并发 <code>GET /api/users/me/</code> 被取消并触发 <code>fetchMe()</code> 请求不存在的 <code>/api/auth/refresh/</code> 后误执行 <code>logout()</code>，表现为点击登录页面闪烁一下后仍退回登录页。同时推进 UI 体验组件沉淀与 <code>menu_weekly</code> 权限解耦。</p>
+  <h3>10.80.2 核心架构决策与实现规范</h3>
+  <ul>
+    <li><strong>全局 500 兜底</strong>：<code>apps/core/utils/exceptions.py</code> 接管未捕获系统异常，落盘完整堆栈并返回统一 JSON <code>{code: 5000, message: "系统繁忙，请稍后再试", data: null}</code>；</li>
+    <li><strong>网络层与认证时序加固</strong>：移除 <code>client.ts</code> 全局 <code>AbortController</code> 误杀逻辑，保留 GET 弱网单次重试与 401 单例重定向锁；<code>authStore</code> 新增 <code>fetchMeInFlight</code> 请求复用并移除无效 <code>/auth/refresh/</code> 调用，仅 401/403 触发登出；<code>LoginPage</code> 改为 <code>await setAuth</code> 后再跳转；</li>
+    <li><strong>UI 组件与权限解耦</strong>：新增 <code>SkeletonCard.tsx</code>、<code>EmptyState.tsx</code> 与语义徽章样式，修正移动端底部安全边距（<code>pb-28 lg:pb-8</code>），独立 <code>menu_weekly</code> 权限并向后兼容 <code>menu_timeline</code>，备份页展示数据库 WAL 状态徽章。</li>
+  </ul>
+  <h3>10.80.3 实施与验证结果</h3>
+  <ul>
+    <li><code>mengya-local</code> 与 <code>mengya-docker</code> 双端完成 <code>tools/build_frontend.py</code> 编译（2628 modules）与静态产物同步；</li>
+    <li><code>mengya-local</code> 服务重启后，<code>/healthz</code>、<code>/api/auth/login/</code>、<code>/api/users/me/</code>、<code>/api/weather/home/</code> 实测均返回 200 OK，登录闪退彻底根除。</li>
+  </ul>
+</section>
+
 <section class="adr-card" id="adr-10-79">
   <h2>10.79 ADR-79：首页引导大卡片每日一言专属纳管、外部接口服务多源自适应与全量备份同步规范 (v2.14)</h2>
   <div class="adr-meta"><span class="badge">Version: v2.14</span><span class="badge">Date: 2026-11-10</span><span class="badge status-accepted">Accepted</span></div>

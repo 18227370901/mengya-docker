@@ -19,7 +19,7 @@ function PermissionGuard({ perm, label, children }: { perm: string; label?: stri
     return <>{children}</>;
   }
 
-  if (!hasPermission(perm)) {
+  const isAllowed = hasPermission(perm) || (perm === "menu_weekly" && hasPermission("menu_timeline")); if (!isAllowed) {
     const canGoHome = hasPermission("menu_home");
     // v1.88.5 提示词统一：与后端 4030 文案同句式，带具体页名（无 label 时用通用文案）
     const tip = label
@@ -145,7 +145,7 @@ export default function App() {
       >
         <Route path="/" element={<PermissionGuard perm="menu_home" label="首页"><HomePage /></PermissionGuard>} />
         <Route path="/timeline" element={<PermissionGuard perm="menu_timeline" label="时间轴"><TimelinePage /></PermissionGuard>} />
-        <Route path="/weekly" element={<PermissionGuard perm="menu_timeline" label="孕期周历"><PregnancyWeeklyPage /></PermissionGuard>} />
+        <Route path="/weekly" element={<PermissionGuard perm="menu_weekly" label="孕期周历"><PregnancyWeeklyPage /></PermissionGuard>} />
         <Route path="/recipes" element={<PermissionGuard perm="menu_recipes" label="孕期食谱"><PregnancyRecipePage /></PermissionGuard>} />
         <Route path="/kids-encyclopedia" element={<PermissionGuard perm="menu_encyclopedia" label="幼儿百科"><KidsEncyclopediaPage /></PermissionGuard>} />
         <Route path="/timeline/:id" element={<PermissionGuard perm="menu_timeline" label="时间轴"><TimelineDetailPage /></PermissionGuard>} />

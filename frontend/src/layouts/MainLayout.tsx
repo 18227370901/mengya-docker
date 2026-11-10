@@ -26,7 +26,7 @@ export default function MainLayout() {
   };
 
   return (
-    <div className="min-h-screen pb-20 lg:pb-0">
+    <div className="min-h-screen pb-28 lg:pb-8">
       {/* 顶栏 */}
       <header className="sticky top-0 z-30 border-b border-orange-100 bg-white/90 backdrop-blur transition-colors duration-200 dark:border-gray-800 dark:bg-gray-900/90">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
@@ -115,3 +115,4 @@ export default function MainLayout() {
     </div>
   );
 }
+

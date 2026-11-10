@@ -17,9 +17,12 @@ export default function RequireAuth({ children }: { children: React.ReactNode })
   useEffect(() => {
     if (!called.current) {
       called.current = true;
+      if (user) {
+        lastSyncTimeRef.current = Date.now();
+      }
       init();
     }
-  }, [init]);
+  }, [init, user]);
 
   // 获取当前配置的无操作超时分钟数
   const getTimeoutMinutes = useCallback(() => {

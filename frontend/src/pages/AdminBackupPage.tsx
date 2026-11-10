@@ -172,8 +172,7 @@ export default function AdminBackupPage() {
             <div className="flex items-center gap-2">
               <h1 className="text-lg font-bold text-gray-900">WebDAV 与系统容灾备份</h1>
               <span className="rounded-full bg-indigo-50 px-2.5 py-0.5 text-[10px] font-bold text-indigo-600">
-                v1.89 全数据库容灾
-              </span>
+                v1.89 全数据库容灾</span><span className="badge-success ml-2">● 数据库正常 (WAL)</span>
             </div>
             <p className="text-xs text-gray-400 mt-0.5">
               支持坚果云/群晖/Nextcloud/Alist 热原子备份、跨模式双向互导、AES-256 加密与安全回滚保护式还原
@@ -333,3 +332,4 @@ export default function AdminBackupPage() {
     </div>
   );
 }
+

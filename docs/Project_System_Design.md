@@ -2726,6 +2726,31 @@ flowchart TD
    - 彻底修复 `EndpointRow.tsx` 与搜索引擎列表中移动端与窄屏下元素溢出、换行错位问题，采用两层分行自适应栅格；
    - 优化启停开关视觉体验：弃用隐晦纯小滑动点，升级为具备鲜明状态色与呼吸圆点的状态切换胶囊（“已启用 (绿色)” / “已停用 (灰色)”），点击即可即时切换并给予明确视觉反馈。
 
+### 10.80 ADR-80：全栈网络链路与并发治理、全局 500 兜底、UI 体验组件收敛及登录认证时序加固规范 (v2.15)
+
+#### 10.80.1 业务背景与根因分析
+1. **全局底层异常裸露风险**：部分未捕获的后端异常此前会直接抛出原生 500 HTML 页面，破坏前后端统一的 `{code, message, data}` JSON 契约；
+2. **网络并发与登录闪退缺陷**：此前在 `client.ts` 中尝试以 `AbortController` 强行中断同 URL 并发 GET 请求，但登录跳转期间 `LoginPage` 未 `await setAuth` 即导航 `/`，导致 `setAuth`、`RequireAuth.init()` 与路由同步 Effect 并发触发 `GET /api/users/me/`；前序请求被中断抛出 `CanceledError` 后，`authStore.fetchMe()` 误将其视为令牌失效，尝试请求不存在的 `/api/auth/refresh/` 并直接调用 `logout()` 清空本地凭据，引发后续请求 401 并闪回登录页；
+3. **UI 组件规范与权限解耦**：移动屏底部导航偶发遮挡内容，且孕期周历 `/weekly` 此前复用 `menu_timeline` 权限，缺少独立控制能力。
+
+#### 10.80.2 核心架构决策与实现规范
+1. **DRF 全局未捕获异常兜底（`apps/core/utils/exceptions.py`）**：
+   - 在 `custom_exception_handler` 中接管所有未被 DRF 捕获的底层异常，记录完整异常堆栈日志，并返回标准 JSON `{code: 5000, message: "系统繁忙，请稍后再试", data: None}`（HTTP 500）。
+2. **前端网络层与认证并发时序治理（`client.ts` / `authStore.ts` / `LoginPage.tsx` / `RequireAuth.tsx`）**：
+   - **安全并发与重试**：移除会破坏调用方 Promise 的全局 `AbortController` 自动中断逻辑；保留仅针对未取消 GET 请求的 502/503/504/超时（`ECONNABORTED`）单次平滑重试，以及 401 单例重定向防刷锁（`isRedirecting`）；
+   - **`fetchMe` 并发请求共享与精准登出**：在 `authStore` 中通过 `fetchMeInFlight` 复用在途 `/users/me/` 请求，移除无效 `/auth/refresh/` 调用；仅当响应为 HTTP 401/403 或初始无用户态时才执行 `logout()`，彻底免疫取消错误与瞬时网络抖动引起的误登出；
+   - **登录时序严格对齐**：`LoginPage` 改为 `await setAuth(...)` 完成状态与权限加载后再执行 `navigate("/")`；`RequireAuth` 初始化若已存在 `user` 则刷新同步时间戳，避免挂载瞬间重复请求。
+3. **UI 规范收敛与权限精细解耦（`index.css` / `MainLayout.tsx` / `components/ui/` / `App.tsx` / `AdminBackupPage.tsx`）**：
+   - 沉淀 `SkeletonCard.tsx` 纯 CSS 骨架屏与 `EmptyState.tsx` 情感化空状态组件；收敛 `.badge-brand` / `.badge-success` / `.badge-warning` / `.badge-info` 与 `.card-hover` 样式；
+   - 调整移动端底部安全内边距为 `pb-28 lg:pb-8`；
+   - `/weekly` 路由解耦为独立权限 `menu_weekly`，并兼容保留 `menu_timeline` 向后回退；备份管理页新增数据库运行状态徽章（WAL）。
+
+#### 10.80.3 实施与验证结果
+- `mengya-local` 与 `mengya-docker` 均执行 `python tools/build_frontend.py` 完成 `tsc -b && vite build` 编译（2628 modules）并同步静态产物至 `templates/` 与 `static/`；
+- `mengya-local` 执行 `run.ps1 restart` 重启后，实测 `/healthz`、`/login`、`/api/auth/login/`、`/api/users/me/`、`/api/weather/home/`、`/api/daily-saying/` 均返回 HTTP 200。
+
+---
+
 ### 10.79 ADR-79：首页引导大卡片每日一言专属纳管、外部接口服务多源自适应与全量备份同步规范 (v2.14)
 
 #### 10.79.1 业务背景与系统诉求

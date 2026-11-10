@@ -307,7 +307,7 @@ export default function LoginPage() {
         localStorage.setItem("mengya_admin_timeout", String((data as any).admin_session_timeout_minutes));
       }
       localStorage.setItem("mengya_last_active", String(Date.now()));
-      setAuth(data.user, data.access, data.refresh);
+      await setAuth(data.user, data.access, data.refresh);
       navigate("/");
     } catch (err) {
       const e2 = err as Error & { code?: number; data?: any; response?: any };

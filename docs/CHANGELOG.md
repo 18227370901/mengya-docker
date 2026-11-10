@@ -6,6 +6,30 @@
 
 ---
 
+## 2026-11-10 全栈架构审计与工程化升级：v2.15 版本（性能、网络链路、异常兜底与 UI 排版同步对齐）
+
+### 核心变更概览
+1. **服务底座与异常兜底**（`apps/core/utils/exceptions.py`）：
+   - 完善 DRF 全局异常处理器，接管所有未捕获的底层/系统级 500 异常，统一结构化输出 `{code: 5000, message: "系统繁忙，请稍后再试", data: None}` 并落盘完整堆栈，彻底消除原生 HTML 500 暴露。
+2. **网络链路与并发治理**（`frontend/src/api/client.ts`）：
+   - 在 `authStore` 落地 `fetchMe` 并发请求共享复用并对齐 `LoginPage`/`RequireAuth` 登录态初始化时序，消除并发请求误触发登出闪烁；
+   - 新增弱网自愈幂等重试（502/503/504/超时自动平滑重试 1 次）；
+   - 新增 401 鉴权失败单例重定向锁，消除并发接口过期时的跳转抖动与页面闪烁。
+3. **UI 排版规范与通用体验组件**（`index.css` / `MainLayout.tsx` / `components/ui/`）：
+   - 沉淀轻量级纯 CSS 骨架屏 `SkeletonCard.tsx` 与情感化空状态组件 `EmptyState.tsx`；
+   - 收敛全局语义化色彩徽章（`.badge-brand` / `.badge-success` / `.badge-warning` / `.badge-info`）与悬停微投影 `.card-hover`；
+   - 校准移动端底部导航安全内边距（`pb-28 lg:pb-8`），解决移动屏底部元素遮挡。
+4. **权限精细解耦与运维联动**（`App.tsx` / `AdminBackupPage.tsx`）：
+   - 将孕期周历路由独立为专属权限 `menu_weekly` 并实现向 `menu_timeline` 的向后兼容平滑回退；
+   - 备份管理页面联动数据库运行状态标示（WAL）。
+
+### 验证结果
+- 修复登录时并发 `GET /api/users/me/` 被错误中断并请求不存在 `/api/auth/refresh/` 导致误登出闪退的问题；
+- `mengya-local` 与 `mengya-docker` 双端均已完成 `tools/build_frontend.py` 生产编译（2628 modules）并同步静态产物；
+- `mengya-local` 通过 `run.ps1 restart` 重启并实测 `/healthz`、`/api/auth/login/`、`/api/users/me/`、`/api/weather/home/` 均返回 200 OK。
+
+---
+
 ## 2026-11-10 功能升级：v2.14 版本（首页引导大卡片每日一言专属纳管、外部接口配置多源自适应与云端备份全量同步）
 
 ### 核心变更概览
@@ -2152,3 +2176,4 @@ equirements.txt 中引入高性能静态文件托管库 whitenoise>=6.6.0，在 
 - 执行 `python tools/check_admin_status.py`，ORM 模型解析正常，成功查询管理员账号；
 - `tools/build_frontend.py` 路径定位准确；
 - 传统版单体服务启动及状态检查完全正常，单端口 5173、静态托管与 API 链路 100% 守恒，原有代码逻辑与功能零影响。
+
