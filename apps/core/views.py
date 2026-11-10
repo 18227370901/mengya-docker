@@ -539,11 +539,64 @@ def sms_send(request):
 
 # ============ 用户 ============
 
+def _reconcile_user_stage_with_babies(user):
+    """以 BabyProfile 为唯一真相源，自愈校对 User 孕育阶段、权限模板与默认 MotherProfile。
+    - 当用户无任何 BabyProfile 且仍残留 due_date/baby_birthday/is_pregnant 时，自动清零并切换回 general 模板；
+    - 当用户存在 BabyProfile 但字段未同步（或丢失主宝宝标识）时，自动以主宝宝为准校对。
+    """
+    from datetime import date
+    from apps.core.models.baby import BabyProfile
+    from apps.core.models.mother import MotherProfile
+    from apps.core.utils.permissions import sync_user_stage_permissions
+
+    babies_qs = BabyProfile.objects.filter(user=user)
+    primary_baby = babies_qs.filter(is_primary=True).first() or babies_qs.order_by("-id").first()
+
+    if not primary_baby:
+        changed = False
+        if user.is_pregnant or user.due_date is not None or user.baby_birthday is not None:
+            user.is_pregnant = False
+            user.due_date = None
+            user.baby_birthday = None
+            user.save(update_fields=["is_pregnant", "due_date", "baby_birthday"])
+            changed = True
+        if sync_user_stage_permissions(user, save=True):
+            changed = True
+        pri_mom = MotherProfile.objects.filter(user=user, is_primary=True).first() or MotherProfile.objects.filter(user=user).first()
+        if pri_mom and (pri_mom.due_date is not None or pri_mom.is_pregnant or (pri_mom.name and pri_mom.name != "萌宝妈妈" and pri_mom.name.endswith("妈妈"))):
+            pri_mom.due_date = None
+            pri_mom.is_pregnant = False
+            if pri_mom.name and pri_mom.name.endswith("妈妈"):
+                pri_mom.name = "萌宝妈妈"
+            pri_mom.save(update_fields=["due_date", "is_pregnant", "name"])
+        return changed
+
+    if not primary_baby.is_primary:
+        primary_baby.is_primary = True
+        primary_baby.save(update_fields=["is_primary"])
+
+    today = date.today()
+    is_born = getattr(primary_baby, "is_born", True)
+    expected_pregnant = (not is_born) or (primary_baby.birthday > today)
+    expected_due = primary_baby.birthday if expected_pregnant else None
+    expected_bday = None if expected_pregnant else primary_baby.birthday
+
+    if user.is_pregnant != expected_pregnant or user.due_date != expected_due or user.baby_birthday != expected_bday:
+        user.is_pregnant = expected_pregnant
+        user.due_date = expected_due
+        user.baby_birthday = expected_bday
+        user.save(update_fields=["is_pregnant", "due_date", "baby_birthday"])
+        sync_user_stage_permissions(user, save=True)
+        return True
+    return False
+
+
 class MeView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         user = request.user
+        _reconcile_user_stage_with_babies(user)
         stage = get_stage_info(user.due_date, user.baby_birthday, user.is_pregnant)
         return Response(
             {
@@ -1055,23 +1108,7 @@ class BabyViewSet(viewsets.ModelViewSet):
                     remaining.save(update_fields=["is_primary"])
                 self._sync_user_stage(user, remaining)
         else:
-            # 最后一个宝宝被删除：彻底清空用户预产期/宝宝生日，重置阶段权限与默认妈妈档案关联，避免首页/我的残留已删宝宝信息
-            from apps.core.models.mother import MotherProfile
-            from apps.core.utils.permissions import sync_user_stage_permissions
-
-            user.is_pregnant = False
-            user.due_date = None
-            user.baby_birthday = None
-            user.save(update_fields=["is_pregnant", "due_date", "baby_birthday"])
-            sync_user_stage_permissions(user, save=True)
-
-            pri_mom = MotherProfile.objects.filter(user=user, is_primary=True).first() or MotherProfile.objects.filter(user=user).first()
-            if pri_mom:
-                pri_mom.due_date = None
-                pri_mom.is_pregnant = False
-                if pri_mom.name == f"{b_name}妈妈" or pri_mom.name.endswith("妈妈"):
-                    pri_mom.name = "萌宝妈妈"
-                pri_mom.save(update_fields=["due_date", "is_pregnant", "name"])
+            _reconcile_user_stage_with_babies(user)
 
     @action(detail=True, methods=["post"])
     def set_primary(self, request, pk=None):

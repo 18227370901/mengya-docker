@@ -213,11 +213,11 @@ def get_stage_info(
             "is_pregnant": True,
         }
 
-    # 情况3：未设置
+    # 情况3：未设置 / 暂未录入任何宝宝档案
     return {
         "type": "unknown",
         "value": 0,
-        "label": "请设置预产期或宝宝生日",
+        "label": "暂未录入宝宝档案",
         "stage_key": "unknown",
         "is_pregnant": False,
     }

@@ -130,6 +130,9 @@ export default function HealthPage() {
           const g = (targetBaby.gender || "").toLowerCase();
           if (g === "girl" || g === "女" || g === "female") setBabyGender("girl");
           else setBabyGender("boy");
+        } else {
+          setSelectedBabyId(null);
+          setBabyGender("boy");
         }
       })
       .catch(() => {});
@@ -1130,7 +1133,27 @@ export default function HealthPage() {
                 })}
               </div>
             ) : (
-              <p className="py-2 text-xs text-gray-400">暂未录入宝宝，请点击右上角「录入新宝宝」添加</p>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 rounded-xl border border-dashed border-amber-300 bg-amber-50/50 dark:border-amber-800 dark:bg-amber-950/20 px-4 py-3">
+                <p className="text-xs font-medium text-amber-800 dark:text-amber-300">
+                  当前暂未录入任何宝宝档案信息，请先录入信息（录入后将自动匹配对应阶段的权限模板与生长曲线）
+                </p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFormBabyName("");
+                    setFormBabyStatus(user?.is_pregnant ? "pregnant" : "born");
+                    setFormBabyGender("unknown");
+                    setFormBabyBirthday(new Date().toISOString().slice(0, 10));
+                    setFormBabyBirthWeight("");
+                    setFormBabyBirthHeight("");
+                    setFormBabyIsPrimary(true);
+                    setShowAddBabyModal(true);
+                  }}
+                  className="btn-primary py-1.5 px-3 text-xs whitespace-nowrap cursor-pointer"
+                >
+                  立即录入宝宝档案
+                </button>
+              </div>
             )}
 
             {/* 当前选中宝宝详情栏与操作 */}
@@ -1192,15 +1215,13 @@ export default function HealthPage() {
                   >
                     编辑
                   </button>
-                  {babies.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => setDeletingBabyId(currentBaby.id)}
-                      className="rounded-lg border border-red-200 bg-white px-2.5 py-1 text-xs text-red-600 hover:bg-red-50 cursor-pointer dark:border-gray-700 dark:bg-gray-800"
-                    >
-                      删除
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => setDeletingBabyId(currentBaby.id)}
+                    className="rounded-lg border border-red-200 bg-white px-2.5 py-1 text-xs text-red-600 hover:bg-red-50 cursor-pointer dark:border-gray-700 dark:bg-gray-800"
+                  >
+                    删除
+                  </button>
                 </div>
               </div>
             )}
@@ -1321,7 +1342,7 @@ export default function HealthPage() {
                 </button>
               </div>
             </div>
-            <GrowthChart points={growthChartPoints} birthDate={currentBaby?.birthday || user?.baby_birthday} gender={babyGender} />
+            <GrowthChart points={growthChartPoints} birthDate={currentBaby?.birthday} gender={babyGender} />
             {currentBabyGrowthRecords.length === 0 && (
               <p className="py-4 text-center text-sm text-gray-400">
                 暂无宝宝生长数据，点击右上角「健康打卡」选择"宝宝·生长测量"录入
@@ -1480,7 +1501,23 @@ export default function HealthPage() {
           babies={babies}
         />
       ) : (
-        <VaccineCalendar records={records} onChanged={load} babyBirthday={currentBaby?.birthday || user?.baby_birthday} />
+        <>
+          {babies.length === 0 && (
+          <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-dashed border-brand-200 bg-brand-50/40 dark:border-brand-900/50 dark:bg-brand-950/20 px-4 py-3">
+            <p className="text-xs font-medium text-gray-700 dark:text-gray-200">
+              当前暂未录入任何宝宝档案信息，暂无法推算月龄疫苗计划，请先录入宝宝档案
+            </p>
+            <button
+              type="button"
+              onClick={() => navigate("/profile?action=add-baby")}
+              className="btn-primary py-1.5 px-3 text-xs whitespace-nowrap cursor-pointer"
+            >
+              前往录入宝宝档案
+            </button>
+          </div>
+        )}
+        <VaccineCalendar records={records} onChanged={load} babyBirthday={currentBaby?.birthday} />
+        </>
       )}
 
       {/* v1.57 单条删除确认（全局统一替换 window.confirm） */}

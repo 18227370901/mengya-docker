@@ -495,7 +495,9 @@ def resolve_stage_template_key(
     baby_d = _parse_date(baby_birthday)
     today = date.today()
 
-    if is_pregnant is True:
+    if not due_d and not baby_d:
+        return "general"
+    if is_pregnant is True and due_d:
         return "pregnancy"
     if baby_d:
         days = (today - baby_d).days
@@ -508,9 +510,7 @@ def resolve_stage_template_key(
         if total_months <= 12:
             return "infant"
         return "toddler"
-    if is_pregnant is False:
-        return "newborn"
-    if due_d:
+    if due_d and is_pregnant is not False:
         return "pregnancy"
     return "general"
 

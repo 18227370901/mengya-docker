@@ -2,7 +2,7 @@ import SetStageModal from "@/components/SetStageModal";
 import HomeWeatherBanner from "@/components/HomeWeatherBanner";
 import { CloudSun } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import {
   Activity,
   ArrowRight,
@@ -38,6 +38,7 @@ const FETUS_SIZE: Record<number, string> = {
 };
 
 export default function HomePage() {
+  const navigate = useNavigate();
   const { user, stage, hasPermission, fetchMe } = useAuthStore();
   const [essentials, setEssentials] = useState<TimelineItem[]>([]);
   const [weekItems, setWeekItems] = useState<TimelineItem[]>([]);
@@ -131,10 +132,16 @@ export default function HomePage() {
       {/* 首页全景关怀横幅：深度整合问候、阶段卡、时钟走秒、农历节气班休与实况气象 */}
       <HomeWeatherBanner
         stage={stage}
-        onEditStage={() => setShowStageModal(true)}
+        onEditStage={() => {
+          if (stage?.type === "unknown") {
+            navigate("/profile?action=add-baby");
+          } else {
+            setShowStageModal(true);
+          }
+        }}
       />
 
-      {/* 未设置阶段时的引导卡片 */}
+      {/* 未设置/暂未录入任何宝宝档案时的引导卡片 */}
       {stage?.type === "unknown" && (
         <section className="card flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-5 border-2 border-dashed border-brand-200 bg-brand-50/50 dark:border-brand-900/60 dark:bg-brand-950/30">
           <div className="flex items-center gap-3">
@@ -142,17 +149,26 @@ export default function HomePage() {
               <CalendarDays className="h-6 w-6" />
             </div>
             <div>
-              <p className="font-semibold text-gray-800 dark:text-gray-100">请设置预产期或宝宝生日</p>
-              <p className="text-xs text-gray-500">设置后将开启个性化孕期周历、每日胎教故事及专属商品推荐</p>
+              <p className="font-semibold text-gray-800 dark:text-gray-100">当前暂未录入任何宝宝档案信息，请先录入信息</p>
+              <p className="text-xs text-gray-500 mt-0.5">录入宝宝档案（或预产期）后，系统将自动匹配对应阶段的菜单权限、健康曲线与专属推荐</p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => setShowStageModal(true)}
-            className="btn-primary text-sm px-4 py-2 whitespace-nowrap cursor-pointer"
-          >
-            立即设置
-          </button>
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => navigate("/profile?action=add-baby")}
+              className="btn-primary text-sm px-4 py-2 whitespace-nowrap cursor-pointer"
+            >
+              前往录入宝宝档案
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowStageModal(true)}
+              className="btn-secondary text-sm px-3 py-2 whitespace-nowrap cursor-pointer"
+            >
+              快捷设置
+            </button>
+          </div>
         </section>
       )}
 

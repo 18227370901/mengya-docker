@@ -141,25 +141,24 @@ export default function SetStageModal({ isOpen, onClose, onSuccess }: SetStageMo
           is_pregnant: true,
           baby_birthday: null as any,
         });
-        if (babyName.trim()) {
-          if (existingBabyId) {
-            await authApi.updateBaby(existingBabyId, {
-              name: babyName.trim(),
-              gender: gender === "secret" ? "unknown" : gender,
-              birthday: dueDate,
-              is_born: false,
-              is_primary: true,
-            });
-          } else {
-            const created = await authApi.createBaby({
-              name: babyName.trim(),
-              gender: gender === "secret" ? "unknown" : gender,
-              birthday: dueDate,
-              is_born: false,
-              is_primary: true,
-            });
-            setExistingBabyId(created.id);
-          }
+        const finalBabyName = babyName.trim() || "胎宝宝";
+        if (existingBabyId) {
+          await authApi.updateBaby(existingBabyId, {
+            name: finalBabyName,
+            gender: gender === "secret" ? "unknown" : gender,
+            birthday: dueDate,
+            is_born: false,
+            is_primary: true,
+          });
+        } else {
+          const created = await authApi.createBaby({
+            name: finalBabyName,
+            gender: gender === "secret" ? "unknown" : gender,
+            birthday: dueDate,
+            is_born: false,
+            is_primary: true,
+          });
+          setExistingBabyId(created.id);
         }
       } else {
         await authApi.updateMe({
@@ -167,25 +166,24 @@ export default function SetStageModal({ isOpen, onClose, onSuccess }: SetStageMo
           is_pregnant: false,
           due_date: null as any,
         });
-        if (babyName.trim()) {
-          if (existingBabyId) {
-            await authApi.updateBaby(existingBabyId, {
-              name: babyName.trim(),
-              gender: gender === "secret" ? "unknown" : gender,
-              birthday,
-              is_born: true,
-              is_primary: true,
-            });
-          } else {
-            const created = await authApi.createBaby({
-              name: babyName.trim(),
-              birthday,
-              gender: gender === "secret" ? "unknown" : gender,
-              is_born: true,
-              is_primary: true,
-            });
-            setExistingBabyId(created.id);
-          }
+        const finalBabyName = babyName.trim() || "小萌宝";
+        if (existingBabyId) {
+          await authApi.updateBaby(existingBabyId, {
+            name: finalBabyName,
+            gender: gender === "secret" ? "unknown" : gender,
+            birthday,
+            is_born: true,
+            is_primary: true,
+          });
+        } else {
+          const created = await authApi.createBaby({
+            name: finalBabyName,
+            birthday,
+            gender: gender === "secret" ? "unknown" : gender,
+            is_born: true,
+            is_primary: true,
+          });
+          setExistingBabyId(created.id);
         }
       }
 

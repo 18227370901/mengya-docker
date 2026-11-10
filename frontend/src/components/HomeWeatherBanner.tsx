@@ -540,10 +540,10 @@ export default function HomeWeatherBanner({ stage, onEditStage }: HomeWeatherBan
                   type="button"
                   onClick={onEditStage}
                   className="inline-flex items-center gap-1.5 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur-md px-3 py-1 text-xs font-semibold text-white transition cursor-pointer shadow-xs active:scale-95"
-                  title="点击修改宝宝状态或预产期"
+                  title={stage?.type === "unknown" ? "点击前往录入宝宝档案" : "点击修改宝宝状态或预产期"}
                 >
                   <Sprout className="h-3.5 w-3.5 text-emerald-200" />
-                  <span>{stage?.label || "设置宝宝状态"}</span>
+                  <span>{stage?.type === "unknown" ? "暂未录入宝宝档案" : stage?.label || "设置宝宝状态"}</span>
                   <Edit3 className="h-2.5 w-2.5 opacity-80" />
                 </button>
               )}
@@ -551,9 +551,11 @@ export default function HomeWeatherBanner({ stage, onEditStage }: HomeWeatherBan
 
             {/* 中层阶段说明提示 */}
             <p className="mt-1 text-xs sm:text-sm text-white/90 font-medium">
-              {stage?.period ||
-                stage?.trimester ||
-                "从第一次胎动到第一次背书包，我们陪您每一步"}
+              {stage?.type === "unknown"
+                ? "当前暂未录入任何宝宝档案信息，请先录入信息 →"
+                : stage?.period ||
+                  stage?.trimester ||
+                  "从第一次胎动到第一次背书包，我们陪您每一步"}
             </p>
           </div>
 

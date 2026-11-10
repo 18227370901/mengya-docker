@@ -6,6 +6,24 @@
 
 ---
 
+## 2026-11-10 缺陷根治与体验升级：v2.20 版本（宝宝唯一真相源阶段自愈、无宝宝空状态直达引导与权限模板自动回退）
+
+### 核心变更概览
+1. **确立 `BabyProfile` 为唯一真相源与接口层实时自愈（`apps/core/views.py` / `apps/core/utils/permissions.py` / `apps/core/utils/stage_utils.py`）**：
+   - 修复 `resolve_stage_template_key` 在 `due_date` 与 `baby_birthday` 均为空时因 `is_pregnant=False` 误判返回 `"newborn"` 的逻辑缺陷，改为严格返回 `"general"`；
+   - 新增 `_reconcile_user_stage_with_babies(user)` 并在 `MeView.get` 与 `BabyViewSet.perform_destroy` 调用：无宝宝档案时自动清空残留 `due_date`/`baby_birthday`/`is_pregnant`、重置 `MotherProfile` 为 `"萌宝妈妈"` 并自动将非定制用户切换回 `"general"` 权限模板；
+   - `get_stage_info` 未设置态文案统一升级为 `"暂未录入宝宝档案"`。
+2. **首页 / 我的 / 健康中心无宝宝空状态与直达录入闭环（`HomeWeatherBanner.tsx` / `HomePage.tsx` / `ProfilePage.tsx` / `HealthPage.tsx` / `SetStageModal.tsx`）**：
+   - 移除 `HealthPage.tsx`「宝宝·生长档案」中 `babies.length > 1` 的删按钮限制，允许直接删除最后一份宝宝档案并在空列表时清空 `selectedBabyId`，同时移除生长曲线与疫苗日历对已删 `user.baby_birthday` 的错误兜底；
+   - 首页横幅与引导卡、「我的」顶部与档案区、健康中心生长/疫苗页在无宝宝时统一展示「当前暂未录入任何宝宝档案信息，请先录入信息」及直达 `/profile?action=add-baby` 或弹窗的录入按钮；
+   - `ProfilePage.tsx` 支持 `?action=add-baby` 自动展开录入面板并滚动聚焦；`SetStageModal.tsx` 保存阶段时即便未填宝宝昵称也自动创建/更新默认 `BabyProfile`，彻底消除阶段日期与宝宝档案脱节。
+
+### 验证结果
+- `mengya-docker` 与 `mengya-local` 代码 100% 同步；
+- 执行 `python tools/build_frontend.py` 完成生产编译（2628 modules）并同步静态资产（`index-Bs_bd3Pa.js`）。
+
+---
+
 ## 2026-11-10 功能优化与缺陷修复：v2.19 版本（用户阶段识别选择重置、备份清单阶段模板校验与删宝宝阶段清空修复）
 
 ### 核心变更概览

@@ -2602,6 +2602,23 @@ apps/core/                                    apps/core/
 
 <section id="adr-10-73"><h2>10.73 商品库 AI 一键评测生命周期竞态消除 (v2.08)</h2><p>规范组件卸载自动中止请求与路由重入状态复位机制，彻底根治切页重入从0自动重跑缺陷。</p></section>
 
+<section class="adr-card" id="adr-10-85">
+  <h2>10.85 ADR-85：宝宝档案唯一真相源阶段自愈、无宝宝空状态直达引导与权限模板自动回退规范 (v2.20)</h2>
+  <div class="adr-meta"><span class="badge">Version: v2.20</span><span class="badge">Date: 2026-11-10</span><span class="badge status-accepted">Accepted</span></div>
+  <h3>10.85.1 业务背景与根因分析</h3>
+  <p>此前 <code>resolve_stage_template_key</code> 在无日期且 <code>is_pregnant=False</code> 时误返回 <code>newborn</code> 而非 <code>general</code>；<code>HealthPage.tsx</code> 存在 <code>babies.length &gt; 1</code> 删按钮限制及无宝宝兜底读取 <code>user.baby_birthday</code> 问题；库内孤儿日期与 <code>SetStageModal</code> 双写脱节导致首页/我的/健康中心仍显示已删宝宝信息。</p>
+  <h3>10.85.2 核心架构决策与实现规范</h3>
+  <ul>
+    <li><strong>唯一真相源与实时自愈</strong>：修正 <code>resolve_stage_template_key</code> 无日期恒返回 <code>general</code>；新增 <code>_reconcile_user_stage_with_babies</code> 于 <code>MeView.get</code> 与 <code>BabyViewSet.perform_destroy</code> 清理孤儿日期并自动回退 <code>general</code> 模板；</li>
+    <li><strong>空状态引导与末宝可删</strong>：移除健康中心末宝删按钮限制，首页/我的/健康中心无宝宝时统一提示「当前暂未录入任何宝宝档案信息，请先录入信息」并支持跳转 <code>/profile?action=add-baby</code> 自动展开录入面板；</li>
+    <li><strong>阶段弹窗档案双写</strong>：<code>SetStageModal.tsx</code> 保存阶段时同步创建/更新默认 <code>BabyProfile</code>。</li>
+  </ul>
+  <h3>10.85.3 实施与验证结果</h3>
+  <ul>
+    <li>与 <code>mengya-local</code> 代码完成全量同步；执行 <code>python tools/build_frontend.py</code> 完成前端编译与静态产物同步。</li>
+  </ul>
+</section>
+
 <section class="adr-card" id="adr-10-84">
   <h2>10.84 ADR-84：单用户按阶段选择重置、备份清单阶段模板校验与删宝宝阶段清空规范 (v2.19)</h2>
   <div class="adr-meta"><span class="badge">Version: v2.19</span><span class="badge">Date: 2026-11-10</span><span class="badge status-accepted">Accepted</span></div>

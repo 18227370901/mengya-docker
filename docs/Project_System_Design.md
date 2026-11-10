@@ -2726,6 +2726,28 @@ flowchart TD
    - 彻底修复 `EndpointRow.tsx` 与搜索引擎列表中移动端与窄屏下元素溢出、换行错位问题，采用两层分行自适应栅格；
    - 优化启停开关视觉体验：弃用隐晦纯小滑动点，升级为具备鲜明状态色与呼吸圆点的状态切换胶囊（“已启用 (绿色)” / “已停用 (灰色)”），点击即可即时切换并给予明确视觉反馈。
 
+### 10.85 ADR-85：宝宝档案唯一真相源阶段自愈、无宝宝空状态直达引导与权限模板自动回退规范 (v2.20)
+
+#### 10.85.1 业务背景与根因分析
+1. **阶段推导与删末宝回退漏洞**：`resolve_stage_template_key` 此前在 `due_date=None, baby_birthday=None, is_pregnant=False` 时误落入 `newborn` 分支而非 `general`；且库内存在 `BabyProfile` 已清空但 `User.due_date`/`baby_birthday` 仍残留的历史孤儿数据；
+2. **健康中心禁删最后宝宝与兜底残留**：`HealthPage.tsx` 仍保留 `babies.length > 1` 才显示删除按钮，且无宝宝时 `loadProfiles` 未置空 `selectedBabyId`，生长曲线与疫苗日历仍回退读取 `user.baby_birthday`；
+3. **跨页面空状态引导与阶段双写脱节**：`SetStageModal` 未填昵称时不创建 `BabyProfile`，而首页与「我的」页面未以无宝宝空状态引导直达录入页面。
+
+#### 10.85.2 核心架构决策与实现规范
+1. **唯一真相源与自愈纠偏（`views.py` / `permissions.py` / `stage_utils.py`）**：
+   - 修复 `resolve_stage_template_key` 无日期时恒返回 `general`；
+   - 新增 `_reconcile_user_stage_with_babies(user)` 并在 `MeView.get` 与 `BabyViewSet.perform_destroy` 调用，自动清除孤儿日期/妈妈档案关联并切换回 `general` 权限模板；
+   - `get_stage_info` 空状态标签统一为 `暂未录入宝宝档案`。
+2. **前端空状态与跳转录入闭环（`HomeWeatherBanner.tsx` / `HomePage.tsx` / `ProfilePage.tsx` / `HealthPage.tsx` / `SetStageModal.tsx`）**：
+   - 开放健康中心末个宝宝删除并置空残留状态；
+   - 首页/我的/健康中心无宝宝时统一提示「当前暂未录入任何宝宝档案信息，请先录入信息」并提供跳转 `/profile?action=add-baby`（自动展开滚动至录入区）或直开弹窗按钮；
+   - `SetStageModal` 保存时自动兜底生成/更新 `BabyProfile`。
+
+#### 10.85.3 实施与验证结果
+- 完成与 `mengya-local` 100% 同步及 `python tools/build_frontend.py` 静态产物构建；`manage.py check` 零告警。
+
+---
+
 ### 10.84 ADR-84：单用户按阶段选择重置、备份清单阶段模板校验与删宝宝阶段清空规范 (v2.19)
 
 #### 10.84.1 业务背景与问题分析

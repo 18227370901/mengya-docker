@@ -1,6 +1,6 @@
 import SetStageModal from "@/components/SetStageModal";
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { Bot, Baby, Bell, BookOpen, Edit3, Eye, EyeOff, Heart, HeartOff, HeartPulse, KeyRound, LogOut, Moon, Network, Package, Plus, Settings, ShieldCheck, Sun, Trash2, UserCheck, Users, ClipboardList, X, Loader2, Sparkles, CloudUpload, Share2, Compass } from "lucide-react";
 import { useThemeStore } from "@/store/themeStore";
 import { authApi } from "@/api/auth";
@@ -42,6 +42,7 @@ export default function ProfilePage() {
   const { user, stage, logout, fetchMe, hasPermission } = useAuthStore();
   const { theme, isDark, setTheme } = useThemeStore();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [babies, setBabies] = useState<BabyProfile[]>([]);
   const [showAdd, setShowAdd] = useState(false);
   const [showStageModal, setShowStageModal] = useState(false);
@@ -105,17 +106,28 @@ export default function ProfilePage() {
   const showToast = (msg: string) => { setProfileToast(msg); setTimeout(() => setProfileToast(""), 2500); };
 
   useEffect(() => {
+    fetchMe();
     authApi.babies().then(setBabies).catch(() => setBabies([]));
     // 检查 AI 授权状态（非 403 则有权限，用于决定是否显示"已授权"标识）
     authApi.aiConfig().then(() => setAIAuthorized(true)).catch(() => setAIAuthorized(false));
 
     const handleStageChanged = async () => {
       await fetchMe();
-      authApi.babies().then(setBabies).catch(() => {});
+      authApi.babies().then(setBabies).catch(() => setBabies([]));
     };
     window.addEventListener("stageChanged", handleStageChanged);
     return () => window.removeEventListener("stageChanged", handleStageChanged);
   }, []);
+
+  useEffect(() => {
+    if (searchParams.get("action") === "add-baby") {
+      setShowAdd(true);
+      setSearchParams({}, { replace: true });
+      setTimeout(() => {
+        document.getElementById("profile-baby-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 120);
+    }
+  }, [searchParams, setSearchParams]);
 
   const addBaby = async () => {
     const isBorn = babyForm.status === "born";
@@ -255,11 +267,18 @@ export default function ProfilePage() {
             <p className="mt-0.5 text-sm opacity-90">{user?.phone}</p>
             {stage && (
               <button
-                onClick={() => setShowStageModal(true)}
+                onClick={() => {
+                  if (babies.length === 0 || stage.type === "unknown") {
+                    setShowAdd(true);
+                    document.getElementById("profile-baby-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                  } else {
+                    setShowStageModal(true);
+                  }
+                }}
                 className="mt-1 inline-flex items-center gap-1 rounded-full bg-white/20 px-2.5 py-0.5 text-xs text-white hover:bg-white/30 transition text-left cursor-pointer"
-                title="点击设置或修改预产期/宝宝生日"
+                title={babies.length === 0 || stage.type === "unknown" ? "点击前往录入宝宝档案" : "点击设置或修改预产期/宝宝生日"}
               >
-                <span>{stage.label}</span>
+                <span>{babies.length === 0 || stage.type === "unknown" ? "暂未录入宝宝档案" : stage.label}</span>
                 <Edit3 className="h-3 w-3" />
               </button>
             )}
@@ -268,7 +287,20 @@ export default function ProfilePage() {
             <LogOut className="h-5 w-5" />
           </button>
         </div>
-        {user?.is_pregnant && user?.due_date ? (
+        {babies.length === 0 || stage?.type === "unknown" ? (
+          <div className="mt-3 flex items-center justify-between gap-2 rounded-xl bg-white/15 px-3 py-2 text-sm">
+            <span>当前暂未录入任何宝宝档案信息，请先录入信息</span>
+            <button
+              onClick={() => {
+                setShowAdd(true);
+                document.getElementById("profile-baby-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+              }}
+              className="rounded-lg bg-white px-2.5 py-0.5 text-xs font-semibold text-brand-600 hover:bg-orange-50 cursor-pointer whitespace-nowrap"
+            >
+              去录入宝宝档案
+            </button>
+          </div>
+        ) : user?.is_pregnant && user?.due_date ? (
           <div className="mt-3 flex items-center justify-between rounded-xl bg-white/15 px-3 py-2 text-sm">
             <span>预产期：{user.due_date}</span>
             <button
@@ -310,19 +342,19 @@ export default function ProfilePage() {
           </div>
         ) : (
           <div className="mt-3 flex items-center justify-between rounded-xl bg-white/15 px-3 py-2 text-sm">
-            <span>尚未设置预产期或宝宝生日</span>
+            <span>当前暂未录入任何宝宝档案信息，请先录入信息</span>
             <button
               onClick={() => setShowStageModal(true)}
               className="rounded-lg bg-white px-2.5 py-0.5 text-xs font-semibold text-brand-600 hover:bg-orange-50 cursor-pointer"
             >
-              立即设置
+              立即录入
             </button>
           </div>
         )}
       </section>
 
       {/* 宝宝档案 */}
-      <section className="card">
+      <section id="profile-baby-section" className="card">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="font-semibold text-gray-800">宝宝档案</h2>
           <button className="text-sm text-brand-500 hover:underline cursor-pointer" onClick={() => setShowAdd((v) => !v)}>
@@ -403,7 +435,16 @@ export default function ProfilePage() {
         )}
 
         {babies.length === 0 ? (
-          <p className="py-4 text-center text-sm text-gray-400">还没有添加宝宝档案</p>
+          <div className="rounded-xl border border-dashed border-brand-200 bg-brand-50/40 dark:border-brand-900/50 dark:bg-brand-950/20 py-5 px-4 text-center space-y-2">
+            <p className="text-sm font-medium text-gray-600 dark:text-gray-300">当前暂未录入任何宝宝档案信息，请先录入信息</p>
+            <button
+              type="button"
+              onClick={() => setShowAdd(true)}
+              className="btn-primary text-xs px-3.5 py-1.5 inline-flex items-center gap-1 cursor-pointer"
+            >
+              <Plus className="h-3.5 w-3.5" /> 立即录入宝宝档案
+            </button>
+          </div>
         ) : (
           <ul className="space-y-2">
             {babies.map((b) => {
