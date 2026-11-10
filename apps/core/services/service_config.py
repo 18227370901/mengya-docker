@@ -89,6 +89,32 @@ DEFAULT_GROUPS = {
         ],
         'retries': 1,
     },
+    'saying': {
+        'label': '每日一言名句服务',
+        'type': 'endpoints',
+        'defaults': [
+            {
+                'url': 'https://v1.hitokoto.cn',
+                'enabled': True,
+                'name': 'Hitokoto 一言开放接口',
+                'adapter': 'standard',
+                'auth_type': 'none',
+                'auth_key': '',
+                'auth_value': '',
+            },
+            {
+                'url': 'https://uapis.cn/api/v1/saying',
+                'enabled': True,
+                'name': 'UApis 每日一言聚合接口',
+                'adapter': 'standard',
+                'auth_type': 'none',
+                'auth_key': '',
+                'auth_value': '',
+            },
+        ],
+        'timeout': 5,
+        'retries': 1,
+    },
     'translation': {
         'label': '胎教故事及母婴双语翻译引擎',
         'type': 'engines',
@@ -166,6 +192,36 @@ ENDPOINT_PRESETS = [
         'auth_type': 'none',
         'auth_key': '',
         'desc': '权威法定节假日、调休工作日数据源，免 Key。',
+    },
+    {
+        'id': 'hitokoto_saying',
+        'group': 'saying',
+        'name': 'Hitokoto 一言开放接口 (免Key推荐)',
+        'url': 'https://v1.hitokoto.cn',
+        'adapter': 'standard',
+        'auth_type': 'none',
+        'auth_key': '',
+        'desc': '官方免费开源名句、诗词与文学语录接口。',
+    },
+    {
+        'id': 'uapis_saying',
+        'group': 'saying',
+        'name': 'UApis 每日一言聚合接口',
+        'url': 'https://uapis.cn/api/v1/saying',
+        'adapter': 'standard',
+        'auth_type': 'none',
+        'auth_key': '',
+        'desc': '国内极速名言警句与人生感悟聚合接口。',
+    },
+    {
+        'id': 'hitokoto_text',
+        'group': 'saying',
+        'name': 'Hitokoto 纯文本输出端点',
+        'url': 'https://v1.hitokoto.cn/?encode=text',
+        'adapter': 'standard',
+        'auth_type': 'none',
+        'auth_key': '',
+        'desc': '直接返回 text/plain 纯文本一言句子，纯文本自适应解析兼容。',
     },
 ]
 
@@ -551,6 +607,9 @@ def test_endpoint(group, item_or_url, timeout=None):
         url = target
         ok_fn = lambda d: isinstance(d, dict) and d.get('code') == 0
         fail_hint = '响应缺少 code==0 字段（非 timor.tech 兼容端点）'
+    elif group == 'saying':
+        ok_fn = None
+        fail_hint = '未能从响应中解析出一言内容'
     else:
         return {'url': url, 'ok': False, 'message': '未知服务组: %s' % group, 'latency_ms': int((time.time() - start) * 1000)}
 
@@ -560,8 +619,23 @@ def test_endpoint(group, item_or_url, timeout=None):
         try:
             data = resp.json()
         except ValueError:
+            if group == 'saying' and resp.status_code == 200 and resp.text.strip():
+                from apps.core.services.daily_saying_service import parse_saying_payload
+                parsed = parse_saying_payload(resp.text)
+                if parsed.get('text'):
+                    disp = parsed['text'][:30] + ('...' if len(parsed['text']) > 30 else '')
+                    return {'url': url, 'ok': True, 'message': f'连接成功（HTTP {resp.status_code}）："{disp}"', 'latency_ms': latency_ms}
             return {'url': url, 'ok': False, 'message': f'响应非有效 JSON（HTTP {resp.status_code}）', 'latency_ms': latency_ms}
         
+        if group == 'saying':
+            from apps.core.services.daily_saying_service import parse_saying_payload
+            parsed = parse_saying_payload(resp.text, json_obj=data)
+            if parsed.get('text'):
+                disp = parsed['text'][:30] + ('...' if len(parsed['text']) > 30 else '')
+                src_hint = f" —— {parsed['source']}" if parsed.get('source') else ''
+                return {'url': url, 'ok': True, 'message': f'连接成功（HTTP {resp.status_code}）："{disp}"{src_hint}', 'latency_ms': latency_ms}
+            return {'url': url, 'ok': False, 'message': '未能从响应中提取出名句文本（非兼容的一言端点）', 'latency_ms': latency_ms}
+
         if ok_fn and ok_fn(data):
             extra_msg = ''
             if adapter == 'uapis' or 'uapis.cn' in url:

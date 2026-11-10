@@ -2602,6 +2602,25 @@ apps/core/                                    apps/core/
 
 <section id="adr-10-73"><h2>10.73 商品库 AI 一键评测生命周期竞态消除 (v2.08)</h2><p>规范组件卸载自动中止请求与路由重入状态复位机制，彻底根治切页重入从0自动重跑缺陷。</p></section>
 
+<section class="adr-card" id="adr-10-79">
+  <h2>10.79 ADR-79：首页引导大卡片每日一言专属纳管、外部接口服务多源自适应与全量备份同步规范 (v2.14)</h2>
+  <div class="adr-meta"><span class="badge">Version: v2.14</span><span class="badge">Date: 2026-11-10</span><span class="badge status-accepted">Accepted</span></div>
+  <h3>10.79.1 背景与业务诉求</h3>
+  <p>为增强首页文化陪伴关怀，在引导大卡片左侧栏阶段信息与走秒时钟之间嵌入优雅的每日一言。彻底根治单行截断痛点，支持微晶圆角卡片化多行自适应折行；并由外部接口服务统一纳管多源端点、故障转移、权限受控换一句及 1 小时进程缓存；配置无缝纳入全量备份体系。</p>
+  <h3>10.79.2 架构决策与设计规范</h3>
+  <ul>
+    <li><strong>首页引导大卡片优雅嵌入</strong>：在阶段信息与走秒时钟之间嵌入微晶半透明圆角卡片（bg-white/18 backdrop-blur-md rounded-xl），引入 overflow-wrap: break-word 消除长句截断，原生 title 悬停提示出处，管理员受控动态换一句；</li>
+    <li><strong>多源协议自适应解析与故障转移</strong>：daily_saying_service 兼容 Hitokoto、UApis 及任意第三方开放 API 与纯文本，实现线程安全 1 小时进程级缓存，全站共享并发毫秒级直出；</li>
+    <li><strong>外部接口配置中心全量纳管</strong>：DEFAULT_GROUPS 新增 saying 组并预置官方与聚合端点，支持管理后台新增、调序、鉴权配置、单行连通性测试与分类筛选；</li>
+    <li><strong>云端容灾备份 100% 同构</strong>：配置持久化于 core_systemsetting.external_api_config，完全受物理镜像备份、流式压缩包及 WebDAV 云端备份纳管，跨版本恢复 100% 幂等。</li>
+  </ul>
+  <h3>10.79.3 验证结论</h3>
+  <ul>
+    <li>build_frontend.py 生产编译通过（2628 modules）并同步产物，run.ps1 restart 服务重启健康；</li>
+    <li>GET /api/daily-saying/ 接口成功返回 Hitokoto 名句；外部接口测试连通性返回延迟与解析名句；全站备份机制审计通过。</li>
+  </ul>
+</section>
+
 <section class="adr-card" id="adr-10-78">
   <h2>10.78 ADR-78：三方平台子入口管理弹窗状态同步根治与零闪烁局部静默刷新规范 (v2.13)</h2>
   <div class="adr-meta"><span class="badge">Version: v2.13</span><span class="badge">Date: 2026-11-10</span><span class="badge status-accepted">Accepted</span></div>

@@ -6,7 +6,7 @@
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 
 from .views import _is_admin
 from .utils.audit import audit
@@ -48,6 +48,8 @@ class AdminServiceConfigView(APIView):
         try:
             from .views import _HOME_WEATHER_CACHE
             _HOME_WEATHER_CACHE.clear()
+            from .services.daily_saying_service import clear_saying_cache
+            clear_saying_cache()
         except Exception:
             pass
         return Response({'code': 0, 'message': '配置已保存并即时生效', 'data': service_config.get_all_config()})
@@ -67,6 +69,8 @@ class AdminServiceConfigRestoreView(APIView):
         try:
             from .views import _HOME_WEATHER_CACHE
             _HOME_WEATHER_CACHE.clear()
+            from .services.daily_saying_service import clear_saying_cache
+            clear_saying_cache()
         except Exception:
             pass
         return Response({'code': 0, 'message': '已恢复全部默认值', 'data': service_config.get_all_config()})
@@ -101,3 +105,26 @@ def _summarize_payload(group, data):
     return '端点 %d 个，超时 %ss，重试 %s 轮' % (
         len([e for e in endpoints if isinstance(e, dict) and e.get('enabled')]),
         data.get('timeout', ''), data.get('retries', ''))
+
+class DailySayingView(APIView):
+    """前台每日一言接口：全站共享 1 小时缓存，管理员/特权用户支持 refresh=1 换一句"""
+
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        from .services import daily_saying_service
+
+        force_refresh = request.GET.get('refresh') in ('1', 'true', 'True')
+        user = getattr(request, 'user', None)
+        user_can_refresh = bool(
+            user and user.is_authenticated and (
+                _is_admin(user) or getattr(user, 'is_staff', False)
+            )
+        )
+        should_force = force_refresh and user_can_refresh
+        data = daily_saying_service.get_daily_saying(force=should_force)
+        if data:
+            res = dict(data)
+            res['can_refresh'] = user_can_refresh
+            return Response({'code': 0, 'message': 'ok', 'data': res})
+        return Response({'code': 0, 'message': 'ok', 'data': None})

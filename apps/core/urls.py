@@ -55,6 +55,7 @@ urlpatterns = [
     path("admin/service-config/", views_service_config.AdminServiceConfigView.as_view(), name="admin-service-config"),
     path("admin/service-config/test/", views_service_config.AdminServiceConfigTestView.as_view(), name="admin-service-config-test"),
     path("admin/service-config/restore/", views_service_config.AdminServiceConfigRestoreView.as_view(), name="admin-service-config-restore"),
+    path("daily-saying/", views_service_config.DailySayingView.as_view(), name="daily-saying"),
     # WebDAV 云端备份与全量容灾恢复 API
     path("admin/backups/config/", views_backup.AdminBackupConfigView.as_view(), name="admin-backup-config"),
     path("admin/backups/test/", views_backup.AdminBackupTestView.as_view(), name="admin-backup-test"),

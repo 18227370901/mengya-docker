@@ -15,7 +15,9 @@ import {
   SunMedium,
   Settings,
   Info,
+  Quote,
 } from "lucide-react";
+import { dailySayingApi, type DailySayingData } from "@/api/dailySaying";
 import { dailyTipsApi } from "@/api/dailyTips";
 import { weatherApi, type HomeWeatherResponse } from "@/api/weather";
 import { resolveRegionFromText } from "@/lib/chinaRegions";
@@ -173,6 +175,33 @@ export default function HomeWeatherBanner({ stage, onEditStage }: HomeWeatherBan
 
 
   const [isRotating, setIsRotating] = useState(false);
+
+  // 每日一言状态与拉取
+  const [dailySaying, setDailySaying] = useState<DailySayingData | null>(null);
+  const [isSayingRefreshing, setIsSayingRefreshing] = useState(false);
+
+  const fetchSaying = (force = false) => {
+    if (force) setIsSayingRefreshing(true);
+    dailySayingApi
+      .getSaying(force)
+      .then((data) => {
+        if (data && data.text) {
+          setDailySaying(data);
+        }
+      })
+      .catch(() => {
+        /* 静默降级保持原样 */
+      })
+      .finally(() => {
+        if (force) {
+          setTimeout(() => setIsSayingRefreshing(false), 500);
+        }
+      });
+  };
+
+  useEffect(() => {
+    fetchSaying(false);
+  }, []);
 
   // 走秒时钟与公历/农历信息
   useEffect(() => {
@@ -527,6 +556,42 @@ export default function HomeWeatherBanner({ stage, onEditStage }: HomeWeatherBan
                 "从第一次胎动到第一次背书包，我们陪您每一步"}
             </p>
           </div>
+
+          {/* 中层：每日一言微晶条 (自适应折行、出处悬停提示、管理员受控换一句) */}
+          {dailySaying?.text && (
+            <div
+              className="inline-flex max-w-full items-start gap-2 rounded-xl bg-white/18 backdrop-blur-md border border-white/25 px-3 py-1.5 text-xs text-white/95 shadow-2xs transition group"
+              title={
+                dailySaying.source
+                  ? `每日一言 · ${dailySaying.source}`
+                  : dailySaying.provider
+                  ? `每日一言 · ${dailySaying.provider}`
+                  : "每日一言"
+              }
+            >
+              <Quote className="h-3.5 w-3.5 shrink-0 text-amber-200 mt-0.5" />
+              <span className="flex-1 overflow-wrap break-word leading-relaxed font-normal">
+                {dailySaying.text}
+              </span>
+              {dailySaying.can_refresh && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    fetchSaying(true);
+                  }}
+                  disabled={isSayingRefreshing}
+                  className="shrink-0 p-0.5 rounded-md hover:bg-white/20 text-white/80 hover:text-white transition cursor-pointer active:scale-95 disabled:opacity-50"
+                  title="换一句（重新拉取最新名言）"
+                  aria-label="换一句"
+                >
+                  <RefreshCw
+                    className={`h-3 w-3 ${isSayingRefreshing ? "animate-spin text-amber-200" : "transition-transform group-hover:rotate-180"}`}
+                  />
+                </button>
+              )}
+            </div>
+          )}
 
           {/* 下层：走秒时钟与农历节气徽章 */}
           <div>

@@ -20,6 +20,7 @@ import {
   Check,
   AlertTriangle,
   ExternalLink,
+  Quote,
 } from "lucide-react";
 import ConfirmDialog from "@/components/ui/ConfirmDialog";
 import { serviceConfigApi } from "@/api/services";
@@ -42,9 +43,10 @@ const GROUP_ICONS: Record<string, ComponentType<{ className?: string }>> = {
   holiday: CalendarDays,
   search_pipeline: Globe2,
   translation: Languages,
+  saying: Quote,
 };
 
-type CategoryTab = "all" | "weather" | "holiday" | "search" | "translation";
+type CategoryTab = "all" | "weather" | "holiday" | "search" | "translation" | "saying";
 
 export default function AdminServiceConfigPage() {
   const navigate = useNavigate();
@@ -257,6 +259,7 @@ export default function AdminServiceConfigPage() {
     if (activeCategory === "holiday") return gname === "holiday";
     if (activeCategory === "search") return gname === "search_pipeline";
     if (activeCategory === "translation") return gname === "translation";
+    if (activeCategory === "saying") return gname === "saying";
     return true;
   });
 
@@ -331,6 +334,7 @@ export default function AdminServiceConfigPage() {
           { key: "holiday", label: "法定节假日日历" },
           { key: "search", label: "AI 公网搜索管线" },
           { key: "translation", label: "双语翻译引擎" },
+          { key: "saying", label: "每日一言名句服务" },
         ].map((tab) => (
           <button
             key={tab.key}

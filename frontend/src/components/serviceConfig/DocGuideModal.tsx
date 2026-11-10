@@ -97,6 +97,21 @@ export default function DocGuideModal({ isOpen, onClose }: DocGuideModalProps) {
               <p>日历接口默认支持 <code>{'{年份}'}</code> 动态占位符（例如 <code>https://timor.tech/api/holiday/year/</code>）。系统在查询当年度法定休假与调休工作日时，将自动注入目标年份。</p>
             </div>
           </div>
+          {/* Section 4: Daily Saying Service */}
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 text-gray-900 dark:text-white font-bold">
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-brand-500 text-white text-xs">4</span>
+              <span>每日一言名句服务与协议自适应规范</span>
+            </div>
+            <div className="pl-7 text-xs text-gray-500 dark:text-gray-400 space-y-1.5">
+              <p>系统首页引导卡片专属每日一言展示，支持有序端点故障转移与进程级 1 小时缓存（全站共享一句）：</p>
+              <ul className="list-disc pl-4 space-y-1">
+                <li><b>Hitokoto 一言开放源：</b>支持 <code>https://v1.hitokoto.cn</code>（免密，自适应解析 hitokoto、from、from_who）；</li>
+                <li><b>UApis 名言源：</b>支持 <code>https://uapis.cn/api/v1/saying</code>（免密，自适应解析 text 字段）；</li>
+                <li><b>纯文本及任意第三方 JSON：</b>内置智能自适应解析器，兼容 <code>text/plain</code> 纯文本或包含 content、saying、quote 字段的私有 API。</li>
+              </ul>
+            </div>
+          </div>
         </div>
 
         {/* Footer */}
