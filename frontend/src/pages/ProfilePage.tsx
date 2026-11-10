@@ -1,5 +1,5 @@
 import SetStageModal from "@/components/SetStageModal";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Bot, Baby, Bell, BookOpen, Edit3, Eye, EyeOff, Heart, HeartOff, HeartPulse, KeyRound, LogOut, Moon, Network, Package, Plus, Settings, ShieldCheck, Sun, Trash2, UserCheck, Users, ClipboardList, X, Loader2, Sparkles, CloudUpload, Share2, Compass } from "lucide-react";
 import { useThemeStore } from "@/store/themeStore";
@@ -38,6 +38,23 @@ const roleGreeting = (role?: string) => {
   return "准妈妈";
 };
 
+const getLocalTodayStr = () => {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+};
+
+const getLocalOffsetDateStr = (offsetDays: number) => {
+  const now = new Date();
+  now.setDate(now.getDate() + offsetDays);
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}-${m}-${d}`;
+};
+
 export default function ProfilePage() {
   const { user, stage, logout, fetchMe, hasPermission } = useAuthStore();
   const { theme, isDark, setTheme } = useThemeStore();
@@ -45,12 +62,23 @@ export default function ProfilePage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [babies, setBabies] = useState<BabyProfile[]>([]);
   const [showAdd, setShowAdd] = useState(false);
+  const [addingBaby, setAddingBaby] = useState(false);
   const [showStageModal, setShowStageModal] = useState(false);
+  const addBabyFormRef = useRef<HTMLDivElement | null>(null);
+  const addBabyNameInputRef = useRef<HTMLInputElement | null>(null);
+
+  const openAndFocusAddBaby = () => {
+    setShowAdd(true);
+    setTimeout(() => {
+      addBabyFormRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      addBabyNameInputRef.current?.focus();
+    }, 80);
+  };
   const [babyForm, setBabyForm] = useState({
     status: (user?.is_pregnant ? "pregnant" : "born") as "pregnant" | "born",
     name: "",
     gender: "unknown",
-    birthday: user?.is_pregnant && user?.due_date ? user.due_date : new Date().toISOString().slice(0, 10),
+    birthday: user?.is_pregnant && user?.due_date ? user.due_date : getLocalTodayStr(),
     birth_weight: "",
   });
   const [editingBaby, setEditingBaby] = useState<BabyProfile | null>(null);
@@ -121,18 +149,36 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (searchParams.get("action") === "add-baby") {
-      setShowAdd(true);
+      openAndFocusAddBaby();
       setSearchParams({}, { replace: true });
-      setTimeout(() => {
-        document.getElementById("profile-baby-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
-      }, 120);
     }
   }, [searchParams, setSearchParams]);
 
   const addBaby = async () => {
+    if (addingBaby) return;
     const isBorn = babyForm.status === "born";
+    if (!babyForm.birthday) {
+      showToast(isBorn ? "请选择宝宝出生日期" : "请选择预产期");
+      return;
+    }
+    const todayStr = getLocalTodayStr();
+    if (isBorn && babyForm.birthday > todayStr) {
+      showToast("宝宝出生日期不能晚于当前日期");
+      return;
+    }
+    if (!isBorn) {
+      const diffDays = Math.round((new Date(babyForm.birthday).getTime() - new Date(todayStr).getTime()) / 86400000);
+      if (diffDays > 305) {
+        showToast("预产期超出正常怀孕周期（距离当前时间不应超过10个月/约300天）");
+        return;
+      }
+      if (diffDays < -30) {
+        showToast("预产期已过去较久，若宝宝已出生请切换至「宝宝已出生」录入");
+        return;
+      }
+    }
     const defaultBaby = babies.find((b) => b.is_primary) || babies[0];
-    const resolvedName = babyForm.name.trim() || (defaultBaby?.name || "小萌宝");
+    const resolvedName = babyForm.name.trim() || (defaultBaby?.name || (isBorn ? "小萌宝" : "胎宝宝"));
     const payload: Partial<BabyProfile> = {
       name: resolvedName,
       gender: babyForm.gender,
@@ -140,15 +186,21 @@ export default function ProfilePage() {
       is_born: isBorn,
     };
     if (isBorn && babyForm.birth_weight) payload.birth_weight = Number(babyForm.birth_weight);
-    const created = await authApi.createBaby(payload).catch(() => null);
-    if (created) {
-      setBabies((prev) => [...prev, created]);
+    setAddingBaby(true);
+    try {
+      const created = await authApi.createBaby(payload);
+      const latestBabies = await authApi.babies().catch(() => null);
+      if (Array.isArray(latestBabies)) {
+        setBabies(latestBabies);
+      } else {
+        setBabies((prev) => [...prev, created]);
+      }
       setShowAdd(false);
       setBabyForm({
         status: user?.is_pregnant ? "pregnant" : "born",
         name: "",
         gender: "unknown",
-        birthday: user?.is_pregnant && user?.due_date ? user.due_date : new Date().toISOString().slice(0, 10),
+        birthday: user?.is_pregnant && user?.due_date ? user.due_date : getLocalTodayStr(),
         birth_weight: "",
       });
       await fetchMe();
@@ -156,8 +208,10 @@ export default function ProfilePage() {
         window.dispatchEvent(new CustomEvent("stageChanged"));
       } catch {}
       showToast(isBorn ? "宝宝档案已添加并同步阶段" : "未出生宝宝档案已添加并同步预产期");
-    } else {
-      showToast("添加失败，请稍后重试");
+    } catch (err: any) {
+      showToast(err?.response?.data?.message || err?.message || "添加失败，请稍后重试");
+    } finally {
+      setAddingBaby(false);
     }
   };
 
@@ -168,7 +222,7 @@ export default function ProfilePage() {
       status: isBorn ? "born" : "pregnant",
       name: b.name || "",
       gender: b.gender || "unknown",
-      birthday: b.birthday || new Date().toISOString().slice(0, 10),
+      birthday: b.birthday || getLocalTodayStr(),
       birth_weight: b.birth_weight != null ? String(b.birth_weight) : "",
       note: b.note || "",
     });
@@ -269,8 +323,7 @@ export default function ProfilePage() {
               <button
                 onClick={() => {
                   if (babies.length === 0 || stage.type === "unknown") {
-                    setShowAdd(true);
-                    document.getElementById("profile-baby-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                    openAndFocusAddBaby();
                   } else {
                     setShowStageModal(true);
                   }
@@ -291,10 +344,7 @@ export default function ProfilePage() {
           <div className="mt-3 flex items-center justify-between gap-2 rounded-xl bg-white/15 px-3 py-2 text-sm">
             <span>当前暂未录入任何宝宝档案信息，请先录入信息</span>
             <button
-              onClick={() => {
-                setShowAdd(true);
-                document.getElementById("profile-baby-section")?.scrollIntoView({ behavior: "smooth", block: "start" });
-              }}
+              onClick={openAndFocusAddBaby}
               className="rounded-lg bg-white px-2.5 py-0.5 text-xs font-semibold text-brand-600 hover:bg-orange-50 cursor-pointer whitespace-nowrap"
             >
               去录入宝宝档案
@@ -364,14 +414,14 @@ export default function ProfilePage() {
         </div>
 
         {showAdd && (
-          <div className="mb-4 space-y-3 rounded-xl bg-cream dark:bg-gray-800/80 p-4">
+          <div ref={addBabyFormRef} className="mb-4 space-y-3 rounded-xl bg-cream dark:bg-gray-800/80 p-4">
             <div className="flex rounded-xl bg-gray-200/70 dark:bg-gray-700/70 p-1">
               <button
                 type="button"
                 className={`flex-1 rounded-lg py-1.5 text-xs font-semibold transition cursor-pointer ${
                   babyForm.status === "pregnant" ? "bg-white text-brand-600 shadow-xs dark:bg-gray-800 dark:text-brand-400" : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
                 }`}
-                onClick={() => setBabyForm((f) => ({ ...f, status: "pregnant", birthday: user?.due_date || f.birthday }))}
+                onClick={() => setBabyForm((f) => ({ ...f, status: "pregnant", birthday: user?.due_date || f.birthday || getLocalOffsetDateStr(180) }))}
               >
                 🌱 怀孕中 / 尚未出生（预产期）
               </button>
@@ -380,7 +430,7 @@ export default function ProfilePage() {
                 className={`flex-1 rounded-lg py-1.5 text-xs font-semibold transition cursor-pointer ${
                   babyForm.status === "born" ? "bg-white text-brand-600 shadow-xs dark:bg-gray-800 dark:text-brand-400" : "text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
                 }`}
-                onClick={() => setBabyForm((f) => ({ ...f, status: "born", birthday: user?.baby_birthday || new Date().toISOString().slice(0, 10) }))}
+                onClick={() => setBabyForm((f) => ({ ...f, status: "born", birthday: user?.baby_birthday || (f.birthday && f.birthday <= getLocalTodayStr() ? f.birthday : getLocalTodayStr()) }))}
               >
                 👶 宝宝已出生
               </button>
@@ -391,6 +441,7 @@ export default function ProfilePage() {
                 {babyForm.status === "pregnant" ? "宝宝胎名 / 小名" : "宝宝昵称"}
               </label>
               <input
+                ref={addBabyNameInputRef}
                 className="input"
                 placeholder={
                   (babies.find((b) => b.is_primary) || babies[0])?.name
@@ -428,23 +479,25 @@ export default function ProfilePage() {
               <input type="date" className="input" value={babyForm.birthday} onChange={(e) => setBabyForm((f) => ({ ...f, birthday: e.target.value }))} />
             </div>
 
-            <button className="btn-primary w-full cursor-pointer" onClick={addBaby}>
-              {babyForm.status === "pregnant" ? "保存未出生宝宝档案并同步阶段" : "保存宝宝档案"}
+            <button className="btn-primary w-full cursor-pointer disabled:opacity-60" disabled={addingBaby} onClick={addBaby}>
+              {addingBaby ? "保存中…" : (babyForm.status === "pregnant" ? "保存未出生宝宝档案并同步阶段" : "保存宝宝档案")}
             </button>
           </div>
         )}
 
         {babies.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-brand-200 bg-brand-50/40 dark:border-brand-900/50 dark:bg-brand-950/20 py-5 px-4 text-center space-y-2">
-            <p className="text-sm font-medium text-gray-600 dark:text-gray-300">当前暂未录入任何宝宝档案信息，请先录入信息</p>
-            <button
-              type="button"
-              onClick={() => setShowAdd(true)}
-              className="btn-primary text-xs px-3.5 py-1.5 inline-flex items-center gap-1 cursor-pointer"
-            >
-              <Plus className="h-3.5 w-3.5" /> 立即录入宝宝档案
-            </button>
-          </div>
+          !showAdd && (
+            <div className="rounded-xl border border-dashed border-brand-200 bg-brand-50/40 dark:border-brand-900/50 dark:bg-brand-950/20 py-5 px-4 text-center space-y-2">
+              <p className="text-sm font-medium text-gray-600 dark:text-gray-300">当前暂未录入任何宝宝档案信息，请先录入信息</p>
+              <button
+                type="button"
+                onClick={openAndFocusAddBaby}
+                className="btn-primary text-xs px-3.5 py-1.5 inline-flex items-center gap-1 cursor-pointer"
+              >
+                <Plus className="h-3.5 w-3.5" /> 立即录入宝宝档案
+              </button>
+            </div>
+          )
         ) : (
           <ul className="space-y-2">
             {babies.map((b) => {

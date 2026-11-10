@@ -2602,6 +2602,23 @@ apps/core/                                    apps/core/
 
 <section id="adr-10-73"><h2>10.73 商品库 AI 一键评测生命周期竞态消除 (v2.08)</h2><p>规范组件卸载自动中止请求与路由重入状态复位机制，彻底根治切页重入从0自动重跑缺陷。</p></section>
 
+<section class="adr-card" id="adr-10-86">
+  <h2>10.86 ADR-86：无宝宝初始化首宝权限豁免与 <code>SetStageModal</code> 原子单写竞态消除规范 (v2.21)</h2>
+  <div class="adr-meta"><span class="badge">Version: v2.21</span><span class="badge">Date: 2026-11-10</span><span class="badge status-accepted">Accepted</span></div>
+  <h3>10.86.1 业务背景与根因分析</h3>
+  <p>当 <code>general</code> 默认模板关闭 <code>baby_create</code> 时，用户删光宝宝回退至 <code>general</code> 后直接调用 <code>POST /api/babies/</code> 触发 403 死锁；<code>ProfilePage.tsx</code> 吞并错误且 <code>showAdd=true</code> 时重复渲染“立即录入宝宝档案”按钮导致点击无响应；<code>SetStageModal.tsx</code> 先 <code>updateMe</code> 后 <code>createBaby</code> 的两段式调用间隙会被并发 <code>GET /api/users/me/</code> 的 <code>_reconcile_user_stage_with_babies</code> 重置回 <code>general</code>，引发概率性 403 失败。</p>
+  <h3>10.86.2 核心架构决策与实现规范</h3>
+  <ul>
+    <li><strong>首宝初始化权限豁免与日期校验</strong>：<code>BabyViewSet.perform_create</code> 在无宝宝且非 <code>_admin_customized</code> 用户场景下放行首宝创建，并即时切换至对应阶段模板；<code>BabyProfileSerializer.validate</code> 补充预产期与出生日期范围校验；</li>
+    <li><strong>空状态与错误透传修正</strong>：<code>ProfilePage.tsx</code> 透传后端报错、增加防连击、本地时区校验与滚动聚焦，并在展开录入表单时隐藏重复按钮；</li>
+    <li><strong>单入口原子保存</strong>：<code>SetStageModal.tsx</code> 直接走 <code>createBaby</code>/<code>updateBaby</code> 单一入口完成后端阶段与档案同步，彻底消除两段式中间态竞态。</li>
+  </ul>
+  <h3>10.86.3 实施与验证结果</h3>
+  <ul>
+    <li>与 <code>mengya-local</code> 代码完成全量同步；同步前端构建产物（<code>index-CoUICGSs.js</code>）至 <code>templates/</code> 与 <code>static/</code>。</li>
+  </ul>
+</section>
+
 <section class="adr-card" id="adr-10-85">
   <h2>10.85 ADR-85：宝宝档案唯一真相源阶段自愈、无宝宝空状态直达引导与权限模板自动回退规范 (v2.20)</h2>
   <div class="adr-meta"><span class="badge">Version: v2.20</span><span class="badge">Date: 2026-11-10</span><span class="badge status-accepted">Accepted</span></div>

@@ -1065,8 +1065,13 @@ class BabyViewSet(viewsets.ModelViewSet):
             )
 
     def perform_create(self, serializer):
-        check_permission_or_403(self.request.user, "baby_create", "您暂无「添加宝宝档案」的权限，请联系管理员开启")
         user = self.request.user
+        # 若用户当前尚无任何宝宝档案且未被管理员单独定制禁权，允许初始化录入首份宝宝档案，避免 general 模板无菜单权限时死锁
+        custom_perms = getattr(user, "custom_permissions", None) or {}
+        is_admin_customized = isinstance(custom_perms, dict) and bool(custom_perms.get("_admin_customized"))
+        has_any_baby = BabyProfile.objects.filter(user=user).exists()
+        if has_any_baby or is_admin_customized:
+            check_permission_or_403(user, "baby_create", "您暂无「添加宝宝档案」的权限，请联系管理员开启")
         raw_name = (self.request.data.get("name") or "").strip()
         if not raw_name:
             primary_baby = BabyProfile.objects.filter(user=user, is_primary=True).first() or BabyProfile.objects.filter(user=user).first()

@@ -6,6 +6,24 @@
 
 ---
 
+## 2026-11-10 缺陷修复与竞态消除：v2.21 版本（删末宝后首宝宝初始化豁免、`ProfilePage` 空状态引导纠偏与 `SetStageModal` 单入口原子保存）
+
+### 核心变更概览
+1. **无宝宝初始化录入首份宝宝档案权限豁免与日期校验加固（`apps/core/views.py` / `apps/core/serializers/__init__.py`）**：
+   - 修复当管理员将 `general` 默认权限模板中的 `baby_view`/`baby_create` 关闭时，用户删除最后一个宝宝回退到 `general` 模板后，通过「我的」页面或直接调用 `POST /api/babies/` 添加首份宝宝档案被拦截返回 403 的死锁缺陷；
+   - 在 `BabyViewSet.perform_create` 中，当用户当前尚无任何 `BabyProfile` 且未被管理员单独定制禁权（`_admin_customized`）时，允许初始化录入首份宝宝档案并立即自动切换至对应发育阶段权限模板；已有宝宝或被管理员单独定制禁权的用户仍严格校验 `baby_create` 权限；
+   - 在 `BabyProfileSerializer.validate` 补充服务端预产期（`-30 ~ +305` 天）与出生日期（不晚于今日且不超 18 岁）一致性校验。
+2. **「我的」页面录入表单交互与真实错误透传修复（`frontend/src/pages/ProfilePage.tsx`）**：
+   - 移除 `addBaby` 中 `.catch(() => null)` 对接口异常的静默吞并，改为透传后端精确 `message` 并增加 `addingBaby` 防连击加载态、本地时区日期函数与日期合法性校验；
+   - 新增 `openAndFocusAddBaby` 统一处理展开、滚动与输入框聚焦，并在 `showAdd === true` 时隐藏底部重复的「立即录入宝宝档案」引导块，彻底消除点击无反应问题。
+3. **首页快捷设置原子保存消除并发竞态（`frontend/src/components/SetStageModal.tsx` / `frontend/src/pages/HomePage.tsx`）**：
+   - 移除 `SetStageModal.handleSave` 先 `PUT /api/users/me/` 再 `POST /api/babies/` 的两段式非原子调用，改为直接通过 `createBaby`/`updateBaby` 单一入口由后端原子同步用户孕育阶段、权限模板与默认妈妈档案，根除保存间隙被 `GET /api/users/me/`（`_reconcile_user_stage_with_babies`）轮询回退 `general` 模板导致后续 `createBaby` 概率性 403 失败的竞态；
+   - 增加 `babiesReady` 初始加载保护与本地 `YYYY-MM-DD` 日期解析，并在 `HomePage.tsx` 使用 `fetchHomeData(true)` 静默刷新避免页面闪烁。
+
+### 验证结果
+- `mengya-docker` 与 `mengya-local` 业务代码 100% 同步；
+- 同步最新前端编译产物（`index-CoUICGSs.js`）至 `templates/index.html` 与 `static/`，满足单阶段 Docker 镜像零 Node.js 生产部署要求。
+
 ## 2026-11-10 缺陷根治与体验升级：v2.20 版本（宝宝唯一真相源阶段自愈、无宝宝空状态直达引导与权限模板自动回退）
 
 ### 核心变更概览

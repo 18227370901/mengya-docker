@@ -2726,6 +2726,23 @@ flowchart TD
    - 彻底修复 `EndpointRow.tsx` 与搜索引擎列表中移动端与窄屏下元素溢出、换行错位问题，采用两层分行自适应栅格；
    - 优化启停开关视觉体验：弃用隐晦纯小滑动点，升级为具备鲜明状态色与呼吸圆点的状态切换胶囊（“已启用 (绿色)” / “已停用 (灰色)”），点击即可即时切换并给予明确视觉反馈。
 
+### 10.86 ADR-86：无宝宝初始化首宝权限豁免与 `SetStageModal` 原子单写竞态消除规范 (v2.21)
+
+#### 10.86.1 业务背景与根因分析
+1. **权限模板死锁**：当管理员在 `general` 默认权限模板仅开启首页菜单而关闭 `baby_create` 时，用户删除最后一个宝宝后会回退至 `general` 模板，导致后续在「我的」页面直接调用 `POST /api/babies/` 返回 403，且前端 `.catch(() => null)` 吞掉错误提示为“添加失败，请稍后重试”；
+2. **重复按钮无反馈**：`ProfilePage.tsx` 在 `showAdd=true` 时仍在表单下方渲染 `onClick={() => setShowAdd(true)}` 的「立即录入宝宝档案」按钮，触发状态空操作；
+3. **两段式并发竞态**：`SetStageModal.tsx` 先调用 `PUT /api/users/me/` 再调用 `POST /api/babies/`，两请求间隙数据库尚无 `BabyProfile`，若并发触发 `RequireAuth` 的 `GET /api/users/me/`（`_reconcile_user_stage_with_babies`），会将用户重新清零并回退至 `general` 模板，致使第二步 `createBaby` 概率性 403 失败。
+
+#### 10.86.2 核心架构决策与实现规范
+1. **首宝初始化权限豁免与日期校验（`apps/core/views.py` / `apps/core/serializers/__init__.py`）**：`BabyViewSet.perform_create` 在用户尚无任何 `BabyProfile` 且未被管理员单独定制禁权（`_admin_customized`）时允许初始化创建首份宝宝档案，随后由 `_sync_user_stage` 原子升级阶段权限；`BabyProfileSerializer.validate` 补充服务端预产期与出生日期一致性校验；
+2. **表单交互与异常透传（`ProfilePage.tsx`）**：透传后端精确错误信息、增加 `addingBaby` 防连击保护与本地时区日期校验，并在表单展开态隐藏底部重复空状态按钮，未展开时点击自动滚动聚焦；
+3. **单入口原子保存（`SetStageModal.tsx` / `HomePage.tsx`）**：取消 `updateMe` 前置调用，统一经由 `createBaby`/`updateBaby` 单一入口由后端事务化同步 `User` 阶段、权限与 `MotherProfile`，彻底消除中间态竞态。
+
+#### 10.86.3 实施与验证结果
+- 与 `mengya-local` 代码完成全量同步；同步前端构建产物（`index-CoUICGSs.js`）至 `templates/` 与 `static/` 并将开展容器构建核验。
+
+---
+
 ### 10.85 ADR-85：宝宝档案唯一真相源阶段自愈、无宝宝空状态直达引导与权限模板自动回退规范 (v2.20)
 
 #### 10.85.1 业务背景与根因分析

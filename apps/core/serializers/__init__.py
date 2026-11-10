@@ -172,6 +172,25 @@ class BabyProfileSerializer(serializers.ModelSerializer):
     due_date = serializers.SerializerMethodField()
     gestation_weeks = serializers.SerializerMethodField()
 
+    def validate(self, attrs):
+        from datetime import date
+        today = date.today()
+        birthday = attrs.get("birthday", getattr(self.instance, "birthday", None))
+        is_born = attrs.get("is_born", getattr(self.instance, "is_born", True))
+        if birthday:
+            if is_born:
+                if birthday > today:
+                    raise serializers.ValidationError({"birthday": "宝宝出生日期不能晚于当前日期"})
+                if (today - birthday).days > 365 * 18:
+                    raise serializers.ValidationError({"birthday": "宝宝出生日期超出合理范围（不能超过18周岁）"})
+            else:
+                delta = (birthday - today).days
+                if delta > 305:
+                    raise serializers.ValidationError({"birthday": "预产期超出正常怀孕周期（距离当前时间不应超过10个月/约300天）"})
+                if delta < -30:
+                    raise serializers.ValidationError({"birthday": "预产期已过去较久，若宝宝已出生请切换为「宝宝已出生」录入"})
+        return attrs
+
     class Meta:
         model = BabyProfile
         fields = [

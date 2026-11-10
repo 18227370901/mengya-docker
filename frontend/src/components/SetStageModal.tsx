@@ -21,6 +21,7 @@ export default function SetStageModal({ isOpen, onClose, onSuccess }: SetStageMo
   const [babyName, setBabyName] = useState("");
   const [gender, setGender] = useState("secret");
   const [existingBabyId, setExistingBabyId] = useState<number | null>(null);
+  const [babiesReady, setBabiesReady] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -38,6 +39,7 @@ export default function SetStageModal({ isOpen, onClose, onSuccess }: SetStageMo
       setError("");
 
       // 实时获取默认宝宝档案并回显姓名与性别，杜绝退出重进后被重置为空白
+      setBabiesReady(false);
       authApi
         .babies()
         .then((list) => {
@@ -59,6 +61,9 @@ export default function SetStageModal({ isOpen, onClose, onSuccess }: SetStageMo
           setExistingBabyId(null);
           setBabyName("");
           setGender("secret");
+        })
+        .finally(() => {
+          setBabiesReady(true);
         });
     }
     prevIsOpenRef.current = isOpen;
@@ -77,8 +82,8 @@ export default function SetStageModal({ isOpen, onClose, onSuccess }: SetStageMo
     if (!birthday) return null;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    const birth = new Date(birthday);
-    birth.setHours(0, 0, 0, 0);
+    const [by, bm, bd] = birthday.split("-").map(Number);
+    const birth = new Date(by, (bm || 1) - 1, bd || 1);
     if (birth.getTime() > today.getTime()) {
       return { valid: false, message: "⚠️ 宝宝出生日期不能晚于当前日期" };
     }
@@ -104,8 +109,8 @@ export default function SetStageModal({ isOpen, onClose, onSuccess }: SetStageMo
         setError("请选择您的预产期");
         return;
       }
-      const due = new Date(dueDate);
-      due.setHours(0, 0, 0, 0);
+      const [dy, dm, dd] = dueDate.split("-").map(Number);
+      const due = new Date(dy, (dm || 1) - 1, dd || 1);
       const diffDays = Math.round((due.getTime() - today.getTime()) / (1000 * 3600 * 24));
       if (diffDays > 305) {
         setError("预产期超出正常怀孕周期（距离当前时间不应超过10个月/约300天），请核实输入");
@@ -120,8 +125,8 @@ export default function SetStageModal({ isOpen, onClose, onSuccess }: SetStageMo
         setError("请选择宝宝的出生日期");
         return;
       }
-      const birth = new Date(birthday);
-      birth.setHours(0, 0, 0, 0);
+      const [by, bm, bd] = birthday.split("-").map(Number);
+      const birth = new Date(by, (bm || 1) - 1, bd || 1);
       if (birth.getTime() > today.getTime()) {
         setError("宝宝出生日期不能晚于当前时间");
         return;
@@ -135,15 +140,23 @@ export default function SetStageModal({ isOpen, onClose, onSuccess }: SetStageMo
 
     setSaving(true);
     try {
+      // 保存前若初始拉取尚未完成，兜底确认一次当前主宝宝，避免快速点击造成误建或主键冲突
+      let targetBabyId = existingBabyId;
+      if (!babiesReady) {
+        const latestList = await authApi.babies().catch(() => []);
+        if (Array.isArray(latestList) && latestList.length > 0) {
+          const pri = latestList.find((b) => b.is_primary) || latestList[0];
+          targetBabyId = pri.id;
+          setExistingBabyId(pri.id);
+        }
+      }
+
+      // 直接以 BabyProfile 为唯一入口创建或更新（后端 BabyViewSet 会原子同步 User 阶段、权限模板与 MotherProfile），
+      // 彻底避免先 updateMe 再 createBaby 期间并发 GET /users/me/ 触发阶段回退竞态
       if (tab === "pregnant") {
-        await authApi.updateMe({
-          due_date: dueDate,
-          is_pregnant: true,
-          baby_birthday: null as any,
-        });
         const finalBabyName = babyName.trim() || "胎宝宝";
-        if (existingBabyId) {
-          await authApi.updateBaby(existingBabyId, {
+        if (targetBabyId) {
+          await authApi.updateBaby(targetBabyId, {
             name: finalBabyName,
             gender: gender === "secret" ? "unknown" : gender,
             birthday: dueDate,
@@ -161,14 +174,9 @@ export default function SetStageModal({ isOpen, onClose, onSuccess }: SetStageMo
           setExistingBabyId(created.id);
         }
       } else {
-        await authApi.updateMe({
-          baby_birthday: birthday,
-          is_pregnant: false,
-          due_date: null as any,
-        });
         const finalBabyName = babyName.trim() || "小萌宝";
-        if (existingBabyId) {
-          await authApi.updateBaby(existingBabyId, {
+        if (targetBabyId) {
+          await authApi.updateBaby(targetBabyId, {
             name: finalBabyName,
             gender: gender === "secret" ? "unknown" : gender,
             birthday,
