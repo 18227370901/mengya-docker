@@ -218,17 +218,23 @@ export default function PlatformManagePage() {
   const canAccess = user?.is_staff || hasPermission("menu_admin_platforms");
   const canEdit = !!user?.is_staff;
 
-  const loadPlatforms = async () => {
+  // silent：静默刷新（不触发全页 loading 骨架，避免局部操作导致页面闪烁）；
+  // keepPage：保持当前页码不重置（弹窗内局部增删改不应使列表跳回第一页）；
+  // 返回最新列表，供调用方直接使用，避免闭包过期（stale closure）引用旧 state
+  const loadPlatforms = async (opts?: { silent?: boolean; keepPage?: boolean }): Promise<ThirdPartyPlatform[]> => {
+    const { silent = false, keepPage = false } = opts || {};
     try {
-      setLoading(true);
+      if (!silent) setLoading(true);
       setErrorMsg("");
       const res = await platformApi.getPlatforms({ keyword: keyword || undefined });
       const list = res.data.data || [];
       setPlatforms(list);
       setSelectedIds((prev) => prev.filter((id) => list.some((item) => item.id === id)));
-      setPage(1);
+      if (!keepPage) setPage(1);
+      return list;
     } catch (err: any) {
       setErrorMsg(err.message || "加载平台列表失败");
+      return [];
     } finally {
       setLoading(false);
     }
@@ -582,7 +588,7 @@ export default function PlatformManagePage() {
             )}
 
             <button
-              onClick={loadPlatforms}
+              onClick={() => loadPlatforms()}
               className="rounded-xl border border-gray-200 px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50 transition"
             >
               刷新
@@ -1122,11 +1128,12 @@ export default function PlatformManagePage() {
           platform={resourceModalPlatform}
           canEdit={canEdit}
           onClose={() => setResourceModalPlatform(null)}
-          onRefresh={() => {
-            loadPlatforms().then(() => {
-              const updated = platforms.find((x) => x.id === resourceModalPlatform.id);
-              if (updated) setResourceModalPlatform(updated);
-            });
+          onRefresh={async () => {
+            // 静默刷新：不闪全页 loading、不重置页码；
+            // 使用 loadPlatforms 的返回值查找最新平台对象，修复旧闭包回填过期数据的问题
+            const list = await loadPlatforms({ silent: true, keepPage: true });
+            const updated = list.find((x) => x.id === resourceModalPlatform.id);
+            if (updated) setResourceModalPlatform(updated);
           }}
         />
       )}

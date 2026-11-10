@@ -2601,6 +2601,25 @@ apps/core/                                    apps/core/
 </section>
 
 <section id="adr-10-73"><h2>10.73 商品库 AI 一键评测生命周期竞态消除 (v2.08)</h2><p>规范组件卸载自动中止请求与路由重入状态复位机制，彻底根治切页重入从0自动重跑缺陷。</p></section>
+
+<section class="adr-card" id="adr-10-78">
+  <h2>10.78 ADR-78：三方平台子入口管理弹窗状态同步根治与零闪烁局部静默刷新规范 (v2.13)</h2>
+  <div class="adr-meta"><span class="badge">Version: v2.13</span><span class="badge">Date: 2026-11-10</span><span class="badge status-accepted">Accepted</span></div>
+  <h3>10.78.1 背景与业务痛点</h3>
+  <p>子资源管理弹窗内增删子入口后 UI 不更新（已删条目残留、新增不显示，须关闭重开弹窗），每次操作触发整页 loading 骨架闪烁并强制跳回第一页；残留条目诱导二次点击删除，收到后端 404「子资源不存在」提示，形成矛盾体验。</p>
+  <h3>10.78.2 架构决策与设计规范</h3>
+  <ul>
+    <li><strong>本地乐观更新</strong>：新增/编辑成功后以接口返回的权威序列化对象立即插入/替换列表，删除成功后本地即时过滤移除，UI 零延迟反馈；</li>
+    <li><strong>props 权威数据同步</strong>：弹窗新增 useEffect 感知 platform 引用变化，静默回填后端权威数据，保证计数、排序与白名单字段全量一致；</li>
+    <li><strong>闭包过期根治</strong>：loadPlatforms 重构为返回最新列表，onRefresh 改用返回值定位目标平台对象，彻底规避 React stale closure 回填旧数据；</li>
+    <li><strong>静默刷新与页码保持</strong>：新增 silent（跳过全页骨架消除闪烁）与 keepPage（保持页码不跳页）参数，弹窗局部操作零感知刷新；首次加载、手动刷新、一键导入、批量操作保持完整反馈不变。</li>
+  </ul>
+  <h3>10.78.3 验证结论</h3>
+  <ul>
+    <li>build_frontend.py 生产编译通过（2627 modules）并同步产物，run.ps1 restart 服务健康；</li>
+    <li>浏览器逐项实测：新增立即显示、删除立即消失无残留、编辑即时生效、重开弹窗一致、第 2 页操作不跳页、外层计数同步、零闪烁，测试数据已清理；后端零改动。</li>
+  </ul>
+</section>
 </body>
 
 </html>

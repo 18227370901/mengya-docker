@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ThirdPartyPlatform,
   ThirdPartyPlatformResource,
@@ -23,6 +23,12 @@ export const ResourceManageModal: React.FC<Props> = ({
   const [resources, setResources] = useState<ThirdPartyPlatformResource[]>(
     platform.resources || []
   );
+  // 同步父组件传入的最新平台数据（后端权威数据回填，修复删除/新增后弹窗列表残留旧数据的缺陷）
+  useEffect(() => {
+    if (Array.isArray(platform.resources)) {
+      setResources(platform.resources);
+    }
+  }, [platform]);
   const [editingRes, setEditingRes] = useState<ThirdPartyPlatformResource | null>(
     null
   );
@@ -98,10 +104,22 @@ export const ResourceManageModal: React.FC<Props> = ({
         allowed_user_ids,
       };
 
+      let savedRes: ThirdPartyPlatformResource | null = null;
       if (editingRes) {
-        await platformApi.updateResource(editingRes.id, payload);
+        const res = await platformApi.updateResource(editingRes.id, payload);
+        savedRes = res.data?.data || null;
       } else {
-        await platformApi.createResource(platform.id, payload);
+        const res = await platformApi.createResource(platform.id, payload);
+        savedRes = res.data?.data || null;
+      }
+
+      // 本地即时更新列表（乐观更新，不再依赖关闭重开弹窗才能看到变更）
+      if (savedRes) {
+        setResources((prev) =>
+          editingRes
+            ? prev.map((item) => (item.id === savedRes!.id ? savedRes! : item))
+            : [...prev, savedRes]
+        );
       }
 
       handleCancelForm();
@@ -117,6 +135,8 @@ export const ResourceManageModal: React.FC<Props> = ({
     if (!window.confirm("确定删除该子资源入口？")) return;
     try {
       await platformApi.deleteResource(resId);
+      // 本地即时移除，防止 UI 残留已删除条目诱导重复删除
+      setResources((prev) => prev.filter((r) => r.id !== resId));
       onRefresh();
     } catch (err: any) {
       alert(err.message || "删除失败");
