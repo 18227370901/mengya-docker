@@ -206,7 +206,7 @@ export default function HealthPage() {
       await authApi.setPrimaryBaby(bId);
       showToast("已设为默认宝宝档案并同步全局阶段");
       await fetchMe();
-      loadProfiles(true);
+      await loadProfiles(true);
       try {
         window.dispatchEvent(new CustomEvent("stageChanged"));
       } catch {}
@@ -262,11 +262,7 @@ export default function HealthPage() {
 
   /** 删除宝宝档案 */
   const handleDeleteBaby = async (bId: number) => {
-    if (babies.length <= 1) {
-      showToast("至少保留一份宝宝档案");
-      setDeletingBabyId(null);
-      return;
-    }
+
     setBabySaving(true);
     try {
       await authApi.deleteBaby(bId);

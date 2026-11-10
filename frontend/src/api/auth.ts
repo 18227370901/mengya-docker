@@ -58,9 +58,22 @@ export interface PermissionGroupMeta {
   permissions: PermissionItemMeta[];
 }
 
+export type StageTemplateKey = "general" | "pregnancy" | "newborn" | "infant" | "toddler";
+
+export interface StageTemplateMeta {
+  key: StageTemplateKey;
+  name: string;
+  short_name: string;
+  desc: string;
+}
+
 export interface AdminPermissionsData {
   default_permissions: Record<string, boolean>;
   definitions: PermissionGroupMeta[];
+  stage_templates?: Record<StageTemplateKey, Record<string, boolean>>;
+  system_stage_templates?: Record<StageTemplateKey, Record<string, boolean>>;
+  stage_template_metas?: StageTemplateMeta[];
+  stage_key?: StageTemplateKey;
 }
 
 export interface UserPermissionsData {
@@ -72,6 +85,11 @@ export interface UserPermissionsData {
   custom_permissions: Record<string, boolean>;
   effective_permissions: Record<string, boolean>;
   definitions: PermissionGroupMeta[];
+  stage_key?: StageTemplateKey;
+  stage_name?: string;
+  stage_short_name?: string;
+  stage_desc?: string;
+  stage_template_metas?: StageTemplateMeta[];
 }
 
 export const authApi = {
@@ -193,8 +211,8 @@ export const authApi = {
   adminPermissions: () =>
     api.get<ApiResponse<AdminPermissionsData>>("/admin/permissions/").then((r) => r.data.data),
 
-  updateAdminPermissions: (default_permissions: Record<string, boolean>) =>
-    api.put<ApiResponse<{ default_permissions: Record<string, boolean> }>>("/admin/permissions/", { default_permissions }).then((r) => r.data),
+  updateAdminPermissions: (default_permissions: Record<string, boolean>, stage_key: StageTemplateKey = "general") =>
+    api.put<ApiResponse<AdminPermissionsData>>("/admin/permissions/", { stage_key, default_permissions }).then((r) => r.data),
 
   getUserPermissions: (userId: number) =>
     api.get<ApiResponse<UserPermissionsData>>(`/admin/permissions/?user_id=${userId}`).then((r) => r.data.data),
@@ -202,8 +220,12 @@ export const authApi = {
   updateUserPermissions: (userId: number, permissions: Record<string, boolean>) =>
     api.put<ApiResponse<UserPermissionsData>>("/admin/permissions/", { user_id: userId, permissions }).then((r) => r.data),
 
-  resetUserPermissions: (userId: number) =>
-    api.put<ApiResponse<UserPermissionsData>>("/admin/permissions/", { user_id: userId, reset_to_default: true }).then((r) => r.data),
+  resetUserPermissions: (userId: number, stage_key?: StageTemplateKey) =>
+    api.put<ApiResponse<UserPermissionsData>>("/admin/permissions/", {
+      user_id: userId,
+      reset_to_default: true,
+      ...(stage_key ? { stage_key } : {}),
+    }).then((r) => r.data),
 };
 
 export interface AuditLogItem {

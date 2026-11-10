@@ -585,30 +585,9 @@ class MeView(APIView):
             user.due_date = None
             fields_to_update.append("due_date")
 
-        # 若未被管理员单独定制权限：随阶段切换仅调整 4 个阶段菜单键
-        # （基于该用户现有权限快照调整，不吸收全局默认模板新内容，模板改动不借此渗透已有用户）
-        custom_perms = getattr(user, "custom_permissions", {}) or {}
-        if not custom_perms.get("_admin_customized"):
-            from apps.core.utils.permissions import build_initial_permissions, normalize_permissions
-            if custom_perms:
-                # 已有快照：仅按新阶段覆盖阶段菜单键
-                stage_defaults = build_initial_permissions(
-                    due_date=user.due_date,
-                    baby_birthday=user.baby_birthday,
-                    is_pregnant=user.is_pregnant,
-                )
-                base = dict(custom_perms)
-                for sk in ("menu_timeline", "menu_recipes", "menu_fetal_stories", "menu_encyclopedia"):
-                    if sk in stage_defaults:
-                        base[sk] = stage_defaults[sk]
-                user.custom_permissions = {k: v for k, v in normalize_permissions(base).items() if not k.startswith("_")}
-            else:
-                # 异常兜底：无任何快照时按最新模板+阶段完整初始化
-                user.custom_permissions = build_initial_permissions(
-                    due_date=user.due_date,
-                    baby_birthday=user.baby_birthday,
-                    is_pregnant=user.is_pregnant,
-                )
+        # 若未被管理员单独定制权限：随阶段切换按对应阶段的全局默认权限模板自动同步
+        from apps.core.utils.permissions import sync_user_stage_permissions
+        if sync_user_stage_permissions(user, save=False):
             fields_to_update.append("custom_permissions")
 
         if fields_to_update:
@@ -1009,6 +988,10 @@ class BabyViewSet(viewsets.ModelViewSet):
             user.due_date = None
             user.save(update_fields=["is_pregnant", "due_date", "baby_birthday"])
 
+        # 切换/更新默认宝宝时同步该阶段默认权限模板（未被管理员单独定制的用户立即生效）
+        from apps.core.utils.permissions import sync_user_stage_permissions
+        sync_user_stage_permissions(user, save=True)
+
         # 同步更新用户的默认妈妈档案（保持与默认宝宝的关联与阶段一致）
         pri_mom = MotherProfile.objects.filter(user=user, is_primary=True).first() or MotherProfile.objects.filter(user=user).first()
         b_name = getattr(baby, "name", "") or ""
@@ -1063,12 +1046,32 @@ class BabyViewSet(viewsets.ModelViewSet):
         b_name = getattr(instance, "name", "") or f"宝宝#{instance.id}"
         audit(self.request, "baby_delete", "删除宝宝档案", "baby", instance.id, b_name, f"删除宝宝档案 {b_name}")
         instance.delete()
-        if was_primary:
-            remaining = BabyProfile.objects.filter(user=user).order_by("-id").first()
-            if remaining:
-                remaining.is_primary = True
-                remaining.save(update_fields=["is_primary"])
+
+        remaining = BabyProfile.objects.filter(user=user).order_by("-is_primary", "-id").first()
+        if remaining:
+            if was_primary or not remaining.is_primary:
+                if not remaining.is_primary:
+                    remaining.is_primary = True
+                    remaining.save(update_fields=["is_primary"])
                 self._sync_user_stage(user, remaining)
+        else:
+            # 最后一个宝宝被删除：彻底清空用户预产期/宝宝生日，重置阶段权限与默认妈妈档案关联，避免首页/我的残留已删宝宝信息
+            from apps.core.models.mother import MotherProfile
+            from apps.core.utils.permissions import sync_user_stage_permissions
+
+            user.is_pregnant = False
+            user.due_date = None
+            user.baby_birthday = None
+            user.save(update_fields=["is_pregnant", "due_date", "baby_birthday"])
+            sync_user_stage_permissions(user, save=True)
+
+            pri_mom = MotherProfile.objects.filter(user=user, is_primary=True).first() or MotherProfile.objects.filter(user=user).first()
+            if pri_mom:
+                pri_mom.due_date = None
+                pri_mom.is_pregnant = False
+                if pri_mom.name == f"{b_name}妈妈" or pri_mom.name.endswith("妈妈"):
+                    pri_mom.name = "萌宝妈妈"
+                pri_mom.save(update_fields=["due_date", "is_pregnant", "name"])
 
     @action(detail=True, methods=["post"])
     def set_primary(self, request, pk=None):
@@ -6283,6 +6286,13 @@ class AdminPermissionsView(APIView):
                     },
                 })
 
+            from apps.core.utils.permissions import STAGE_TEMPLATE_METAS, resolve_stage_template_key
+            stage_key = resolve_stage_template_key(
+                due_date=target.due_date,
+                baby_birthday=target.baby_birthday,
+                is_pregnant=target.is_pregnant,
+            )
+            stage_meta = next((m for m in STAGE_TEMPLATE_METAS if m["key"] == stage_key), STAGE_TEMPLATE_METAS[0])
             custom = target.custom_permissions or {}
             effective = get_user_permissions(target)
             return Response({
@@ -6297,24 +6307,34 @@ class AdminPermissionsView(APIView):
                     "custom_permissions": {k: v for k, v in custom.items() if not k.startswith("_")},
                     "effective_permissions": effective,
                     "definitions": PERMISSION_DEFINITIONS,
+                    "stage_key": stage_key,
+                    "stage_name": stage_meta["name"],
+                    "stage_short_name": stage_meta["short_name"],
+                    "stage_desc": stage_meta["desc"],
+                    "stage_template_metas": STAGE_TEMPLATE_METAS,
                 },
             })
 
-        # 未传 user_id：获取系统全局默认权限模板
+        # 未传 user_id：获取系统全局默认权限模板及各阶段模板
+        from apps.core.utils.permissions import (
+            STAGE_TEMPLATE_METAS,
+            get_all_system_builtin_templates,
+            get_saved_stage_templates,
+        )
         setting = SystemSetting.get_settings()
         sys_perms = getattr(setting, "default_user_permissions", {}) or {}
-        merged = dict(DEFAULT_USER_PERMISSIONS)
-        if isinstance(sys_perms, dict):
-            for k, v in sys_perms.items():
-                if k in merged:
-                    merged[k] = bool(v)
+        stage_templates = get_saved_stage_templates(sys_perms)
+        system_stage_templates = get_all_system_builtin_templates()
 
         return Response({
             "code": 0,
             "message": "success",
             "data": {
                 "definitions": PERMISSION_DEFINITIONS,
-                "default_permissions": merged,
+                "default_permissions": stage_templates["general"],
+                "stage_templates": stage_templates,
+                "system_stage_templates": system_stage_templates,
+                "stage_template_metas": STAGE_TEMPLATE_METAS,
             },
         })
 
@@ -6337,24 +6357,41 @@ class AdminPermissionsView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            # 重置该用户的权限为系统默认：将最新全局默认模板（叠加宝宝阶段自适应）固化写入该用户
+            # 重置该用户的权限为系统默认：支持显式指定 stage_key，否则自动匹配目标用户当前阶段默认模板
             if request.data.get("reset_to_default"):
-                from apps.core.utils.permissions import build_initial_permissions
-                snapshot = build_initial_permissions(
+                from apps.core.utils.permissions import (
+                    STAGE_TEMPLATE_KEYS,
+                    STAGE_TEMPLATE_METAS,
+                    get_saved_stage_templates,
+                    resolve_stage_template_key,
+                )
+                req_stage_key = request.data.get("stage_key")
+                if req_stage_key and req_stage_key not in STAGE_TEMPLATE_KEYS:
+                    return Response(
+                        {"code": 2001, "message": f"无效的阶段模板标识: {req_stage_key}", "data": None},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                applied_stage_key = req_stage_key or resolve_stage_template_key(
                     due_date=target.due_date,
                     baby_birthday=target.baby_birthday,
                     is_pregnant=target.is_pregnant,
                 )
+                applied_meta = next((m for m in STAGE_TEMPLATE_METAS if m["key"] == applied_stage_key), STAGE_TEMPLATE_METAS[0])
+                stage_templates = get_saved_stage_templates()
+                snapshot = dict(stage_templates.get(applied_stage_key, stage_templates["general"]))
+
                 target.custom_permissions = snapshot
                 target.save(update_fields=["custom_permissions"])
                 audit(request, "permission_update", "重置用户权限为默认", "用户", target.id,
                       target.nickname or target.username,
-                      f"已将用户 {target.username} 的权限重置为最新系统默认模板（启用项：{sum(1 for v in snapshot.values() if v)}/{len(snapshot)}）")
+                      f"已将用户 {target.username} 的权限重置为【{applied_meta['name']}】模板（启用项：{sum(1 for v in snapshot.values() if v)}/{len(snapshot)}）")
                 return Response({
                     "code": 0,
-                    "message": f"已将用户 {target.username} 的权限重置为最新系统默认配置",
+                    "message": f"已将用户 {target.username} 的权限重置为【{applied_meta['name']}】系统默认配置",
                     "data": {
                         "user_id": target.id,
+                        "stage_key": applied_stage_key,
+                        "stage_name": applied_meta["name"],
                         "custom_permissions": snapshot,
                         "effective_permissions": get_user_permissions(target),
                     },
@@ -6395,34 +6432,67 @@ class AdminPermissionsView(APIView):
                 },
             })
 
-        # 2. 全局默认权限模板更新（未传 user_id）
+        # 2. 全局 / 分阶段默认权限模板更新（未传 user_id）
+        from apps.core.utils.permissions import (
+            STAGE_TEMPLATE_KEYS,
+            STAGE_TEMPLATE_METAS,
+            get_all_system_builtin_templates,
+            get_saved_stage_templates,
+            get_system_builtin_template,
+        )
+        stage_key = request.data.get("stage_key") or "general"
+        if stage_key not in STAGE_TEMPLATE_KEYS:
+            return Response(
+                {"code": 2001, "message": f"无效的阶段模板标识: {stage_key}", "data": None},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         perms_input = request.data.get("default_permissions", {})
         if not isinstance(perms_input, dict):
             return Response(
                 {"code": 2001, "message": "default_permissions 必须为字典格式", "data": None},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
         setting = SystemSetting.get_settings()
+        old_tpl = setting.default_user_permissions or {}
+        old_stages = get_saved_stage_templates(old_tpl)
+        prev_stage_tpl = old_stages.get(stage_key, get_system_builtin_template(stage_key))
+
         cleaned = {}
         for k in DEFAULT_USER_PERMISSIONS:
             if k in perms_input:
                 cleaned[k] = bool(perms_input[k])
             else:
-                cleaned[k] = DEFAULT_USER_PERMISSIONS[k]
+                cleaned[k] = prev_stage_tpl.get(k, DEFAULT_USER_PERMISSIONS[k])
 
-        # 递归规范化父子权限联动
-        cleaned = normalize_permissions(cleaned, previous_perms=setting.default_user_permissions or {})
-        setting.default_user_permissions = cleaned
+        cleaned = normalize_permissions(cleaned, previous_perms=prev_stage_tpl)
+
+        internal_meta = {k: v for k, v in old_tpl.items() if isinstance(k, str) and k.startswith("_")}
+        stored_stages = dict(internal_meta.get("_stage_templates") or {}) if isinstance(internal_meta.get("_stage_templates"), dict) else {}
+
+        if stage_key == "general":
+            top_perms = cleaned
+        else:
+            top_perms = old_stages["general"]
+            stored_stages[stage_key] = cleaned
+        internal_meta["_stage_templates"] = stored_stages
+
+        setting.default_user_permissions = {**top_perms, **internal_meta}
         setting.save(update_fields=["default_user_permissions"])
 
-        audit(request, "permission_update", "修改全局默认权限模板", "系统", 1, "全局权限配置",
-              f"更新系统全局默认权限模板，启用项数：{sum(1 for v in cleaned.values() if v)}/{len(cleaned)}；"
-              f"仅影响之后新注册用户与手动点击「重置为系统默认」的用户")
+        updated_stages = get_saved_stage_templates(setting.default_user_permissions)
+        stage_label = next((m["name"] for m in STAGE_TEMPLATE_METAS if m["key"] == stage_key), stage_key)
+        audit(request, "permission_update", "修改阶段默认权限模板", "系统", 1, stage_label,
+              f"更新【{stage_label}】默认权限模板，启用项数：{sum(1 for v in cleaned.values() if v)}/{len(cleaned)}")
         return Response({
             "code": 0,
-            "message": "全局默认权限模板已保存，将应用于之后新注册用户的初始权限；已有用户需在其权限弹窗点击「重置为系统默认」后才会更新",
+            "message": f"【{stage_label}】默认权限模板已保存，将应用于该阶段新注册用户、切换宝宝阶段的非定制用户及重置为系统默认的用户",
             "data": {
-                "default_permissions": setting.default_user_permissions,
+                "stage_key": stage_key,
+                "default_permissions": updated_stages[stage_key],
+                "stage_templates": updated_stages,
+                "system_stage_templates": get_all_system_builtin_templates(),
+                "stage_template_metas": STAGE_TEMPLATE_METAS,
             },
         })
 

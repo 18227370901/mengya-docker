@@ -147,9 +147,46 @@ PERMISSION_PARENT_MAP = {
     "ai_session_delete": "menu_ai_assistant",
     "ai_fetch_models": "menu_ai_assistant",
 
+    # 管理后台模块（与 PERMISSION_DEFINITIONS 严格对齐）
+    "backup_config_manage": "menu_admin_backups",
+    "backup_trigger": "menu_admin_backups",
+    "backup_restore": "menu_admin_backups",
+    "backup_task_manage": "menu_admin_backups",
+
+    "service_config_view": "menu_admin_service_config",
+    "service_config_update": "menu_admin_service_config",
+
+    "daily_tips_view": "menu_admin_daily_tips",
+    "daily_tips_manage": "menu_admin_daily_tips",
+
+    "kb_timeline_view": "menu_admin_kb_timeline",
+    "kb_timeline_manage": "menu_admin_kb_timeline",
+    "kb_stories_view": "menu_admin_kb_stories",
+    "kb_stories_manage": "menu_admin_kb_stories",
+    "kb_recipes_view": "menu_admin_kb_recipes",
+    "kb_recipes_manage": "menu_admin_kb_recipes",
+    "kb_encyclopedia_view": "menu_admin_kb_encyclopedia",
+    "kb_encyclopedia_manage": "menu_admin_kb_encyclopedia",
+    "kb_shopping_view": "menu_admin_kb_shopping",
+    "kb_shopping_manage": "menu_admin_kb_shopping",
+
+    "registration_manage": "menu_admin_registration",
+
+    "product_manage_create": "menu_admin_products_manage",
+    "product_manage_edit": "menu_admin_products_manage",
+    "product_manage_delete": "menu_admin_products_manage",
+
+    "user_manage_view": "menu_admin_users",
+    "user_manage_edit": "menu_admin_users",
+    "user_manage_freeze": "menu_admin_users",
+    "permission_manage": "menu_admin_users",
+
     # 三方平台模块：menu_admin_platforms -> platform_manage_edit
     "platform_manage_edit": "menu_admin_platforms",
     "platform_manage_import_export": "menu_admin_platforms",
+
+    "audit_log_view": "menu_admin_audit_logs",
+    "audit_log_clean": "menu_admin_audit_logs",
 }
 
 # 衍生直接子节点表：父权限 key -> [子权限 key, ...]
@@ -169,7 +206,7 @@ def normalize_permissions(perms: dict, previous_perms: dict = None) -> dict:
     # 1. 若提供了变更前的基准配置，先依显式变化方向做定向递归联动
     if previous_perms and isinstance(previous_perms, dict):
         for k, v in perms.items():
-            prev_v = bool(previous_perms.get(k, True))
+            prev_v = bool(previous_perms.get(k, DEFAULT_USER_PERMISSIONS.get(k, False)))
             new_v = bool(v)
             if not prev_v and new_v:
                 # 开启子权限 -> 向上递归开启所有父权限
@@ -399,81 +436,231 @@ PERMISSION_DEFINITIONS = [
 ]
 
 
-def get_default_permissions_for_stage(
+STAGE_TEMPLATE_METAS = [
+    {
+        "key": "general",
+        "name": "通用 / 未设置阶段",
+        "short_name": "通用默认",
+        "desc": "尚未设置预产期或宝宝生日时的全局默认权限模板",
+    },
+    {
+        "key": "pregnancy",
+        "name": "孕期阶段（未出生）",
+        "short_name": "孕期阶段",
+        "desc": "备孕/孕期或关联未出生宝宝档案时的默认权限模板",
+    },
+    {
+        "key": "newborn",
+        "name": "新生儿期（0～28天）",
+        "short_name": "新生儿期",
+        "desc": "已出生宝宝 0～28 天（含 28 天）时的默认权限模板",
+    },
+    {
+        "key": "infant",
+        "name": "婴儿期（1～12个月）",
+        "short_name": "婴儿期",
+        "desc": "已出生宝宝满 29 天至 12 个月（含 1 周岁）时的默认权限模板",
+    },
+    {
+        "key": "toddler",
+        "name": "幼儿及学龄前期（>12个月）",
+        "short_name": "幼儿期+",
+        "desc": "已出生宝宝超过 12 个月（1 岁以上）时的默认权限模板",
+    },
+]
+
+STAGE_TEMPLATE_KEYS = tuple(item["key"] for item in STAGE_TEMPLATE_METAS)
+
+
+def resolve_stage_template_key(
     due_date=None,
     baby_birthday=None,
     is_pregnant=None,
-) -> dict:
-    """根据宝宝年龄阶段动态推导初始默认菜单与功能权限。
-    1. 宝宝已出生 (is_pregnant=False 或 有 baby_birthday 且无 due_date)：
-       - 禁用孕期专属：孕期周历 (menu_timeline)、孕期食谱 (menu_recipes)、胎教故事 (menu_fetal_stories)
-       - 启用育儿专属：幼儿百科 (menu_encyclopedia)
-    2. 宝宝未出生/孕期中 (is_pregnant=True 或 有 due_date)：
-       - 启用孕期专属：孕期周历 (menu_timeline)、孕期食谱 (menu_recipes)、胎教故事 (menu_fetal_stories)
-       - 禁用育儿专属：幼儿百科 (menu_encyclopedia)
-    3. 未设置：保持基础系统默认 (DEFAULT_USER_PERMISSIONS)
-    """
-    base = dict(DEFAULT_USER_PERMISSIONS)
+) -> str:
+    """根据预产期、宝宝生日及孕期标记推导所属的阶段权限模板键。"""
+    from datetime import date
+    from dateutil.relativedelta import relativedelta
 
-    is_born = False
+    def _parse_date(val):
+        if val is None or val == "":
+            return None
+        if isinstance(val, date):
+            return val
+        try:
+            return date.fromisoformat(str(val)[:10])
+        except Exception:
+            return None
+
+    due_d = _parse_date(due_date)
+    baby_d = _parse_date(baby_birthday)
+    today = date.today()
+
+    if is_pregnant is True:
+        return "pregnancy"
+    if baby_d:
+        days = (today - baby_d).days
+        if days < 0:
+            return "pregnancy"
+        if days <= 28:
+            return "newborn"
+        r = relativedelta(today, baby_d)
+        total_months = r.years * 12 + r.months
+        if total_months <= 12:
+            return "infant"
+        return "toddler"
     if is_pregnant is False:
-        is_born = True
-    elif is_pregnant is True:
-        is_born = False
-    else:
-        if baby_birthday and not due_date:
-            is_born = True
-        elif due_date:
-            is_born = False
+        return "newborn"
+    if due_d:
+        return "pregnancy"
+    return "general"
 
-    if is_born:
-        base["menu_timeline"] = False
-        base["menu_recipes"] = False
-        base["menu_fetal_stories"] = False
-        base["menu_encyclopedia"] = True
-    elif is_pregnant is True or due_date:
+
+def get_system_builtin_template(stage_key: str = "general") -> dict:
+    """返回指定阶段的代码内置系统出厂默认权限模板（供「重置为系统模板」使用）。"""
+    key = stage_key if stage_key in STAGE_TEMPLATE_KEYS else "general"
+    base = dict(DEFAULT_USER_PERMISSIONS)
+    if key == "pregnancy":
         base["menu_timeline"] = True
         base["menu_recipes"] = True
         base["menu_fetal_stories"] = True
         base["menu_encyclopedia"] = False
-
+    elif key in ("newborn", "infant", "toddler"):
+        base["menu_timeline"] = False
+        base["menu_recipes"] = False
+        base["menu_fetal_stories"] = False
+        base["menu_encyclopedia"] = True
     return normalize_permissions(base)
 
 
-def build_initial_permissions(due_date=None, baby_birthday=None, is_pregnant=None, template=None) -> dict:
-    """构建普通用户的「初始权限快照」：代码基线 + 全局默认权限模板 + 宝宝阶段自适应。
+def get_all_system_builtin_templates() -> dict:
+    """返回全部阶段的系统出厂内置默认模板映射。"""
+    return {k: get_system_builtin_template(k) for k in STAGE_TEMPLATE_KEYS}
 
-    该函数作为权限模板的唯二快照源（新用户注册初始化、管理员点击「重置为系统默认」、
-    以及存量用户数据迁移），返回已父子联动规范化、且剔除内部键（_ 开头）的完整权限字典。
 
-    - template 为 None 时，自动读取系统全局默认权限模板 (SystemSetting.default_user_permissions)；
-    - 宝宝阶段自适应固定覆盖 4 个阶段菜单键（时间轴/食谱/胎教故事/幼儿百科）。
-    """
-    merged = dict(DEFAULT_USER_PERMISSIONS)
-
-    # 1. 系统全局默认权限模板覆盖
-    if template is None:
-        try:
-            from apps.core.models import SystemSetting
-            template = getattr(SystemSetting.get_settings(), "default_user_permissions", {}) or {}
-        except Exception:
-            template = {}
-    if isinstance(template, dict):
-        for k, v in template.items():
+def _extract_clean_perms(raw: dict, fallback: dict) -> dict:
+    merged = dict(fallback)
+    if isinstance(raw, dict):
+        for k, v in raw.items():
             if k in merged:
                 merged[k] = bool(v)
+    norm = normalize_permissions(merged)
+    return {k: v for k, v in norm.items() if not k.startswith("_")}
 
-    # 2. 宝宝阶段自适应覆盖 4 个阶段菜单键
-    stage_defaults = get_default_permissions_for_stage(
+
+def get_saved_stage_templates(raw_setting_perms: dict = None) -> dict:
+    """读取当前系统中已保存的各阶段默认权限模板。
+    - `general` 直接对应顶层权限配置；
+    - 其余阶段读取 `_stage_templates[key]`，若管理员尚未单独保存过该阶段，
+      则以顶层 `general` 模板为底色并叠加对应阶段内置菜单差异（或该阶段内置出厂模板）。
+    """
+    if raw_setting_perms is None:
+        try:
+            from apps.core.models import SystemSetting
+            raw_setting_perms = getattr(SystemSetting.get_settings(), "default_user_permissions", {}) or {}
+        except Exception:
+            raw_setting_perms = {}
+    raw_setting_perms = raw_setting_perms if isinstance(raw_setting_perms, dict) else {}
+
+    general_tpl = _extract_clean_perms(raw_setting_perms, get_system_builtin_template("general"))
+    stored_stages = raw_setting_perms.get("_stage_templates")
+    stored_stages = stored_stages if isinstance(stored_stages, dict) else {}
+
+    result = {"general": general_tpl}
+    for sk in STAGE_TEMPLATE_KEYS:
+        if sk == "general":
+            continue
+        builtin_sk = get_system_builtin_template(sk)
+        if isinstance(stored_stages.get(sk), dict):
+            result[sk] = _extract_clean_perms(stored_stages[sk], builtin_sk)
+        else:
+            # 未显式配置过分阶段模板的历史数据：继承 general 非阶段项 + 内置阶段菜单互斥规则
+            derived = dict(general_tpl)
+            for mk in ("menu_timeline", "menu_recipes", "menu_fetal_stories", "menu_encyclopedia"):
+                derived[mk] = bool(derived.get(mk, True)) and bool(builtin_sk[mk])
+            result[sk] = _extract_clean_perms(derived, builtin_sk)
+    return result
+
+
+def get_default_permissions_for_stage(
+    due_date=None,
+    baby_birthday=None,
+    is_pregnant=None,
+    raw_setting_perms: dict = None,
+) -> dict:
+    """根据宝宝年龄阶段获取已保存的对应阶段默认权限模板（若未单独保存则基于系统内置推导）。"""
+    stage_key = resolve_stage_template_key(
         due_date=due_date,
         baby_birthday=baby_birthday,
         is_pregnant=is_pregnant,
     )
-    for sk in ("menu_timeline", "menu_recipes", "menu_fetal_stories", "menu_encyclopedia"):
-        merged[sk] = stage_defaults[sk]
+    templates = get_saved_stage_templates(raw_setting_perms)
+    return dict(templates.get(stage_key, templates["general"]))
 
-    norm = normalize_permissions(merged)
-    return {k: v for k, v in norm.items() if not k.startswith("_")}
+
+def build_initial_permissions(
+    due_date=None,
+    baby_birthday=None,
+    is_pregnant=None,
+    template=None,
+    apply_stage=True,
+) -> dict:
+    """构建普通用户的「初始权限快照」。
+
+    - template 为 None 且 apply_stage=True（新用户注册、切换宝宝/重置为当前阶段模板）：
+      直接读取管理员已保存的对应阶段默认权限模板；
+    - template 显式传入字典时，基于传入模板合并（若 apply_stage=True 则叠加阶段菜单过滤）；
+    - apply_stage=False：直接以传入模板（或顶层通用模板）固化快照。
+    """
+    if template is None:
+        try:
+            from apps.core.models import SystemSetting
+            raw_tpl = getattr(SystemSetting.get_settings(), "default_user_permissions", {}) or {}
+        except Exception:
+            raw_tpl = {}
+        if apply_stage:
+            return get_default_permissions_for_stage(
+                due_date=due_date,
+                baby_birthday=baby_birthday,
+                is_pregnant=is_pregnant,
+                raw_setting_perms=raw_tpl,
+            )
+        return _extract_clean_perms(raw_tpl, get_system_builtin_template("general"))
+
+    merged = _extract_clean_perms(template, DEFAULT_USER_PERMISSIONS)
+    if apply_stage:
+        stage_key = resolve_stage_template_key(
+            due_date=due_date,
+            baby_birthday=baby_birthday,
+            is_pregnant=is_pregnant,
+        )
+        builtin_sk = get_system_builtin_template(stage_key)
+        for sk in ("menu_timeline", "menu_recipes", "menu_fetal_stories", "menu_encyclopedia"):
+            merged[sk] = bool(merged.get(sk, True)) and bool(builtin_sk[sk])
+        merged = _extract_clean_perms(merged, DEFAULT_USER_PERMISSIONS)
+    return merged
+
+
+
+
+def sync_user_stage_permissions(user, save=True) -> bool:
+    """当用户切换宝宝档案或变更孕育阶段时，若未被管理员单独定制，
+    则按当前新阶段对应的最新阶段权限模板同步其权限快照。
+    返回是否发生更新。
+    """
+    if not user or getattr(user, "is_staff", False) or getattr(user, "is_superuser", False):
+        return False
+    custom_perms = getattr(user, "custom_permissions", {}) or {}
+    if isinstance(custom_perms, dict) and custom_perms.get("_admin_customized"):
+        return False
+
+    user.custom_permissions = get_default_permissions_for_stage(
+        due_date=getattr(user, "due_date", None),
+        baby_birthday=getattr(user, "baby_birthday", None),
+        is_pregnant=getattr(user, "is_pregnant", None),
+    )
+    if save and getattr(user, "pk", None):
+        user.save(update_fields=["custom_permissions"])
+    return True
 
 
 def get_user_permissions(user) -> dict:

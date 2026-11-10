@@ -37,13 +37,15 @@ function mergeMeResponse(
     (curStage &&
       newStage &&
       curStage.type === newStage.type &&
+      curStage.stage_key === newStage.stage_key &&
       curStage.is_pregnant === newStage.is_pregnant &&
       curStage.value === newStage.value &&
       curStage.label === newStage.label &&
       curStage.week_days_text === newStage.week_days_text &&
       curStage.days_to_due === newStage.days_to_due &&
       curStage.trimester === newStage.trimester &&
-      curStage.period === newStage.period);
+      curStage.period === newStage.period &&
+      curStage.age_text === newStage.age_text);
   const nextStage = isStageEqual ? curStage : newStage;
 
   const newUser = data.user;

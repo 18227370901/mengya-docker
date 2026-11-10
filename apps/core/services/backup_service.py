@@ -258,6 +258,8 @@ def create_database_snapshot(output_path: str) -> tuple[bool, str]:
             "table_counts": stats,
             "total_tables": len(stats),
             "total_records": sum(stats.values()),
+            "stage_templates_included": True,
+            "stage_template_keys": ["general", "pregnancy", "newborn", "infant", "toddler"],
         }
         manifest_path = temp_dir / "manifest.json"
         with open(manifest_path, "w", encoding="utf-8") as f:
@@ -303,7 +305,16 @@ def create_full_snapshot_package(
         config_snapshot = {}
         try:
             from apps.core.models.system import SystemSetting
+            from apps.core.utils.permissions import get_saved_stage_templates
             sys_setting = SystemSetting.get_settings()
+            saved_stage_tpls = get_saved_stage_templates(sys_setting.default_user_permissions)
+            stage_templates_summary = {
+                sk: {
+                    "enabled_count": sum(1 for v in perms.values() if v),
+                    "total_count": len(perms),
+                }
+                for sk, perms in saved_stage_tpls.items()
+            }
             config_snapshot = {
                 "version": "v1.89",
                 "app_name": "mengya-local",
@@ -320,6 +331,7 @@ def create_full_snapshot_package(
                     "audit_retention_days": sys_setting.audit_retention_days,
                     "daily_tip_display_count": sys_setting.daily_tip_display_count,
                     "default_user_permissions": sys_setting.default_user_permissions,
+                    "stage_templates_summary": stage_templates_summary,
                     "external_api_config": sys_setting.external_api_config,
                 },
                 "environment_summary": {
@@ -348,6 +360,8 @@ def create_full_snapshot_package(
             "table_counts": stats,
             "total_tables": len(stats),
             "total_records": sum(stats.values()),
+            "stage_templates_included": True,
+            "stage_template_keys": ["general", "pregnancy", "newborn", "infant", "toddler"],
         }
         manifest_path = temp_dir / "manifest.json"
         with open(manifest_path, "w", encoding="utf-8") as f:

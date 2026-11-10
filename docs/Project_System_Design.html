@@ -2602,6 +2602,57 @@ apps/core/                                    apps/core/
 
 <section id="adr-10-73"><h2>10.73 商品库 AI 一键评测生命周期竞态消除 (v2.08)</h2><p>规范组件卸载自动中止请求与路由重入状态复位机制，彻底根治切页重入从0自动重跑缺陷。</p></section>
 
+<section class="adr-card" id="adr-10-84">
+  <h2>10.84 ADR-84：单用户按阶段选择重置、备份清单阶段模板校验与删宝宝阶段清空规范 (v2.19)</h2>
+  <div class="adr-meta"><span class="badge">Version: v2.19</span><span class="badge">Date: 2026-11-10</span><span class="badge status-accepted">Accepted</span></div>
+  <h3>10.84.1 业务背景与问题分析</h3>
+  <p>此前单用户重置无法在弹窗内确认或指定阶段模板；删除最后一个宝宝后 <code>BabyViewSet.perform_destroy</code> 未清零用户与妈妈档案阶段导致首页/我的仍显示已删宝宝信息；全量备份清单缺少 5 阶段模板的显式校验摘要。</p>
+  <h3>10.84.2 核心架构决策与实现规范</h3>
+  <ul>
+    <li><strong>阶段可视与指定重置</strong>：<code>AdminPermissionsView</code> 返还目标用户 <code>stage_key</code>/<code>stage_name</code>，<code>reset_to_default</code> 支持可选 <code>stage_key</code>，前端弹窗提供阶段徽章与模板下拉器；</li>
+    <li><strong>删宝宝彻底同步清零</strong>：<code>BabyViewSet.perform_destroy</code> 在无剩余宝宝时清零 <code>due_date</code>/<code>baby_birthday</code>/<code>is_pregnant</code>、回退 <code>general</code> 模板并清理 <code>MotherProfile</code>；<code>authStore.ts</code> 补齐 <code>stage_key</code>/<code>age_text</code> 比对；</li>
+    <li><strong>备份清单增强</strong>：<code>backup_service.py</code> 在 <code>manifest.json</code> 与 <code>config_snapshot.json</code> 写入 <code>stage_templates_summary</code> 与 5 阶段键列表。</li>
+  </ul>
+  <h3>10.84.3 实施与验证结果</h3>
+  <ul>
+    <li><code>mengya-docker</code> 与 <code>mengya-local</code> 代码完成全量同步；执行 <code>python tools/build_frontend.py</code> 完成前端编译与静态产物同步。</li>
+  </ul>
+</section>
+
+<section class="adr-card" id="adr-10-83">
+  <h2>10.83 ADR-83：分阶段全局默认权限模板引擎（5 阶段）与宝宝切换联动及双重置规范 (v2.18)</h2>
+  <div class="adr-meta"><span class="badge">Version: v2.18</span><span class="badge">Date: 2026-11-10</span><span class="badge status-accepted">Accepted</span></div>
+  <h3>10.83.1 业务背景与根因分析</h3>
+  <p>此前 <code>get_default_permissions_for_stage</code> 将阶段菜单规则硬编码为“孕期/已出生”二元覆盖 4 项菜单，管理员无法按发育阶段定制默认权限；同时 <code>BabyViewSet._sync_user_stage</code> 在切换默认宝宝时未联动刷新用户 <code>custom_permissions</code>。</p>
+  <h3>10.83.2 核心架构决策与实现规范</h3>
+  <ul>
+    <li><strong>5 阶段权限模板</strong>：按 <code>stage_utils.py</code> 划分为 <code>general</code>（通用/未设置）、<code>pregnancy</code>（孕期）、<code>newborn</code>（新生儿 0～28 天）、<code>infant</code>（婴儿期 1～12 个月）、<code>toddler</code>（幼儿及学龄前期 &gt;12 个月），零迁移复用 <code>SystemSetting.default_user_permissions._stage_templates</code>；</li>
+    <li><strong>切换宝宝即自动刷新</strong>：<code>BabyViewSet._sync_user_stage</code> 与 <code>MeView.put</code> 统一调用 <code>sync_user_stage_permissions</code>，未单独定制的用户切换宝宝后按新阶段模板即时生效；</li>
+    <li><strong>双重置回退机制</strong>：后台为每个阶段模板分别提供「重置为上次保存」与「重置为系统模板」，支持跨阶段草稿独立暂存与分组保存。</li>
+  </ul>
+  <h3>10.83.3 实施与验证结果</h3>
+  <ul>
+    <li>完成与 <code>mengya-local</code> 全量同步及前端静态产物构建。</li>
+  </ul>
+</section>
+
+<section class="adr-card" id="adr-10-82">
+  <h2>10.82 ADR-82：全局默认权限模板与用户「重置为系统默认」一致性及父子联动规范 (v2.17)</h2>
+  <div class="adr-meta"><span class="badge">Version: v2.17</span><span class="badge">Date: 2026-11-10</span><span class="badge status-accepted">Accepted</span></div>
+  <h3>10.82.1 业务背景与根因分析</h3>
+  <p>管理员更新全局默认权限模板后在用户账号管理页点击「重置为系统默认」时，用户最新权限与已保存模板不一致，根因包括四点：<code>build_initial_permissions</code> 无条件以宝宝阶段默认覆盖 4 个阶段菜单；<code>normalize_permissions()</code> 对历史模板缺失键误取默认 <code>True</code> 导致向上联动开启父权限失败；前后端 <code>PERMISSION_PARENT_MAP</code> 缺失后台管理模块映射；保存模板时未保留 <code>_admin_weather_city</code> 等内部键且前端未同步服务端规范化返回值。</p>
+  <h3>10.82.2 核心架构决策与实现规范</h3>
+  <ul>
+    <li><strong><code>apply_stage</code> 显式隔离</strong>：<code>build_initial_permissions(..., apply_stage=False)</code> 用于管理员手动「重置为系统默认」，严格对齐最新全局默认模板；<code>apply_stage=True</code> 仅在模板未禁用时做阶段过滤；</li>
+    <li><strong>全量映射与缺键基准修正</strong>：前后端 <code>PERMISSION_PARENT_MAP</code> 严格对齐至 51 项；<code>normalize_permissions()</code> 缺失键回退至 <code>DEFAULT_USER_PERMISSIONS.get(k, False)</code>；</li>
+    <li><strong>持久化与前端同步</strong>：<code>AdminPermissionsView.put</code> 保留 <code>_</code> 前缀内部元数据并返回规范化 <code>default_permissions</code>，前端 <code>UserManagePage.tsx</code> 同步回写草稿与基线。</li>
+  </ul>
+  <h3>10.82.3 实施与验证结果</h3>
+  <ul>
+    <li>前后端 51 项映射与 78 项权限与 <code>mengya-local</code> 100% 同步。</li>
+  </ul>
+</section>
+
 <section class="adr-card" id="adr-10-81">
   <h2>10.81 ADR-81：三方平台列表视图场景隔离（scope=hub|manage）与停用过滤一致性规范 (v2.16)</h2>
   <div class="adr-meta"><span class="badge">Version: v2.16</span><span class="badge">Date: 2026-11-10</span><span class="badge status-accepted">Accepted</span></div>

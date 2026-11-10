@@ -2726,6 +2726,72 @@ flowchart TD
    - 彻底修复 `EndpointRow.tsx` 与搜索引擎列表中移动端与窄屏下元素溢出、换行错位问题，采用两层分行自适应栅格；
    - 优化启停开关视觉体验：弃用隐晦纯小滑动点，升级为具备鲜明状态色与呼吸圆点的状态切换胶囊（“已启用 (绿色)” / “已停用 (灰色)”），点击即可即时切换并给予明确视觉反馈。
 
+### 10.84 ADR-84：单用户按阶段选择重置、备份清单阶段模板校验与删宝宝阶段清空规范 (v2.19)
+
+#### 10.84.1 业务背景与问题分析
+1. **单用户重置不可见/不可选阶段**：管理员打开单用户权限弹窗点击「重置为系统默认」时，无法确认当前匹配了哪个阶段模板，也无法针对未填宝宝资料的用户手动指定阶段模板；
+2. **删除宝宝后跨页面残留**：`BabyViewSet.perform_destroy` 此前仅在 `was_primary and remaining` 时同步阶段，当删除最后一个宝宝（`remaining is None`）时，未清空 `user.due_date/baby_birthday/is_pregnant`、阶段权限与默认 `MotherProfile`，导致首页与个人中心仍展示已删除宝宝的信息；
+3. **容灾备份校验可读性**：`SystemSetting.default_user_permissions` 虽已被全量导出，但 `manifest.json` 与 `config_snapshot.json` 缺少 5 阶段模板的显式校验摘要。
+
+#### 10.84.2 核心架构决策与实现规范
+1. **单用户分阶段可视化重置（`AdminPermissionsView` / `UserManagePage.tsx`）**：
+   - `GET /api/admin/permissions/?user_id=` 返回目标用户 `stage_key`/`stage_name`/`stage_template_metas`；`PUT`（`reset_to_default`）支持可选 `stage_key`；
+   - 前端弹窗新增当前匹配阶段徽章、阶段下拉选择器与就地刷新逻辑。
+2. **删除宝宝彻底清零（`BabyViewSet.perform_destroy` / `authStore.ts` / `HealthPage.tsx`）**：
+   - 删除后若仍有宝宝，自动置最新一条为主宝宝并 `_sync_user_stage`；若已无宝宝，清零用户 `due_date/baby_birthday/is_pregnant`、回退 `general` 权限模板并同步清理 `MotherProfile`。
+3. **备份校验摘要增强（`backup_service.py`）**：
+   - `manifest.json` 与 `config_snapshot.json` 增加 `stage_templates_included`、`stage_template_keys` 与 `stage_templates_summary`。
+
+#### 10.84.3 实施与验证结果
+- `mengya-docker` 与 `mengya-local` 代码完成全量同步，`python tools/build_frontend.py` 编译并同步静态资源（`index-lo4NI5M6.js`）通过。
+
+---
+
+### 10.83 ADR-83：分阶段全局默认权限模板引擎（5 阶段）与宝宝切换联动及双重置规范 (v2.18)
+
+#### 10.83.1 业务背景与根因分析
+1. **阶段权限硬编码**：此前 `get_default_permissions_for_stage` 仅凭孕期/已出生二元硬编码改写 4 个菜单键，管理员无法在后台按宝宝发育阶段分别定制默认可见的菜单与细粒度功能权限；
+2. **切换默认宝宝未刷新权限**：`BabyViewSet._sync_user_stage` 在切换默认宝宝档案时仅同步了 `is_pregnant`/`due_date`/`baby_birthday`，未同步刷新非定制用户的 `custom_permissions`。
+
+#### 10.83.2 核心架构决策与实现规范
+1. **5 阶段模板划分（`apps/core/utils/permissions.py`）**：
+   - 划分为 `general`（通用/未设置）、`pregnancy`（孕期未出生）、`newborn`（新生儿 0～28 天）、`infant`（婴儿期 1～12 个月）、`toddler`（幼儿及学龄前期 >12 个月）；
+   - 零迁移存储于 `SystemSetting.default_user_permissions`（顶层为 `general`，`_stage_templates` 存储分阶段配置），未显式配置时自动基于 `general` 与阶段出厂规则推导，向后兼容历史数据。
+2. **宝宝切换与个人阶段自动联动（`apps/core/views.py`）**：
+   - `BabyViewSet._sync_user_stage` 与 `MeView.put` 统一调用 `sync_user_stage_permissions`，对未标记 `_admin_customized` 的用户按新阶段最新模板即时刷新快照；已被管理员单独定制的用户保持独立设置不受覆盖。
+3. **后台独立编辑与双重置（`UserManagePage.tsx`）**：
+   - 「全局默认权限模板」Tab 提供 5 阶段切换胶囊页签，各阶段独立保留草稿与未保存标记；
+   - 每个阶段均支持「重置为上次保存」（回退服务端最新保存版本）与「重置为系统模板」（回退代码内置出厂默认）。
+
+#### 10.83.3 实施与验证结果
+- 完成与 `mengya-local` 同步及前端构建同步。
+
+---
+
+### 10.82 ADR-82：全局默认权限模板与用户「重置为系统默认」一致性及父子联动规范 (v2.17)
+
+#### 10.82.1 业务背景与根因分析
+1. **阶段菜单硬覆盖**：此前 `build_initial_permissions` 总是无条件以 `get_default_permissions_for_stage(...)` 覆盖 `menu_timeline`、`menu_recipes`、`menu_fetal_stories`、`menu_encyclopedia`，导致管理员修改了全局默认权限模板并在用户账号管理中点击「重置为系统默认」后，该 4 项权限与保存模板不一致；
+2. **历史模板缺键导致向上联动失效**：存量数据库 `SystemSetting.default_user_permissions` 仅存有早期 32 个键，`normalize_permissions()` 却用 `previous_perms.get(k, True)` 判定变化，导致新权限项默认 `False` 被当成原值 `True`，开启子权限时未能向上递归开启父权限，最终又被父子一致性收敛强制打回 `False`；
+3. **父子映射表缺漏与前后端不一致**：后端 `PERMISSION_PARENT_MAP` 缺少 28 项后台管理子权限映射，前端 `UserManagePage.tsx` 缺少 12 项（知识库与三方平台）；
+4. **内部元数据与前端基线未同步**：全局模板保存时直接覆盖 `default_user_permissions` 易丢失 `_admin_weather_city` 等 `_` 前缀键，且前端全量/分组保存后未回写服务端规范化返回的 `default_permissions`。
+
+#### 10.82.2 核心架构决策与实现规范
+1. **`apply_stage` 显式语义隔离（`apps/core/utils/permissions.py` / `apps/core/views.py`）**：
+   - `build_initial_permissions(..., apply_stage=True)` 新增阶段开关：管理员点击「重置为系统默认」时显式传入 `apply_stage=False`，严格对齐全局默认模板；新用户注册（`apply_stage=True`）时采用 `bool(merged.get(sk, True)) and bool(stage_defaults[sk])` 避免覆盖全局禁用项；
+   - `MeView.put` 在用户尚未被管理员单独定制时，基于 `get_default_permissions_for_stage` 仅同步阶段变化。
+2. **全量父子映射与缺键基准修正**：
+   - 前后端 `PERMISSION_PARENT_MAP` 均对齐补全至 51 项；
+   - `normalize_permissions()` 历史缺键基准修正为 `DEFAULT_USER_PERMISSIONS.get(k, False)`。
+3. **模板持久化与前端状态同步**：
+   - `AdminPermissionsView.put` 保留 `_` 内部元数据键并向前端返回规范化后的 `default_permissions`；
+   - 前端 `handleSavePermissions` / `handleSavePermissionGroup` 以 `res.data?.default_permissions` 同步基线状态。
+
+#### 10.82.3 实施与验证结果
+- 78 项权限前后端对齐，内部元数据无损保留，与 `mengya-local` 100% 同步。
+
+---
+
 ### 10.81 ADR-81：三方平台列表视图场景隔离（`scope=hub|manage`）与停用过滤一致性规范 (v2.16)
 
 #### 10.81.1 业务背景与根因分析

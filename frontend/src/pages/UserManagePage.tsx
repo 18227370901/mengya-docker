@@ -24,7 +24,7 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { authApi, type UserManageItem, type UserManageData, type PermissionGroupMeta } from "@/api/auth";
+import { authApi, type UserManageItem, type UserManageData, type PermissionGroupMeta, type StageTemplateKey, type StageTemplateMeta } from "@/api/auth";
 import { useAuthStore } from "@/store/authStore";
 import PermissionTreeCard from "@/components/PermissionTreeCard";
 
@@ -81,7 +81,7 @@ const PERMISSION_PARENT_MAP: Record<string, string> = {
   ai_session_delete: "menu_ai_assistant",
   ai_fetch_models: "menu_ai_assistant",
 
-  // 管理后台模块
+  // 管理后台模块（与后端 PERMISSION_PARENT_MAP / PERMISSION_DEFINITIONS 对齐）
   backup_config_manage: "menu_admin_backups",
   backup_trigger: "menu_admin_backups",
   backup_restore: "menu_admin_backups",
@@ -90,6 +90,16 @@ const PERMISSION_PARENT_MAP: Record<string, string> = {
   service_config_update: "menu_admin_service_config",
   daily_tips_view: "menu_admin_daily_tips",
   daily_tips_manage: "menu_admin_daily_tips",
+  kb_timeline_view: "menu_admin_kb_timeline",
+  kb_timeline_manage: "menu_admin_kb_timeline",
+  kb_stories_view: "menu_admin_kb_stories",
+  kb_stories_manage: "menu_admin_kb_stories",
+  kb_recipes_view: "menu_admin_kb_recipes",
+  kb_recipes_manage: "menu_admin_kb_recipes",
+  kb_encyclopedia_view: "menu_admin_kb_encyclopedia",
+  kb_encyclopedia_manage: "menu_admin_kb_encyclopedia",
+  kb_shopping_view: "menu_admin_kb_shopping",
+  kb_shopping_manage: "menu_admin_kb_shopping",
   registration_manage: "menu_admin_registration",
   product_manage_create: "menu_admin_products_manage",
   product_manage_edit: "menu_admin_products_manage",
@@ -98,6 +108,8 @@ const PERMISSION_PARENT_MAP: Record<string, string> = {
   user_manage_edit: "menu_admin_users",
   user_manage_freeze: "menu_admin_users",
   permission_manage: "menu_admin_users",
+  platform_manage_edit: "menu_admin_platforms",
+  platform_manage_import_export: "menu_admin_platforms",
   audit_log_view: "menu_admin_audit_logs",
   audit_log_clean: "menu_admin_audit_logs",
 };
@@ -186,16 +198,50 @@ export default function UserManagePage() {
   const [targetUserLoading, setTargetUserLoading] = useState(false);
   const [targetUserSaving, setTargetUserSaving] = useState(false);
   const [targetUserHasCustom, setTargetUserHasCustom] = useState(false);
+  const [targetUserDetectedStage, setTargetUserDetectedStage] = useState<StageTemplateKey>("general");
+  const [targetResetStageKey, setTargetResetStageKey] = useState<StageTemplateKey>("general");
 
-  // 权限管控状态
+  // 权限管控状态（v2.18 支持分阶段默认模板独立编辑与双重置）
+  const DEFAULT_STAGE_METAS: StageTemplateMeta[] = [
+    { key: "general", name: "通用 / 未设置阶段", short_name: "通用默认", desc: "尚未设置预产期或宝宝生日时的全局默认权限模板" },
+    { key: "pregnancy", name: "孕期阶段（未出生）", short_name: "孕期阶段", desc: "备孕/孕期或关联未出生宝宝档案时的默认权限模板" },
+    { key: "newborn", name: "新生儿期（0～28天）", short_name: "新生儿期", desc: "已出生宝宝 0～28 天（含 28 天）时的默认权限模板" },
+    { key: "infant", name: "婴儿期（1～12个月）", short_name: "婴儿期", desc: "已出生宝宝满 29 天至 12 个月（含 1 周岁）时的默认权限模板" },
+    { key: "toddler", name: "幼儿及学龄前期（>12个月）", short_name: "幼儿期+", desc: "已出生宝宝超过 12 个月（1 岁以上）时的默认权限模板" },
+  ];
   const [permDefinitions, setPermDefinitions] = useState<PermissionGroupMeta[]>([]);
-  const [permissionsState, setPermissionsState] = useState<Record<string, boolean>>({});
+  const [activeStageKey, setActiveStageKey] = useState<StageTemplateKey>("general");
+  const [stageMetas, setStageMetas] = useState<StageTemplateMeta[]>(DEFAULT_STAGE_METAS);
+  const [stageDrafts, setStageDrafts] = useState<Partial<Record<StageTemplateKey, Record<string, boolean>>>>({});
+  const [savedStageTemplates, setSavedStageTemplates] = useState<Partial<Record<StageTemplateKey, Record<string, boolean>>>>({});
+  const [systemStageTemplates, setSystemStageTemplates] = useState<Partial<Record<StageTemplateKey, Record<string, boolean>>>>({});
   const [permsLoading, setPermsLoading] = useState(false);
   const [permsSaving, setPermsSaving] = useState(false);
-  // v1.88.2 分组独立保存：已保存到服务器的基线（其他分组未保存的草稿不随组提交）
-  const [savedPermissionsState, setSavedPermissionsState] = useState<Record<string, boolean>>({});
   const [savedTargetUserPerms, setSavedTargetUserPerms] = useState<Record<string, boolean>>({});
   const [savingGroupKey, setSavingGroupKey] = useState<string | null>(null);
+
+  const permissionsState = stageDrafts[activeStageKey] || savedStageTemplates[activeStageKey] || {};
+  const savedPermissionsState = savedStageTemplates[activeStageKey] || {};
+  const activeStageMeta = stageMetas.find((m) => m.key === activeStageKey) || stageMetas[0];
+  const isStageDirty = (sk: StageTemplateKey) => {
+    const draft = stageDrafts[sk];
+    const saved = savedStageTemplates[sk];
+    if (!draft || !saved) return false;
+    const keys = new Set([...Object.keys(draft), ...Object.keys(saved)]);
+    for (const k of keys) {
+      if (Boolean(draft[k]) !== Boolean(saved[k])) return true;
+    }
+    return false;
+  };
+  const setPermissionsState = (
+    updater: Record<string, boolean> | ((prev: Record<string, boolean>) => Record<string, boolean>)
+  ) => {
+    setStageDrafts((prevDrafts) => {
+      const cur = prevDrafts[activeStageKey] || savedStageTemplates[activeStageKey] || {};
+      const next = typeof updater === "function" ? updater(cur) : updater;
+      return { ...prevDrafts, [activeStageKey]: next };
+    });
+  };
 
   /** v1.88.1 权限键 → 展示名（优先从 definitions 构建，兜底静态表）：权限树依赖徽标用 */
   const permNameMap = useMemo(() => {
@@ -275,9 +321,15 @@ export default function UserManagePage() {
     try {
       const data = await authApi.adminPermissions();
       setPermDefinitions(data.definitions || []);
-      setPermissionsState(data.default_permissions || {});
-      // v1.88.2 同步刷新已保存基线，供分组独立保存拼装 payload
-      setSavedPermissionsState(data.default_permissions || {});
+      if (data.stage_template_metas && data.stage_template_metas.length) {
+        setStageMetas(data.stage_template_metas);
+      }
+      const stages = data.stage_templates || { general: data.default_permissions || {} };
+      setSavedStageTemplates(stages);
+      setStageDrafts(stages);
+      if (data.system_stage_templates) {
+        setSystemStageTemplates(data.system_stage_templates);
+      }
     } catch {
       showToast("加载权限配置失败");
     } finally {
@@ -435,10 +487,18 @@ export default function UserManagePage() {
       // v1.88.2 同步记录已保存基线，供分组独立保存拼装 payload
       setSavedTargetUserPerms(data.effective_permissions || {});
       setTargetUserHasCustom(data.has_custom || false);
+      if (data.stage_template_metas && data.stage_template_metas.length) {
+        setStageMetas(data.stage_template_metas);
+      }
+      const detStage = (data.stage_key || "general") as StageTemplateKey;
+      setTargetUserDetectedStage(detStage);
+      setTargetResetStageKey(detStage);
     } catch {
       showToast("拉取该用户权限失败，使用默认定义");
       setTargetUserDefs(permDefinitions);
       setTargetUserPerms(permissionsState);
+      setTargetUserDetectedStage("general");
+      setTargetResetStageKey("general");
     } finally {
       setTargetUserLoading(false);
     }
@@ -496,17 +556,26 @@ export default function UserManagePage() {
     }
   };
 
-  // 重置指定用户权限为系统默认：用最新全局默认模板（叠加宝宝阶段）固化覆盖该用户
+  // 重置指定用户权限为系统默认：按所选（默认自动匹配用户当前阶段）的最新阶段模板固化覆盖该用户
   const resetTargetUserToDefault = async () => {
     if (!targetUserModal) return;
-    if (!window.confirm(`确定要将用户【${targetUserModal.nickname || targetUserModal.username}】的权限重置为系统默认配置吗？\n\n重置将用当前最新全局默认模板覆盖该用户现有全部权限设置，此操作不可撤销。`)) {
+    const chosenMeta = stageMetas.find((m) => m.key === targetResetStageKey) || stageMetas[0];
+    const isAutoMatch = targetResetStageKey === targetUserDetectedStage;
+    if (!window.confirm(
+      `确定要将用户【${targetUserModal.nickname || targetUserModal.username}】的权限重置为【${chosenMeta.name}】模板吗？\n\n` +
+      `• 所选模板：${chosenMeta.name}${isAutoMatch ? "（与用户当前阶段自动匹配）" : "（手动指定覆盖）"}\n` +
+      `• 该操作将用该阶段最新保存的权限配置覆盖用户现有全部权限，不可撤销。`
+    )) {
       return;
     }
     setTargetUserSaving(true);
     try {
-      const res = await authApi.resetUserPermissions(targetUserModal.id);
-      showToast(res.message || "已恢复为系统默认配置");
+      const res = await authApi.resetUserPermissions(targetUserModal.id, targetResetStageKey);
+      showToast(res.message || `已重置为【${chosenMeta.name}】模板`);
       const resetData = (res.data || {}) as any;
+      const nextPerms = resetData?.effective_permissions || resetData?.custom_permissions || {};
+      setTargetUserPerms(nextPerms);
+      setSavedTargetUserPerms(nextPerms);
       setUsers((prev) =>
         prev.map((item) =>
           item.id === targetUserModal.id
@@ -515,7 +584,6 @@ export default function UserManagePage() {
         )
       );
       setTargetUserHasCustom(false);
-      setTargetUserModal(null);
     } catch (err: any) {
       showToast(err.message || "重置权限失败");
     } finally {
@@ -611,14 +679,19 @@ export default function UserManagePage() {
     showToast("已一键取消全部权限项");
   };
 
-  // 权限操作：保存到后端
+  // 权限操作：保存当前选中的阶段默认权限模板到后端
   const handleSavePermissions = async () => {
     setPermsSaving(true);
     try {
-      await authApi.updateAdminPermissions(permissionsState);
-      // v1.88.2 全量保存成功后同步基线，后续分组保存以此为底色
-      setSavedPermissionsState(permissionsState);
-      showToast("全局默认权限模板已保存，将应用于之后新注册用户；已有用户需手动点击「重置为系统默认」才会更新");
+      const res = await authApi.updateAdminPermissions(permissionsState, activeStageKey);
+      const synced = res.data?.default_permissions || permissionsState;
+      const allSaved = res.data?.stage_templates || { ...savedStageTemplates, [activeStageKey]: synced };
+      setSavedStageTemplates(allSaved);
+      setStageDrafts((prev) => ({ ...prev, [activeStageKey]: synced }));
+      if (res.data?.system_stage_templates) {
+        setSystemStageTemplates(res.data.system_stage_templates);
+      }
+      showToast(res.message || `【${activeStageMeta.name}】默认权限模板已保存`);
     } catch {
       showToast("保存权限配置失败，请重试");
     } finally {
@@ -626,19 +699,46 @@ export default function UserManagePage() {
     }
   };
 
-  // v1.88.2 权限操作：分组独立保存 —— 仅提交本分组改动，其他分组未保存草稿不随组提交
+  // 重置当前阶段草稿为「上次保存的模板」
+  const handleResetStageToSaved = () => {
+    const saved = savedStageTemplates[activeStageKey];
+    if (!saved) {
+      loadPermissions();
+      return;
+    }
+    setStageDrafts((prev) => ({ ...prev, [activeStageKey]: { ...saved } }));
+    showToast(`已将【${activeStageMeta.short_name}】重置为上次保存的配置`);
+  };
+
+  // 重置当前阶段草稿为「系统内置初始模板」（需点击保存后写入服务端）
+  const handleResetStageToSystem = () => {
+    const sysTpl = systemStageTemplates[activeStageKey];
+    if (!sysTpl) return;
+    setStageDrafts((prev) => ({ ...prev, [activeStageKey]: { ...sysTpl } }));
+    showToast(`已将【${activeStageMeta.short_name}】恢复为系统内置默认模板，请点击「保存「${activeStageMeta.short_name}」模板」生效`);
+  };
+
+  // v1.88.2 权限操作：分组独立保存 —— 仅提交当前阶段本分组改动，其他分组与阶段草稿不随组提交
   const handleSavePermissionGroup = async (group: PermissionGroupMeta) => {
     setSavingGroupKey(group.group_key);
     try {
-      // 从已保存基线出发，逐项套用本组当前值（沿用递归联动，跨组依赖同步生效）
       let payload = { ...savedPermissionsState };
       group.permissions.forEach((p) => {
         payload = applyPermissionChange(payload, p.key, permissionsState[p.key] !== false);
       });
-      await authApi.updateAdminPermissions(payload);
-      // 仅更新基线，不动 UI 草稿：其他分组改动仍保留待单独保存
-      setSavedPermissionsState(payload);
-      showToast(`「${group.group_name}」分组权限已保存，其他分组改动未提交`);
+      const res = await authApi.updateAdminPermissions(payload, activeStageKey);
+      const synced = res.data?.default_permissions || payload;
+      const allSaved = res.data?.stage_templates || { ...savedStageTemplates, [activeStageKey]: synced };
+      setSavedStageTemplates(allSaved);
+      setStageDrafts((prev) => {
+        const cur = prev[activeStageKey] || synced;
+        const next = { ...cur };
+        group.permissions.forEach((p) => {
+          if (p.key in synced) next[p.key] = synced[p.key];
+        });
+        return { ...prev, [activeStageKey]: next };
+      });
+      showToast(`【${activeStageMeta.short_name} · ${group.group_name}】分组权限已保存`);
     } catch {
       showToast("保存分组权限失败，请重试");
     } finally {
@@ -1218,10 +1318,10 @@ export default function UserManagePage() {
                   <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-500 text-white">
                     <Sliders className="h-4 w-4" />
                   </div>
-                  <h2 className="text-base font-bold text-gray-800">新用户全局默认权限模板 (CRUD 细粒度)</h2>
+                  <h2 className="text-base font-bold text-gray-800">分阶段全局默认权限模板 (5 阶段 · CRUD 细粒度)</h2>
                 </div>
                 <p className="mt-1 text-xs text-gray-500 max-w-2xl">
-                  此处配置仅作为【新注册用户】的初始权限底色：保存后将应用于之后新注册用户的初始权限，不会自动套用或覆盖任何已有用户。如需让某位已有用户改用最新模板，请在【用户账号管理】列表中点击该用户的【权限设置】→【重置为系统默认】。系统管理员始终默认具备全部权限，不受任何限制。
+                  支持按宝宝发育阶段（通用/孕期/新生儿期/婴儿期/幼儿期+）分别配置默认菜单与功能权限：新用户注册、普通用户切换默认宝宝档案或修改阶段时将自动套用对应阶段模板；已被管理员单独定制权限的用户保留独立设置，点击【重置为系统默认】后才按其当前阶段模板覆盖。
                 </p>
               </div>
 
@@ -1233,8 +1333,55 @@ export default function UserManagePage() {
                   className="btn-primary inline-flex items-center gap-1.5 shadow-sm"
                 >
                   <Save className="h-4 w-4" />
-                  <span>{permsSaving ? "保存配置中..." : "保存权限配置"}</span>
+                  <span>{permsSaving ? "保存配置中..." : `保存「${activeStageMeta.short_name}」模板`}</span>
                 </button>
+              </div>
+            </div>
+
+            {/* 分阶段模板切换栏 */}
+            <div className="space-y-2 rounded-xl border border-brand-100/80 bg-white/80 p-3">
+              <div className="flex flex-wrap gap-2">
+                {stageMetas.map((meta) => {
+                  const isActive = meta.key === activeStageKey;
+                  const tpl = stageDrafts[meta.key] || savedStageTemplates[meta.key] || {};
+                  const enabledCnt = Object.values(tpl).filter(Boolean).length;
+                  const dirty = isStageDirty(meta.key);
+                  return (
+                    <button
+                      key={meta.key}
+                      type="button"
+                      onClick={() => setActiveStageKey(meta.key)}
+                      className={`relative flex items-center gap-1.5 rounded-xl px-3 py-2 text-xs font-semibold transition border ${
+                        isActive
+                          ? "bg-brand-500 text-white border-brand-500 shadow-xs"
+                          : "bg-gray-50 text-gray-600 border-gray-200 hover:bg-brand-50/60 hover:text-brand-600"
+                      }`}
+                    >
+                      <span>{meta.short_name}</span>
+                      <span
+                        className={`rounded-full px-1.5 py-0.5 text-[10px] ${
+                          isActive ? "bg-white/20 text-white" : "bg-gray-200/80 text-gray-500"
+                        }`}
+                      >
+                        {enabledCnt}
+                      </span>
+                      {dirty && (
+                        <span
+                          title="当前阶段有未保存改动"
+                          className="h-2 w-2 rounded-full bg-amber-400 ring-2 ring-white"
+                        />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="flex items-center justify-between text-xs text-gray-500 px-1">
+                <span>
+                  当前编辑：<strong className="text-gray-800">{activeStageMeta.name}</strong> — {activeStageMeta.desc}
+                </span>
+                {isStageDirty(activeStageKey) && (
+                  <span className="text-amber-600 font-medium shrink-0 ml-2">● 有未保存修改</span>
+                )}
               </div>
             </div>
 
@@ -1246,9 +1393,9 @@ export default function UserManagePage() {
               </span>
             </div>
 
-            {/* 批量操作快捷按钮 */}
+            {/* 批量操作快捷按钮与双重置按钮 */}
             <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 pt-3 text-xs">
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <span className="text-gray-400">快捷操作：</span>
                 <button
                   type="button"
@@ -1266,10 +1413,19 @@ export default function UserManagePage() {
                 </button>
                 <button
                   type="button"
-                  onClick={loadPermissions}
-                  className="rounded-lg border border-gray-200 px-2.5 py-1 text-gray-600 hover:bg-gray-50 active:scale-95 transition inline-flex items-center gap-1"
+                  onClick={handleResetStageToSaved}
+                  className="rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-gray-600 hover:bg-gray-50 active:scale-95 transition inline-flex items-center gap-1"
+                  title="将当前阶段模板回退为服务端最近一次保存的状态"
                 >
                   <RotateCcw className="h-3 w-3" /> 重置为上次保存
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResetStageToSystem}
+                  className="rounded-lg border border-amber-200 bg-amber-50/70 px-2.5 py-1 text-amber-700 font-medium hover:bg-amber-100 active:scale-95 transition inline-flex items-center gap-1"
+                  title="将当前阶段模板恢复为系统出厂内置默认配置（点击保存后生效）"
+                >
+                  <RotateCcw className="h-3 w-3" /> 重置为系统模板
                 </button>
               </div>
 
@@ -1394,22 +1550,43 @@ export default function UserManagePage() {
                     <span className="font-bold shrink-0">💡 自动联动规则：</span>
                     <span>开启子权限自动开启其全部上级父权限；关闭父权限自动关闭其所有子功能，无需手动记忆关联。</span>
                   </div>
-                  {/* 独立配置说明提示 */}
-                  <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-3.5 text-xs text-indigo-800 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                    <div>
-                      <span className="font-bold">针对该用户的专属独立配置：</span>
-                      <span className="ml-1 text-indigo-700">
-                        修改仅对用户【{targetUserModal.nickname || targetUserModal.username}】生效，不会波及其他普通用户。
+                  {/* 独立配置说明与分阶段重置工具栏 */}
+                  <div className="rounded-xl border border-indigo-100 bg-indigo-50/50 p-3.5 text-xs text-indigo-800 space-y-2.5">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <div>
+                        <span className="font-bold">针对该用户的专属独立配置：</span>
+                        <span className="ml-1 text-indigo-700">
+                          修改仅对用户【{targetUserModal.nickname || targetUserModal.username}】生效，不会波及其他普通用户。
+                        </span>
+                      </div>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-white px-2.5 py-0.5 text-[11px] font-semibold text-indigo-700 border border-indigo-200 shrink-0">
+                        当前匹配阶段：{(stageMetas.find((m) => m.key === targetUserDetectedStage) || stageMetas[0]).short_name}
                       </span>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
+
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-t border-indigo-100/80 pt-2.5">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium text-indigo-700">重置所用模板：</span>
+                        <select
+                          value={targetResetStageKey}
+                          onChange={(e) => setTargetResetStageKey(e.target.value as StageTemplateKey)}
+                          disabled={targetUserSaving || targetUserLoading}
+                          className="rounded-lg border border-indigo-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-800 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                        >
+                          {stageMetas.map((meta) => (
+                            <option key={meta.key} value={meta.key}>
+                              {meta.name}{meta.key === targetUserDetectedStage ? "（当前阶段 · 推荐）" : ""}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
                       <button
                         type="button"
                         onClick={resetTargetUserToDefault}
-                        disabled={targetUserSaving}
-                        className="rounded-lg border border-indigo-200 bg-white px-2.5 py-1 font-medium text-indigo-600 hover:bg-indigo-50 active:scale-95 transition"
+                        disabled={targetUserSaving || targetUserLoading}
+                        className="rounded-lg border border-indigo-200 bg-white px-3 py-1 font-semibold text-indigo-600 hover:bg-indigo-100/70 active:scale-95 transition shrink-0"
                       >
-                        重置为系统默认
+                        按所选模板重置为系统默认
                       </button>
                     </div>
                   </div>
